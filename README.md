@@ -16,10 +16,23 @@ One pure-Python repo, end to end: `scip-python → symbol graph → packets →
 
 ```bash
 conda activate torchtitan_py312          # or any Python 3.11+ env
-npm i -g @sourcegraph/scip-python         # Node-based indexer (build prereq)
 pip install -e .                          # the `wikify` CLI
-python -m grpc_tools.protoc -I vendor --python_out=wikify vendor/scip.proto  # gen scip_pb2.py
+scripts/setup-vendor.sh                    # fetch indexers (scip-python, scip-clang) + gen scip_pb2.py
 ```
+
+`scripts/setup-vendor.sh` is idempotent and replaces the old manual steps: it
+`npm i`s **scip-python** (Python indexer), downloads the pinned **scip-clang**
+binary (C++ indexer — ~130 MB, *not* committed: it exceeds GitHub's 100 MB/file
+limit), and generates `wikify/scip_pb2.py` from `vendor/scip.proto`. The C++ tool
+is only needed for mixed C++/Python repos; Python-only ingestion works without it.
+
+### C++ ingestion prerequisite (mixed repos only)
+
+scip-clang indexes against a `compile_commands.json`. For a repo like pytorch you
+must first produce one (and any generated headers) with the project's own build —
+e.g. a CMake configure with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` plus the codegen
+targets. wikify consumes that file (config key `compile_commands:`); it does not
+run your build for you.
 
 ## Use
 

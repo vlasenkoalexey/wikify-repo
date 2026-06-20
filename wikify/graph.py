@@ -45,7 +45,11 @@ class Symbol:
         doc = self.documentation
         if "```" in doc:
             doc = "".join(doc.split("```")[0::2])  # keep parts outside fences
-        return _clean_doc(doc).strip()
+        result = _clean_doc(doc).strip()
+        # scip-clang emits this literal placeholder for undocumented C++ symbols.
+        if result.rstrip(".").strip().lower() == "no documentation available":
+            return ""
+        return result
 
     @property
     def doc_summary(self) -> str:

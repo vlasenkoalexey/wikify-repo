@@ -223,3 +223,6 @@ raw/
 wiki/
 # generated protobuf bindings
 wikify/scip_pb2.py
+
+# Large vendored binaries — fetched by scripts/setup-vendor.sh, not committed
+vendor/bin/

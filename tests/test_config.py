@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from wikify.config import Concern, RepoConfig, load_config
+from wikify.config import Concept, RepoConfig, load_config
 
 
 FIXTURE = textwrap.dedent(
@@ -24,7 +24,7 @@ FIXTURE = textwrap.dedent(
 
     Some prose.
 
-    ## Concerns
+    ## Concepts
     - **compilation-pipeline** — seeds: `LazyGraphExecutor::Compile`, `Compiler::LowerToHlo`
     - **dispatch-path** — seeds: (auto)
     - **compute-comm-overlap** — seeds: `CollectiveScheduler::Schedule`
@@ -50,9 +50,9 @@ def test_frontmatter_parsed(tmp_path):
     assert cfg.docs == ["**/README*.md", "docs/**/*.md"]
 
 
-def test_concern_slugs(tmp_path):
+def test_concept_slugs(tmp_path):
     cfg = load_config(_write(tmp_path, FIXTURE))
-    assert [c.slug for c in cfg.concerns] == [
+    assert [c.slug for c in cfg.concepts] == [
         "compilation-pipeline",
         "dispatch-path",
         "compute-comm-overlap",
@@ -62,7 +62,7 @@ def test_concern_slugs(tmp_path):
 
 def test_seeds_backticks_stripped(tmp_path):
     cfg = load_config(_write(tmp_path, FIXTURE))
-    by_slug = {c.slug: c for c in cfg.concerns}
+    by_slug = {c.slug: c for c in cfg.concepts}
     assert by_slug["compilation-pipeline"].seeds == [
         "LazyGraphExecutor::Compile",
         "Compiler::LowerToHlo",
@@ -73,14 +73,14 @@ def test_seeds_backticks_stripped(tmp_path):
 
 def test_auto_seeds(tmp_path):
     cfg = load_config(_write(tmp_path, FIXTURE))
-    dispatch = next(c for c in cfg.concerns if c.slug == "dispatch-path")
+    dispatch = next(c for c in cfg.concepts if c.slug == "dispatch-path")
     assert dispatch.auto is True
     assert dispatch.seeds == []
 
 
 def test_html_comment_stripped_from_note(tmp_path):
     cfg = load_config(_write(tmp_path, FIXTURE))
-    mem = next(c for c in cfg.concerns if c.slug == "memory-management")
+    mem = next(c for c in cfg.concepts if c.slug == "memory-management")
     assert mem.seeds == ["BufferAllocator::Allocate"]
     # the seeds list must not contain the HTML comment text
     assert all("<!--" not in s for s in mem.seeds)
@@ -92,7 +92,7 @@ def test_discover_treated_as_auto(tmp_path):
         "- **dispatch-path** — seeds: (discover: top-centrality in dispatch)",
     )
     cfg = load_config(_write(tmp_path, text))
-    dispatch = next(c for c in cfg.concerns if c.slug == "dispatch-path")
+    dispatch = next(c for c in cfg.concepts if c.slug == "dispatch-path")
     assert dispatch.auto is True
     assert dispatch.seeds == []
 
@@ -103,17 +103,17 @@ def test_hyphen_separator_tolerated(tmp_path):
         "- **compute-comm-overlap** - seeds: `CollectiveScheduler::Schedule`",
     )
     cfg = load_config(_write(tmp_path, text))
-    overlap = next(c for c in cfg.concerns if c.slug == "compute-comm-overlap")
+    overlap = next(c for c in cfg.concepts if c.slug == "compute-comm-overlap")
     assert overlap.seeds == ["CollectiveScheduler::Schedule"]
 
 
-def test_concern_without_bold_uses_first_word(tmp_path):
+def test_concept_without_bold_uses_first_word(tmp_path):
     text = FIXTURE.replace(
         "- **dispatch-path** — seeds: (auto)",
         "- dispatch-path — seeds: (auto)",
     )
     cfg = load_config(_write(tmp_path, text))
-    assert any(c.slug == "dispatch-path" for c in cfg.concerns)
+    assert any(c.slug == "dispatch-path" for c in cfg.concepts)
 
 
 def test_missing_frontmatter_lists_default_empty(tmp_path):
@@ -123,8 +123,8 @@ def test_missing_frontmatter_lists_default_empty(tmp_path):
         slug: minimal
         ---
 
-        ## Concerns
-        - **a-concern** — seeds: (auto)
+        ## Concepts
+        - **a-concept** — seeds: (auto)
         """
     )
     cfg = load_config(_write(tmp_path, text))
@@ -143,7 +143,7 @@ def test_unknown_frontmatter_key_raises(tmp_path):
         bogus: nope
         ---
 
-        ## Concerns
+        ## Concepts
         - **a** — seeds: (auto)
         """
     )
@@ -158,7 +158,7 @@ def test_missing_slug_raises(tmp_path):
         languages: [python]
         ---
 
-        ## Concerns
+        ## Concepts
         - **a** — seeds: (auto)
         """
     )
@@ -166,7 +166,7 @@ def test_missing_slug_raises(tmp_path):
         load_config(_write(tmp_path, text))
 
 
-def test_missing_concerns_section_raises(tmp_path):
+def test_missing_concepts_section_raises(tmp_path):
     text = textwrap.dedent(
         """\
         ---
@@ -175,15 +175,15 @@ def test_missing_concerns_section_raises(tmp_path):
 
         # torch_tpu
 
-        No concerns here.
+        No concepts here.
         """
     )
-    with pytest.raises(ValueError, match="Concerns"):
+    with pytest.raises(ValueError, match="Concepts"):
         load_config(_write(tmp_path, text))
 
 
-def test_concern_dataclass_defaults():
-    c = Concern(slug="x")
+def test_concept_dataclass_defaults():
+    c = Concept(slug="x")
     assert c.seeds == []
     assert c.auto is False
     assert c.note == ""

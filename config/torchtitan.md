@@ -9,10 +9,12 @@ docs: ["**/README*.md", "docs/**/*.md"]
 
 # torchtitan — ingest config
 
-Pure-Python trainer (Phase 1 target). Concerns below drive synthesis; seeds are
-entry-point symbols that the packet builder traverses the SCIP graph from.
+Pure-Python trainer (Phase 1 target). The concept agenda is **derived**
+(decision 8): `discover.py` ranks modules by centrality and auto-seeds them, so
+no manual concept list is needed. Add entries below only to override/extend the
+derived agenda (e.g. force a concept discovery would rank below the cut, or
+supply better seeds).
 
-## Concerns
-- **training-step** — seeds: `Trainer::train_step`, `Trainer::forward_backward_step`
-- **distributed-parallelism** — seeds: `Trainer::init_distributed`, `ParallelDims`
-- **checkpointing** — seeds: `Trainer::state_dict`, `Trainer::load_state_dict`
+## Concepts
+<!-- discovery-driven; add manual overrides here if needed -->
+

@@ -1,12 +1,12 @@
 """Reconcile state — the idempotency ledger (implementation.md §5.5).
 
 Persists ``{ref, symbols, pages}`` to ``.cache/state/<slug>.json`` so ``ingest``
-converges to {pinned commit × concern set}: re-running with no source/config
+converges to {pinned commit × concept set}: re-running with no source/config
 change is a no-op, and a change rebuilds only the delta.
 
 - ``symbols`` maps each moniker → a body-sha; comparing against a fresh index
   yields the set of *changed* monikers.
-- ``pages`` maps each concern → the monikers it ``cited`` (so any page whose
+- ``pages`` maps each concept → the monikers it ``cited`` (so any page whose
   cited set intersects the changed set is stale) plus the ``built_ref`` it was
   built at.
 
@@ -69,19 +69,19 @@ def set_ref(state: dict, ref: str) -> None:
     state["ref"] = ref
 
 
-def record_page(state: dict, concern: str, cited: list[str], built_ref: str) -> None:
+def record_page(state: dict, concept: str, cited: list[str], built_ref: str) -> None:
     """Record a built page: its (deduped, sorted) cited monikers and build ref."""
-    state.setdefault("pages", {})[concern] = {
+    state.setdefault("pages", {})[concept] = {
         "cited": sorted(set(cited)),
         "built_ref": built_ref,
     }
 
 
-def page_cited(state: dict, concern: str) -> list[str]:
-    """Return the cited monikers for ``concern`` (empty list if no such page)."""
-    return list(state.get("pages", {}).get(concern, {}).get("cited", []))
+def page_cited(state: dict, concept: str) -> list[str]:
+    """Return the cited monikers for ``concept`` (empty list if no such page)."""
+    return list(state.get("pages", {}).get(concept, {}).get("cited", []))
 
 
-def has_page(state: dict, concern: str) -> bool:
-    """Whether a page has been recorded for ``concern``."""
-    return concern in state.get("pages", {})
+def has_page(state: dict, concept: str) -> bool:
+    """Whether a page has been recorded for ``concept``."""
+    return concept in state.get("pages", {})

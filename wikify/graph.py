@@ -34,6 +34,39 @@ class Symbol:
     def is_callable(self) -> bool:
         return self.kind in _CALLABLE_KINDS or self.suffix == "Method"
 
+    @property
+    def docstring(self) -> str:
+        """Author-written prose from ``documentation``, signature code-fence stripped.
+
+        scip-python stores the signature as a leading ```python fenced block inside
+        ``documentation``; the docstring prose follows. We keep only the non-fenced
+        parts — the author's own description (L2 authored evidence, decision 8).
+        """
+        doc = self.documentation
+        if "```" in doc:
+            doc = "".join(doc.split("```")[0::2])  # keep parts outside fences
+        return _clean_doc(doc).strip()
+
+    @property
+    def doc_summary(self) -> str:
+        """First non-empty line of the docstring (the summary), or ''."""
+        for line in self.docstring.splitlines():
+            line = line.strip()
+            if line:
+                return line
+        return ""
+
+
+def _clean_doc(text: str) -> str:
+    """Undo scip-python's markdown escaping for readable inline display."""
+    return (
+        text.replace("&nbsp;", " ")
+        .replace("\\_", "_")
+        .replace("\\*", "*")
+        .replace("\\`", "`")
+        .replace("\\#", "#")
+    )
+
 
 _CALLABLE_KINDS = {
     "Function",

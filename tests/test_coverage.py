@@ -1,6 +1,6 @@
 """Coverage = set-difference over the symbol table (no graph walk, no scip-python).
 
-Build a tiny graph by hand, mark one symbol as concern-covered via a stub+page,
+Build a tiny graph by hand, mark one symbol as concept-covered via a stub+page,
 and assert: every documentable symbol is enumerated, catalogs are emitted per
 module, and the report classifies covered vs catalog-only correctly.
 """
@@ -20,7 +20,8 @@ M_FUNC = f"{PKG} `demo.train`/train_step()."
 def _graph():
     g = SymbolGraph()
     g.add_symbol(Symbol(moniker=M_CLASS, kind="Class", suffix="Type", name="Transformer",
-                        def_path="demo/models.py", def_line=10))
+                        def_path="demo/models.py", def_line=10,
+                        documentation="```python\nclass Transformer:\n```\nThe core decoder stack.\n\nMore detail."))
     g.add_symbol(Symbol(moniker=M_METHOD, kind="Method", suffix="Method", name="forward",
                         def_path="demo/models.py", def_line=20))
     g.add_symbol(Symbol(moniker=M_ATTN, kind="Class", suffix="Type", name="Attention",
@@ -33,15 +34,12 @@ def _graph():
     return g
 
 
-def _mark_covered(wiki_slug: Path, moniker: str, name: str):
-    """Write a concern page + stub so `train_step` is concern-covered."""
-    (wiki_slug / "symbols").mkdir(parents=True, exist_ok=True)
-    (wiki_slug / "symbols" / f"{name}.md").write_text(
-        f'---\nmoniker: "{moniker}"\n---\n# {name}\n', encoding="utf-8"
-    )
-    (wiki_slug / "concerns").mkdir(parents=True, exist_ok=True)
-    (wiki_slug / "concerns" / "training.md").write_text(
-        f"# Training\n## Mechanism (step-by-step)\n1. step [x](../symbols/{name}.md)\n",
+def _mark_covered(wiki_slug: Path, module: str, anchor: str):
+    """Write a concept page citing a catalog anchor so that symbol is covered."""
+    (wiki_slug / "concepts").mkdir(parents=True, exist_ok=True)
+    cat = coverage.catalog_rel_path(module)
+    (wiki_slug / "concepts" / "training.md").write_text(
+        f"# Training\n## Mechanism (step-by-step)\n1. step [x](../catalog/{cat}#{anchor})\n",
         encoding="utf-8",
     )
 
@@ -62,14 +60,14 @@ def test_classes_enumerated():
 def test_report_classifies_covered_vs_catalog(tmp_path):
     g = _graph()
     wiki_slug = tmp_path / "demo"
-    _mark_covered(wiki_slug, M_FUNC, "train_step")
+    _mark_covered(wiki_slug, "demo/train.py", "train_step")  # anchor for M_FUNC
     catalogued, paths = coverage.emit_catalogs(g, wiki_slug)
 
     # Every documentable symbol is now represented (whole-repo guarantee).
     assert catalogued == set(coverage.documentable_symbols(g))
     rep = coverage.compute_report(g, wiki_slug, catalogued=catalogued)
     assert rep.total == 4
-    assert rep.covered == 1            # train_step, via the concern page
+    assert rep.covered == 1            # train_step, via the concept page
     assert rep.catalog_only == 3       # the rest
     assert rep.represented == 4
     assert rep.classes_represented == rep.classes_total == 2
@@ -87,3 +85,13 @@ def test_catalog_pages_mirror_source_tree(tmp_path):
     # Both classes appear; forward is nested as a member of Transformer.
     assert "Transformer" in body and "Attention" in body
     assert "forward" in body
+    # Docstring summary (signature fence stripped) is rendered for Transformer.
+    assert "The core decoder stack." in body
+    assert "More detail." not in body  # only the summary line, not the full body
+
+
+def test_docstring_strips_signature_fence():
+    g = _graph()
+    t = g.symbols[M_CLASS]
+    assert t.doc_summary == "The core decoder stack."
+    assert "class Transformer" not in t.docstring  # signature fence removed

@@ -13,6 +13,7 @@ deterministic half never calls a model; the agent half never parses protobuf.
 from __future__ import annotations
 
 import datetime
+from dataclasses import replace
 from pathlib import Path
 
 import typer
@@ -22,12 +23,13 @@ from . import (
     assemble,
     coverage as coverage_mod,
     diff,
+    discover,
     lint,
     packet,
     scip_index,
     state as state_mod,
 )
-from .config import RepoConfig, load_config
+from .config import Concept, RepoConfig, load_config
 
 app = typer.Typer(add_completion=False, help="Ingest a repo into a grounded markdown wiki.")
 
@@ -94,21 +96,31 @@ def prepare(
     graph = _graph(p)
     typer.echo(f"graph: {len(graph)} symbols")
 
+    # Agenda is DERIVED (decision 8): discovery ranks modules by centrality and
+    # auto-seeds concepts; config concepts override/extend on slug collision.
+    discovered = discover.discover_concepts(graph)
+    seedmap = {d.slug: d.seeds for d in discovered}
+    cfg_slugs = {c.slug for c in cfg.concepts}
+    agenda = [Concept(slug=d.slug) for d in discovered if d.slug not in cfg_slugs] + cfg.concepts
+    agenda_cfg = replace(cfg, concepts=agenda)
+    typer.echo(f"agenda: {len(discovered)} discovered + {len(cfg.concepts)} config = {len(agenda)} concepts")
+
     state = state_mod.load_state(p.state)
     hashes = diff.current_hashes(graph, acq.repo_dir)
-    plan = diff.compute_plan(graph, acq.repo_dir, state, cfg, hashes)
+    plan = diff.compute_plan(graph, acq.repo_dir, state, agenda_cfg, hashes)
     typer.echo(plan.render())
 
     todo = set(plan.todo)
     built = 0
-    for concern in cfg.concerns:
-        if concern.slug not in todo:
+    for concept in agenda:
+        if concept.slug not in todo:
             continue
         text, subgraph = packet.build_packet(
-            graph, acq.repo_dir, slug, acq.commit, concern, cfg.tests, _today()
+            graph, acq.repo_dir, slug, acq.commit, concept, cfg.tests, _today(),
+            seed_monikers=seedmap.get(concept.slug),
         )
-        pkt = packet.write_packet(p.cache, slug, concern.slug, text, subgraph)
-        typer.echo(f"  packet → {pkt}  ({len(subgraph)} symbols)")
+        pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
+        typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")
         built += 1
     if built == 0:
         typer.echo("nothing to build (converged).")
@@ -130,39 +142,36 @@ def finalize(
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref)
     graph = _graph(p)
 
-    report = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
-    if not report.ok:
-        typer.echo(f"\nLINT FAILED ({len(report.errors)} error(s)):", err=True)
-        for e in report.errors:
+    # Stage 6b FIRST — emit module catalogs (the symbol homes). Citations resolve
+    # against their frontmatter `symbols` map, so catalogs must exist before lint.
+    catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
+    typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
+
+    report_lint = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
+    if not report_lint.ok:
+        typer.echo(f"\nLINT FAILED ({len(report_lint.errors)} error(s)):", err=True)
+        for e in report_lint.errors:
             typer.echo(f"  {e}", err=True)
         raise typer.Exit(1)
     typer.echo("lint: OK — every citation resolves.")
 
-    # Update reconcile state from the actual pages.
+    # Update reconcile state from the actual concept pages on disk.
     state = state_mod.load_state(p.state)
     state_mod.set_ref(state, acq.commit)
     state_mod.set_symbols(state, diff.current_hashes(graph, acq.repo_dir))
-    concern_status: list[tuple[str, str]] = []
-    for concern in cfg.concerns:
-        page = p.wiki_slug / "concerns" / f"{concern.slug}.md"
-        if page.exists():
-            cited = sorted(lint.page_citations(page))
-            state_mod.record_page(state, concern.slug, cited, acq.commit)
-            concern_status.append((concern.slug, "fresh"))
-        else:
-            concern_status.append((concern.slug, "missing"))
+    concept_status: list[tuple[str, str]] = []
+    for page in sorted((p.wiki_slug / "concepts").glob("*.md")):
+        cited = sorted(lint.page_citations(page))
+        state_mod.record_page(state, page.stem, cited, acq.commit)
+        concept_status.append((page.stem, "fresh"))
     state_mod.save_state(p.state, state)
 
-    # Stage 6b — structural coverage: catalog every module so the whole repo is
-    # represented, not just the concern-covered slice. Deterministic, no LLM.
-    catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
     report = coverage_mod.compute_report(graph, p.wiki_slug, catalogued=catalogued)
-    typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
     typer.echo(report.render())
 
     scip_tool = "scip-python"
     assemble.write_repo_index(
-        p.wiki_slug, slug, acq.commit, scip_tool, concern_status, _today(), report=report
+        p.wiki_slug, slug, acq.commit, scip_tool, concept_status, _today(), report=report
     )
     assemble.write_top_index(p.wiki, [d.name for d in p.wiki.iterdir() if d.is_dir()], _today())
     typer.echo(f"assembled wiki/{slug}/index.md  (commit {acq.commit[:10]})")

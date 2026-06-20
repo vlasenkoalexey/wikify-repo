@@ -23,22 +23,22 @@ The product is a Karpathy-style skill family. Each skill is one slash command.
 
 | Skill | Does | Maps to |
 |---|---|---|
-| `/wikify-ingest-repo <repo> [--ref <commit>]` | **Idempotent reconcile** — first build, version bump (`--ref`), or added concern, all the same operation | Stages 0–6 |
+| `/wikify-ingest-repo <repo> [--ref <commit>]` | **Idempotent reconcile** — first build, version bump (`--ref`), or added concept, all the same operation | Stages 0–6 |
 | `/wikify-connect-repo` | Link a repo's silo into the rest of the multi-repo wiki | Stage 7 |
 
 **ingest is a declarative reconcile** (like `make`/`terraform apply`): its desired
-state is `{pinned commit's symbols} × {requested concern set}`, and re-running
-converges the wiki to it. Same inputs → no-op; new concern in the config → build
+state is `{pinned commit's symbols} × {requested concept set}`, and re-running
+converges the wiki to it. Same inputs → no-op; new concept in the config → build
 only that page; moved `--ref` → diff symbols, rebuild stale pages; wiped cache →
 regenerate SCIP. So there is **no separate `update` skill** — "update" is just
 `ingest --ref <newcommit>`. The Stage 2 diff is the *mechanism* reconcile uses
 when the commit moved, not a separate command.
 
 Before doing expensive work, reconcile **previews its delta** (`will build / will
-rebuild (stale) / will leave / candidate concerns available`) — the
+rebuild (stale) / will leave / candidate concepts available`) — the
 `plan`-then-`apply` split, so an overloaded ingest never surprises you.
 
-Optional future skill: `/wikify-compare` — synthesize a *cross-repo* concern
+Optional future skill: `/wikify-compare` — synthesize a *cross-repo* concept
 page (e.g. "sharding across MaxText / axlearn / mine"). Distinct from connect:
 connect *links*, compare *synthesizes*. Out of scope for v1.
 
@@ -70,16 +70,16 @@ stays easy.
    - **L1 Grounding** — SCIP symbol graph. Deterministic, exhaustive, no LLM.
    - **L2 Static evidence** — tests + dynamics-bearing source surfaces +
      in-repo design docs/comments. All available without running anything.
-   - **L3 Comprehension** — concern-driven mechanism pages. LLM, every claim
+   - **L3 Comprehension** — concept-driven mechanism pages. LLM, every claim
      cited into L1/L2.
    - **L4 (optional, downstream)** — runtime enrichment from IR/HLO + traces,
      run only when hardware + a workload exist. Not a precondition for ingest.
 
-3. **Ingestion is concern-driven (top-down), not file-driven (bottom-up).**
+3. **Ingestion is concept-driven (top-down), not file-driven (bottom-up).**
    Bottom-up "summarize the repo" is the root cause of shallow answers. Drive
-   synthesis from an explicit list of architectural concerns. **But selectivity
-   needs a coverage floor** (decision 7): concern-driven synthesis alone silently
-   drops whole subsystems the concern list forgot, so a deterministic catalog
+   synthesis from an explicit list of architectural concepts. **But selectivity
+   needs a coverage floor** (decision 7): concept-driven synthesis alone silently
+   drops whole subsystems the concept list forgot, so a deterministic catalog
    pass represents every remaining module.
 
 4. **Pure markdown product; no database, no binary shipped.** The wiki stays
@@ -105,10 +105,10 @@ stays easy.
    any heuristic edge it produces must carry `ast-heuristic` provenance so it
    never masquerades as a resolved fact.
 
-7. **Two-tier coverage: concerns for depth, catalogs for the whole repo.**
-   Concern synthesis (decision 3) is deliberately *selective*, which means a
-   forgotten concern = a missing subsystem. The first torchtitan ingest proved
-   this: three Trainer concerns, and **every model** (`Transformer`, `Attention`,
+7. **Two-tier coverage: concepts for depth, catalogs for the whole repo.**
+   Concept synthesis (decision 3) is deliberately *selective*, which means a
+   forgotten concept = a missing subsystem. The first torchtitan ingest proved
+   this: three Trainer concepts, and **every model** (`Transformer`, `Attention`,
    …) was absent — the essence of the repo. Two failed "obvious" fixes show why
    the right fix is a set-difference, not more traversal:
    - *Reachability traversal fails by construction.* The trainer invokes a model
@@ -121,7 +121,7 @@ stays easy.
      graphs (e.g. CodeGraphContext's dead-code detector).
    - *Enumeration sidesteps dispatch.* SCIP already enumerated **every** symbol,
      so coverage never asks "what is reachable?" It asks "what is *represented*?"
-     `coverage = documentable_symbols − concern-cited`, then emit one **catalog
+     `coverage = documentable_symbols − concept-cited`, then emit one **catalog
      page per module** (symbols, signatures, def links, intra-module calls/refs).
      Deterministic, no LLM, cannot miss a file.
 
@@ -134,6 +134,42 @@ stays easy.
    `is_implementation`; intra-repo concept-correspondence à la Stage 7b), never a
    precondition for whole-repo coverage. Catalog entries are `extracted`
    provenance; any future heuristic bridge carries `heuristic`/`inferred`.
+
+8. **Comprehension is derived and graded — not authored and binary.** Coverage
+   (decision 7) guarantees every symbol is *represented*; this decision governs
+   how much each is *understood*. The defect it fixes: the first ingest took its
+   comprehension agenda from a hand-written concept list — **manual** (so it had
+   gaps), **fixed-size** (3, regardless of repo), and **binary** (deep LLM page or
+   nothing). The fix makes the agenda a *function of the code's own topology*:
+   - **Derived, not authored.** What earns a page is computed from intrinsic,
+     language-agnostic signals every repo has — the module/package tree and graph
+     centrality (fan-in). Human curation is an optional override, never the
+     source. The wiki covers what the code says is important, not what someone
+     remembered to list.
+   - **Graded, not binary.** LLM effort on a unit is *monotonic in its
+     centrality*, a gradient with four bands: (1) high-centrality cluster → deep
+     **mechanism page**; (2) any symbol with a **docstring** → the author's own
+     words, `extracted`, free; (3) mid-centrality, undocumented → a short
+     synthesized **purpose blurb** (LLM, only as a fallback for where the author
+     was silent); (4) low/trivial → **structural catalog** only. No important unit
+     is un-annotated; no trivial unit burns a deep page.
+   - **The unit is the derived cluster** (module-tree node / graph community), not
+     the file (→ shallow "summarize everything") and not the hand-named concept
+     (→ gaps). Boundaries are computed; size adapts to the repo.
+   - **Docstrings are L2 authored evidence — prefer them over synthesis.** A
+     docstring is comprehension that is *also ground truth*: the author's stated
+     intent, more authoritative than any LLM guess and free to ingest. So they
+     reorder the economy — *spend the model only where the author was silent, or
+     where the truth is cross-symbol* (mechanism, execution order) and no single
+     docstring can carry it. This also sharpens the Python/LLM split (decision in
+     §implementation): the docstring covers "what this symbol is for"; the LLM
+     covers "how these symbols work together" — the one thing docstrings can't.
+   - **Discovery is deterministic; only synthesis is LLM.** Clustering, centrality
+     ranking, tier assignment, and auto-seeding are pure graph math. The model
+     only writes prose for units the deterministic layer already selected.
+
+   In layer terms: **L3's agenda is a deterministic function of L1's topology, and
+   L3's effort density is monotonic in symbol centrality.**
 
 ---
 
@@ -156,8 +192,8 @@ stays easy.
                           │ evidence pages, cited to L1
                           ▼
             ┌──────────────────────────────────────────────────────┐
-            │ L3 COMPREHENSION (LLM, concern-driven)               │
-            │   per concern: traverse L1 graph, read source+L2,    │
+            │ L3 COMPREHENSION (LLM, concept-driven)               │
+            │   per concept: traverse L1 graph, read source+L2,    │
             │   emit ONE mechanism page, every claim cites L1/L2   │
             └──────────────────────────────────────────────────────┘
                           │
@@ -207,7 +243,7 @@ stays easy.
   symbol is flagged `stale`. The citation graph gives this for free.
 - **Behavioral changes are not always AST-visible** (a lowering tweak with an
   identical signature). At ingest you can't catch these — flag it: a page whose
-  cited symbols are unchanged but whose *concern* touches lowering/scheduling
+  cited symbols are unchanged but whose *concept* touches lowering/scheduling
   carries `behavioral_recheck: true`. The optional L4 enrichment (if/when run)
   diffs IR/HLO to confirm or update. AST-diff alone drives core re-ingestion.
 
@@ -232,6 +268,12 @@ recoverable *statically* from three sources — no hardware, no runnable build:
   are statically locatable via SCIP; the synthesis reads them directly.
 - **In-repo design docs / comments / RFCs**: framework source usually explains
   the strategy in prose somewhere; ingest it as `wiki/sources/<slug>.md`.
+- **Docstrings (per-symbol authored intent)**: SCIP captures each symbol's
+  docstring in `SymbolInformation.documentation`. This is the *highest-grounding,
+  zero-cost* comprehension layer (decision 8): the author's own "what this does",
+  `extracted` provenance. It is rendered inline on the symbol's catalog entry
+  (module/class/member level, summary form) and surfaced to synthesis as citable
+  L2 evidence, so the model can quote intent instead of guessing it.
 
 ### Stage 4b — Runtime enrichment (L4, OPTIONAL, downstream)
 Run only when hardware + a workload exist — never a precondition for ingest.
@@ -240,26 +282,50 @@ Run only when hardware + a workload exist — never a precondition for ingest.
   separated from the static `## Dynamics (design intent)` section.
 - Naturally lives in the autoresearch loop, which already captures HLO per run.
 
-### Stage 5 — Concern-driven synthesis (L3, LLM)
+### Stage 5 — Derived, graded synthesis (L3, LLM)
 
-**Where concerns come from (four layers; only the last is manual, and optional):**
-1. **Shared default manifest** — a stable common set for the domain
-   (`compilation-pipeline, dispatch-path, compute-comm-overlap, memory-management,
-   lowering, sharding`). Covers ~80% with zero per-repo work.
-2. **Type-aware defaults** — the lane router picks a set per repo kind: a Pallas
-   repo gets `block-sizing / autotune / memory-access / numerics`; a trainer gets
-   `sharding / checkpointing / data-pipeline`.
-3. **Discovery (automated suggestions)** — nominate candidates the defaults miss:
-   high-centrality SCIP clusters with no page, top-level module names, README
-   headings, test-dir names. Surfaced, not auto-applied — written into
-   `wiki/<slug>/index.md` under **"Candidate concerns (not yet built)"** so the
-   capability self-advertises and the user can pull them in.
-4. **Curation (optional override)** — the user edits `config/<slug>.md`, adding
-   the highest-value input: a concern's **seed entry-point symbols**. Worth doing
-   only for priority repos (torch_tpu, jax) where your architectural knowledge
-   beats discovery; lean on 1–3 for the long tail.
+The comprehension agenda is **derived from topology, not authored**, and effort is
+**graded by centrality** (decision 8). Discovery is the primary driver; the manual
+list is an optional override, not the source.
 
-**Per concern, the agent:**
+**Where the agenda comes from (derivation order — deterministic until synthesis):**
+1. **Discovery (primary, automated).** Cluster the symbol graph into cohesive
+   units (default: the module/package tree, refinable by graph community
+   structure), rank by centrality (aggregate fan-in), and **assign a tier by
+   relative rank** so thresholds adapt to any repo size. Auto-seed each unit from
+   its highest-centrality symbols — no hand-seeding. This is the bulk of the
+   agenda for every repo.
+2. **Shared + type-aware defaults.** A stable domain set (`compilation-pipeline,
+   dispatch-path, compute-comm-overlap, …`) and a per-repo-kind set (trainer →
+   `sharding / checkpointing / data-pipeline`; Pallas → `block-sizing / autotune /
+   numerics`) seed the agenda before discovery refines it.
+3. **Curation (optional override).** The user edits `config/<slug>.md` to add or
+   re-tier a concept, or supply seed symbols — worth it only for priority repos;
+   never required.
+
+**Synthesis is HEAVY processing, not annotation.** A concept page that merely
+traces the code with a citation per clause is a failure even if it lints. The
+agent uses the packet as a grounding/citation index but **reads the actual source**
+(packets truncate) and writes for a senior reader: an **Overview** (the mental
+model), a grounded **Mermaid diagram** of the mechanism, a **Design rationale**
+(the *why*), then an insight-rich Mechanism with citations woven in (a few per
+paragraph, no `[extracted →]` tag spam). The bar: a reader learns something they
+could not get by skimming the code.
+
+**A top-level overview page per repo** (`wiki/<slug>/overview.md`) is synthesized
+last, over the concept pages: the main concepts, core *system-level* diagrams, and
+a map of which concept answers which question — the god-node entry point.
+
+**Graded tiers (LLM effort monotonic in centrality):**
+- **Deep mechanism page** — high-centrality clusters. Full heavy synthesis
+  (Overview + diagram + rationale + insight Mechanism, citations woven).
+- **Docstring annotation** — any symbol with a docstring: the author's words,
+  `extracted`, free (Stage 4 / 6b). Preferred over synthesis where present.
+- **Purpose blurb** — mid-centrality, undocumented: a short synthesized "what this
+  is for", LLM, as a fallback for where the author was silent.
+- **Structural catalog** — the trivial/experiment tail (Stage 6b, no LLM).
+
+**Per concept, the agent:**
   1. seeds from entry symbols (config or discovered), **traverses the SCIP graph**
      (real edges, not grep) to gather the implementing subgraph,
   2. reads that source + relevant L2 evidence + tests,
@@ -270,12 +336,12 @@ Run only when hardware + a workload exist — never a precondition for ingest.
 - **Citation rule**: every non-trivial claim ends with a SCIP moniker or L2
   artifact ref. Uncited claims are marked `> [!inferred]`.
 
-**Adding a concern later (same-commit reconcile).** Add it to `config/<slug>.md`
+**Adding a concept later (same-commit reconcile).** Add it to `config/<slug>.md`
 (or accept a candidate) and re-run ingest. Reconcile builds **only** the new
 page from the existing SCIP index (no re-extraction, no commit bump, nothing
 marked stale), materializes newly-cited stubs, wires see-also/back-links
 (link-insertion only), re-lints, and — if the repo is connected — re-runs connect
-for it + neighbors (a new concern can create cross-repo correspondences).
+for it + neighbors (a new concept can create cross-repo correspondences).
 
 ### Stage 6 — Assemble, lint, publish
 - **Citation linter** (hard gate): every citation must resolve to a symbol in
@@ -286,19 +352,25 @@ for it + neighbors (a new concern can create cross-repo correspondences).
 - Product is the `wiki/` markdown tree. Nothing else is shipped.
 
 ### Stage 6b — Structural coverage / module catalogs (deterministic, no LLM)
-The whole-repo floor under concern selectivity (load-bearing decision 7). After
-the concern pages are linted, classify every documentable symbol by a
+The whole-repo floor under concept selectivity (load-bearing decision 7). After
+the concept pages are linted, classify every documentable symbol by a
 **set-difference over the SCIP symbol table** — never a graph walk:
 - `documentable` = every in-repo class / function / method / module value SCIP
   found (locals, params, externals already pruned).
-- `covered` = the symbols cited by a concern page (read back from the pages).
+- `covered` = the symbols cited by a concept page (read back from the pages).
 - For each module (`= def file`), emit `wiki/<slug>/catalog/<module-path>.md`: a
   generated structural index of that module's symbols — signatures, def
-  `file:line`, intra-module calls/refs, and a link to the concern page for any
-  covered symbol. **Every** documentable symbol lands on its module's catalog,
-  so the repo is fully represented even where no concern touched it.
+  `file:line`, intra-module calls/refs, class→class `uses`/`used-by` edges, and a
+  link to the concept page for any covered symbol. **Every** documentable symbol
+  lands on its module's catalog, so the repo is fully represented even where no
+  concept touched it.
+- **Docstrings inline (decision 8).** Each class / function / module-value entry
+  carries its docstring summary (the author's intent, `extracted`), so the
+  catalog conveys *meaning*, not just structure — the cheapest, highest-grounding
+  comprehension layer, with no model call. Undocumented symbols fall back to
+  structure only.
 - Emit a **coverage report** into `wiki/<slug>/index.md`: documentable total,
-  deep (concern) %, catalog-only count, classes represented. This makes
+  deep (concept) %, catalog-only count, classes represented. This makes
   "whole repo ingested" a measured property, not a hope.
 
 Catalogs are `extracted` (generated straight from SCIP, correct by construction)
@@ -319,14 +391,20 @@ wiki/                          the product (shipped)
   index.md                     top-level catalog: all repos + connection status
   <slug>/                      one self-contained silo per repo
     index.md                   per-repo catalog
-    concerns/<concern>.md      L3 mechanism pages (the answer surface)
+    concepts/<concept>.md      L3 mechanism pages (the answer surface)
     catalog/<module-path>.md   Stage-6b generated structural index per module
-                               (the whole-repo coverage floor; one per def-file)
+                               (the whole-repo coverage floor; one per def-file).
+                               ALSO the home of every symbol: its frontmatter
+                               `symbols:` map (anchor→moniker) is the citation
+                               target + the linter's resolution table. Citations
+                               are `../catalog/<module>.md#<QualifiedName>`.
     maps/dispatch.md           generated op→kernel→backend table
-    symbols/<moniker>.md       stub for symbols cited by a concern page OR
-                               referenced cross-repo by a connected silo
     tests/<area>.md            L2 test-spec pages
     sources/<name>.md          L2 in-repo design docs / RFC notes
+
+    (No `symbols/` directory: per-symbol stubs were folded into `catalog/` —
+     one source-tree-organized home per symbol. A cross-repo connect link
+     therefore targets a catalog anchor, not a stub file.)
   _connect/                    cross-repo layer (present only when >1 repo)
     decisions.md               concept-correspondence keep/drop cache
     compat.md                  linkable (repo@sha, repo@sha) pairs
@@ -374,7 +452,7 @@ updated: YYYY-MM-DD
 Per-page frontmatter (every other page):
 ```yaml
 provenance: extracted | inferred | mixed
-concern: <concern-slug>  # concern + evidence pages
+concept: <concept-slug>  # concept + evidence pages
 updated: YYYY-MM-DD
 status: fresh | stale     # currency vs the silo's commit; set by Stage 2 diff
 # synthesized_at: <sha>   # optional audit trail only, not a version pin
@@ -397,16 +475,16 @@ status: fresh | stale     # currency vs the silo's commit; set by Stage 2 diff
 
 ## How this minimizes effort
 
-- **Query time**: agent reads `index.md` → the concern page answers directly →
+- **Query time**: agent reads `index.md` → the concept page answers directly →
   citations let it verify or drill down deterministically. No re-derivation.
 - **New repo**: drop a `config/<slug>.md`, run `/wikify-ingest-repo <slug>`.
-  Concerns inherit a shared default + type-aware set, overridden per repo.
+  Concepts inherit a shared default + type-aware set, overridden per repo.
 - **Upgrade**: `/wikify-ingest-repo <slug> --ref <new>` — reconcile re-runs only
   `changed` symbols and `stale` pages.
 - **Scale (PyTorch)**: the SCIP index holds *all* symbols (ingestion-side);
-  markdown materializes only concern pages, the dispatch map, and cited-symbol
+  markdown materializes only concept pages, the dispatch map, and cited-symbol
   stubs. The structural layer is exhaustive and cheap; the prose layer is
-  concern-scoped and curated. The shipped tree stays small.
+  concept-scoped and curated. The shipped tree stays small.
 - **Multi-repo**: silos are ingested/updated independently; connect re-runs as a
   cheap deterministic post-pass (dependency links are free), so adding the Nth
   repo costs one ingest + one connect, not a re-build of the whole wiki.
@@ -417,7 +495,7 @@ status: fresh | stale     # currency vs the silo's commit; set by Stage 2 diff
 
 Config is **markdown with YAML frontmatter** — same shape as every wiki page, so
 the agent edits it exactly as it edits pages and there is no second syntax.
-Frontmatter carries typed scalars; the body carries the concern list (the wiki's
+Frontmatter carries typed scalars; the body carries the concept list (the wiki's
 table of contents), which benefits from being an annotatable markdown list.
 
 It is an **authored input** — neither derived nor product — so it lives at the
@@ -437,10 +515,10 @@ docs:  ["**/README*.md", "docs/**/*.md", "**/*RFC*.md"]
 
 # torch_tpu — ingest config
 
-Concerns inherit a shared default + a type-aware set (Stage 5); the list below
+Concepts inherit a shared default + a type-aware set (Stage 5); the list below
 overrides/extends. Seeds are optional entry-point symbols; `(auto)` = discover.
 
-## Concerns
+## Concepts
 - **compilation-pipeline** — seeds: `LazyGraphExecutor::Compile`, `Compiler::LowerToHlo`
 - **dispatch-path** — seeds: (auto)
 - **compute-comm-overlap** — seeds: `CollectiveScheduler::Schedule`
@@ -451,7 +529,7 @@ overrides/extends. Seeds are optional entry-point symbols; `(auto)` = discover.
 ```
 
 The schema linter validates this file's structure (known frontmatter keys, a
-`## Concerns` list) the same way it validates pages — recovering the strict
+`## Concepts` list) the same way it validates pages — recovering the strict
 parse TOML would give, with tooling already in the build.
 
 ---
@@ -463,7 +541,7 @@ parse TOML would give, with tooling already in the build.
   or the **connected wiki** (silos + inline cross-links + `_connect/`). Both are
   pure markdown; the connected form just has links resolved.
 - On consume, verify each repo's installed version == `commit` pin; mismatch →
-  warn and mark affected concern pages `version-skew`. For the connected form,
+  warn and mark affected concept pages `version-skew`. For the connected form,
   also honor `_connect/compat.md` — cross-links are valid only for the pinned
   pairs recorded there.
 - `extracted` pages are safe to trust as facts. `inferred` pages are
@@ -478,7 +556,7 @@ parse TOML would give, with tooling already in the build.
   SCIP format + `scip` CLI, your XProf MCP (only for the optional L4 pass). No
   database, no new runtime dep.
 - **Build (small, targeted)**: the dispatch/registration extractor (Stage 3),
-  the concern-driven synthesis prompt + traversal (Stage 5), the citation linter
+  the concept-driven synthesis prompt + traversal (Stage 5), the citation linter
   (Stage 6), the SCIP diff (Stage 2), and the connect pass (Stage 7:
   cross-repo citation re-resolution + the concept-correspondence judgment cache +
   the compat/version-coherence check). None of these are large; they're glue
@@ -505,7 +583,7 @@ external tools*, like a compiler — that is not code reuse.)
   rendering reference. Concept only; its tree-sitter core is out of scope.
 - **AutoDocs/Sita** → **topological dependency ordering**: generate in dependency
   order so cross-repo links resolve (ingest xla before torch_tpu), and order
-  concern synthesis leaf-up within a repo.
+  concept synthesis leaf-up within a repo.
 - **Karpathy LLM-wiki / the autoresearch `SCHEMA.md`** → the ingest/lint
   operations model, `raw/` vs `wiki/` separation, `index.md` + `log.md`
   discoverability. v1 writes its **own** self-contained schema (standalone repo);
@@ -535,10 +613,10 @@ rewritten** — is deterministic, and has **zero churn**. Connect all of these.
 
 **(b) Concept correspondences — semantic, selective, judgment-cached.** Repos
 that independently implement the same idea (sharding, attention, remat) with no
-import relationship. Selected by the **shared concern vocabulary**, NOT by
+import relationship. Selected by the **shared concept vocabulary**, NOT by
 intra-repo centrality (a concept central to one repo may have no analog
 elsewhere; importance-*within* ≠ importance-*for-connection*). connect links
-concern pages that share a concern key across repos, and the LLM decides whether
+concept pages that share a concept key across repos, and the LLM decides whether
 a given correspondence is worth keeping.
 
 ### Links are inline; connect is a re-runnable transform
@@ -600,7 +678,7 @@ wiki/
   index.md                   top-level catalog (all repos)
   torch_tpu/                 the silo
     index.md
-    concerns/
+    concepts/
       compilation-pipeline.md
       dispatch-path.md
       compute-comm-overlap.md
@@ -634,15 +712,15 @@ updated: 2026-06-19
 
 # torch_tpu internals wiki
 
-Generated, grounded wiki. Start from a concern; drill into cited symbols.
+Generated, grounded wiki. Start from a concept; drill into cited symbols.
 
-## Concerns
-| Concern | Page | Status |
+## Concepts
+| Concept | Page | Status |
 |---|---|---|
-| Compilation pipeline | [compilation-pipeline](concerns/compilation-pipeline.md) | fresh |
-| Dispatch path | [dispatch-path](concerns/dispatch-path.md) | fresh |
-| Compute/comm overlap | [compute-comm-overlap](concerns/compute-comm-overlap.md) | behavioral_recheck |
-| Memory management | [memory-management](concerns/memory-management.md) | fresh |
+| Compilation pipeline | [compilation-pipeline](concepts/compilation-pipeline.md) | fresh |
+| Dispatch path | [dispatch-path](concepts/dispatch-path.md) | fresh |
+| Compute/comm overlap | [compute-comm-overlap](concepts/compute-comm-overlap.md) | behavioral_recheck |
+| Memory management | [memory-management](concepts/memory-management.md) | fresh |
 
 ## Maps
 - [Dispatch map](maps/dispatch.md) — op → kernel → dispatch key (generated)
@@ -652,14 +730,14 @@ Generated, grounded wiki. Start from a concern; drill into cited symbols.
 Design-intent dynamics are labeled; none are runtime-measured (no L4 pass run).
 ```
 
-### Example 2 — `wiki/torch_tpu/concerns/compilation-pipeline.md` (mechanism page)
+### Example 2 — `wiki/torch_tpu/concepts/compilation-pipeline.md` (mechanism page)
 
 ```markdown
 ---
 title: Compilation pipeline
-type: concern
+type: concept
 provenance: mixed
-concern: compilation-pipeline
+concept: compilation-pipeline
 updated: 2026-06-19
 status: fresh
 ---
@@ -727,7 +805,7 @@ updated: 2026-06-19
 - `LoweringContext::Build` · `xla::XlaBuilder::Build`  *(uncited: not yet stubbed)*
 
 ## Cited by
-- [Compilation pipeline](../concerns/compilation-pipeline.md)
+- [Compilation pipeline](../concepts/compilation-pipeline.md)
 ```
 
 ### Example 4 — `wiki/torch_tpu/maps/dispatch.md` (generated excerpt)
@@ -758,7 +836,7 @@ Generated from `TORCH_LIBRARY_IMPL` sites. Do not hand-edit.
 title: "Tests: compute/comm overlap"
 type: test-spec
 provenance: extracted
-concern: compute-comm-overlap
+concept: compute-comm-overlap
 updated: 2026-06-19
 ---
 
@@ -796,10 +874,10 @@ link. Prose is untouched; only the citation changed:
 **Concept-correspondence decision cache** — `wiki/_connect/decisions.md`:
 
 ```markdown
-| Concern | repo A page | repo B page | decision |
+| Concept | repo A page | repo B page | decision |
 |---|---|---|---|
-| compute-comm-overlap | torch_tpu/concerns/compute-comm-overlap | maxtext/concerns/compute-comm-overlap | keep |
-| memory-management | torch_tpu/concerns/memory-management | jax/concerns/memory-management | drop (different abstraction) |
+| compute-comm-overlap | torch_tpu/concepts/compute-comm-overlap | maxtext/concepts/compute-comm-overlap | keep |
+| memory-management | torch_tpu/concepts/memory-management | jax/concepts/memory-management | drop (different abstraction) |
 ```
 
 **Compatibility record** — `wiki/_connect/compat.md`:

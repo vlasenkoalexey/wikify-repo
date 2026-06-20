@@ -17,7 +17,16 @@ from pathlib import Path
 
 import typer
 
-from . import acquire, assemble, diff, lint, packet, scip_index, state as state_mod
+from . import (
+    acquire,
+    assemble,
+    coverage as coverage_mod,
+    diff,
+    lint,
+    packet,
+    scip_index,
+    state as state_mod,
+)
 from .config import RepoConfig, load_config
 
 app = typer.Typer(add_completion=False, help="Ingest a repo into a grounded markdown wiki.")
@@ -144,8 +153,17 @@ def finalize(
             concern_status.append((concern.slug, "missing"))
     state_mod.save_state(p.state, state)
 
+    # Stage 6b — structural coverage: catalog every module so the whole repo is
+    # represented, not just the concern-covered slice. Deterministic, no LLM.
+    catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
+    report = coverage_mod.compute_report(graph, p.wiki_slug, catalogued=catalogued)
+    typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
+    typer.echo(report.render())
+
     scip_tool = "scip-python"
-    assemble.write_repo_index(p.wiki_slug, slug, acq.commit, scip_tool, concern_status, _today())
+    assemble.write_repo_index(
+        p.wiki_slug, slug, acq.commit, scip_tool, concern_status, _today(), report=report
+    )
     assemble.write_top_index(p.wiki, [d.name for d in p.wiki.iterdir() if d.is_dir()], _today())
     typer.echo(f"assembled wiki/{slug}/index.md  (commit {acq.commit[:10]})")
 
@@ -165,6 +183,28 @@ def lint_cmd(
     for e in report.errors:
         typer.echo(f"  {e}", err=True)
     raise typer.Exit(1)
+
+
+@app.command()
+def coverage(
+    slug: str,
+    root: Path = typer.Option(Path("."), help="Project root."),
+    emit: bool = typer.Option(False, help="Write/refresh catalog pages."),
+) -> None:
+    """Report whole-repo coverage (set-difference over the SCIP symbol table)."""
+    p, _cfg = _load(root, slug)
+    if not p.scip.exists():
+        typer.echo(f"error: no SCIP index at {p.scip}; run `wikify prepare {slug}` first", err=True)
+        raise typer.Exit(2)
+    graph = _graph(p)
+    catalogued: set[str] = set()
+    if emit:
+        catalogued, paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
+        typer.echo(f"catalog: wrote {len(paths)} module page(s)")
+    else:
+        # Treat already-written catalog pages' documentable set as represented.
+        catalogued = set(coverage_mod.documentable_symbols(graph)) if (p.wiki_slug / "catalog").is_dir() else set()
+    typer.echo(coverage_mod.compute_report(graph, p.wiki_slug, catalogued=catalogued).render())
 
 
 @app.command()

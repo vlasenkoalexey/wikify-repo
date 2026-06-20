@@ -77,7 +77,10 @@ stays easy.
 
 3. **Ingestion is concern-driven (top-down), not file-driven (bottom-up).**
    Bottom-up "summarize the repo" is the root cause of shallow answers. Drive
-   synthesis from an explicit list of architectural concerns.
+   synthesis from an explicit list of architectural concerns. **But selectivity
+   needs a coverage floor** (decision 7): concern-driven synthesis alone silently
+   drops whole subsystems the concern list forgot, so a deterministic catalog
+   pass represents every remaining module.
 
 4. **Pure markdown product; no database, no binary shipped.** The wiki stays
    grep-able, human-readable, git-diffable, distributable. The SCIP index is a
@@ -101,6 +104,36 @@ stays easy.
    *complement* (intra-symbol detail), never a competing cross-symbol graph, and
    any heuristic edge it produces must carry `ast-heuristic` provenance so it
    never masquerades as a resolved fact.
+
+7. **Two-tier coverage: concerns for depth, catalogs for the whole repo.**
+   Concern synthesis (decision 3) is deliberately *selective*, which means a
+   forgotten concern = a missing subsystem. The first torchtitan ingest proved
+   this: three Trainer concerns, and **every model** (`Transformer`, `Attention`,
+   …) was absent — the essence of the repo. Two failed "obvious" fixes show why
+   the right fix is a set-difference, not more traversal:
+   - *Reachability traversal fails by construction.* The trainer invokes a model
+     as `model_parts[0](inputs)` via `nn.Module.__call__` — a **dynamic dispatch
+     with no static call edge**. Walking out from entry points cannot cross that
+     seam; the models look unreachable.
+   - *A per-file "is it connected?" check is worse.* Model files have ~zero static
+     inbound edges (their one inbound edge is the dynamic one), so a connectivity
+     test mislabels them as dead code — the exact failure mode of name-based call
+     graphs (e.g. CodeGraphContext's dead-code detector).
+   - *Enumeration sidesteps dispatch.* SCIP already enumerated **every** symbol,
+     so coverage never asks "what is reachable?" It asks "what is *represented*?"
+     `coverage = documentable_symbols − concern-cited`, then emit one **catalog
+     page per module** (symbols, signatures, def links, intra-module calls/refs).
+     Deterministic, no LLM, cannot miss a file.
+
+   **Coverage is representation, not connection.** A catalog represents each
+   module and captures its *internal* edges (those are real static calls), so a
+   model's `Transformer → TransformerBlock → Attention → FeedForward` spine is
+   fully grounded. It does **not** synthesize the missing trainer→model edge, nor
+   unify the N independent `Attention` classes into one concept — those are
+   separate, optional operations (static devirtualization via SCIP
+   `is_implementation`; intra-repo concept-correspondence à la Stage 7b), never a
+   precondition for whole-repo coverage. Catalog entries are `extracted`
+   provenance; any future heuristic bridge carries `heuristic`/`inferred`.
 
 ---
 
@@ -252,6 +285,26 @@ for it + neighbors (a new concern can create cross-repo correspondences).
   `wiki/index.md` (all repos + connection status) + per-page provenance frontmatter.
 - Product is the `wiki/` markdown tree. Nothing else is shipped.
 
+### Stage 6b — Structural coverage / module catalogs (deterministic, no LLM)
+The whole-repo floor under concern selectivity (load-bearing decision 7). After
+the concern pages are linted, classify every documentable symbol by a
+**set-difference over the SCIP symbol table** — never a graph walk:
+- `documentable` = every in-repo class / function / method / module value SCIP
+  found (locals, params, externals already pruned).
+- `covered` = the symbols cited by a concern page (read back from the pages).
+- For each module (`= def file`), emit `wiki/<slug>/catalog/<module-path>.md`: a
+  generated structural index of that module's symbols — signatures, def
+  `file:line`, intra-module calls/refs, and a link to the concern page for any
+  covered symbol. **Every** documentable symbol lands on its module's catalog,
+  so the repo is fully represented even where no concern touched it.
+- Emit a **coverage report** into `wiki/<slug>/index.md`: documentable total,
+  deep (concern) %, catalog-only count, classes represented. This makes
+  "whole repo ingested" a measured property, not a hope.
+
+Catalogs are `extracted` (generated straight from SCIP, correct by construction)
+and are not run through the citation linter. They represent and *internally*
+connect modules; they do not bridge dynamic-dispatch seams (see decision 7).
+
 ---
 
 ## Wiki output schema
@@ -267,6 +320,8 @@ wiki/                          the product (shipped)
   <slug>/                      one self-contained silo per repo
     index.md                   per-repo catalog
     concerns/<concern>.md      L3 mechanism pages (the answer surface)
+    catalog/<module-path>.md   Stage-6b generated structural index per module
+                               (the whole-repo coverage floor; one per def-file)
     maps/dispatch.md           generated op→kernel→backend table
     symbols/<moniker>.md       stub for symbols cited by a concern page OR
                                referenced cross-repo by a connected silo

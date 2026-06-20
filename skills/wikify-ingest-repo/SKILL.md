@@ -46,8 +46,11 @@ synthesis in Python; never push linting into your prose.
    ```
    The citation linter is a hard gate: every `symbols/*.md` citation must resolve
    to a real SCIP symbol, every Entry-points/Mechanism item must be cited, and no
-   symbol outside the packet subgraph may appear. On success it assembles
-   `wiki/<slug>/index.md` and updates reconcile state.
+   symbol outside the packet subgraph may appear. On success it also runs
+   **Stage 6b coverage**: it emits a `catalog/<module>.md` page for every module
+   (deterministic, no model) so the *whole repo* is represented — not just the
+   concerns you wrote — and prints a coverage report (deep % vs catalog-only).
+   It then assembles `wiki/<slug>/index.md` and updates reconcile state.
 
 4. **Repair loop.** If `finalize` exits non-zero, it lists each failing
    `page:line [rule N]`. Fix those pages (add the missing citation, create the

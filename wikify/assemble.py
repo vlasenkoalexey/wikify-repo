@@ -17,12 +17,30 @@ def write_repo_index(
     scip_tool: str,
     concern_status: list[tuple[str, str]],  # (concern_slug, status)
     date: str,
+    report=None,  # coverage.CoverageReport | None
 ) -> Path:
     wiki_slug_dir = Path(wiki_slug_dir)
     wiki_slug_dir.mkdir(parents=True, exist_ok=True)
     rows = "\n".join(
         f"| {c} | [{c}](concerns/{c}.md) | {status} |" for c, status in concern_status
     )
+    coverage_section = ""
+    if report is not None:
+        coverage_section = f"""
+## Coverage
+Two tiers: **concern pages** explain mechanisms deeply (selective); **module
+catalogs** represent the rest so the whole repo is navigable. Coverage is a
+set-difference over the SCIP symbol table, not a graph walk — every documentable
+symbol is enumerated and represented.
+
+- documentable symbols: **{report.total}** across {report.modules} modules
+- deep (concern pages): **{report.covered}** ({report.pct_deep:.1f}%)
+- catalog-only: **{report.catalog_only}**
+- represented total: **{report.represented}** ({report.pct_represented:.1f}%)
+- classes represented: **{report.classes_represented}/{report.classes_total}**
+
+See [`catalog/`](catalog/) for the generated per-module structural index.
+"""
     text = f"""---
 slug: {slug}
 commit: {ref}
@@ -39,7 +57,7 @@ The commit pin above is the single source version for every page in this silo.
 | Concern | Page | Status |
 |---|---|---|
 {rows}
-
+{coverage_section}
 ## Provenance
 `extracted` = from SCIP / source. `inferred` = LLM judgment, treat as such.
 Design-intent dynamics are labeled; none are runtime-measured (no L4 pass run).

@@ -36,6 +36,7 @@ steps**. Keeping this boundary clean is the most important implementation rule.
 | evidence collection (tests/docs/dynamics-source) | **Python** | 4 |
 | **concern synthesis → mechanism pages** | **LLM agent** | 5 |
 | citation linter, assemble, index | **Python** | 6 |
+| coverage set-difference → module catalogs | **Python** | 6b |
 | connect: dependency links | **Python** | 7a |
 | connect: concept-correspondence judgment | **LLM agent** | 7b |
 
@@ -74,6 +75,9 @@ wikify-repo/
     packet.py         # build synthesis packets (Python → LLM interface)
     lint.py           # Stage 6: citation linter
     assemble.py       # Stage 6: write index.md, candidate concerns
+    coverage.py       # Stage 6b: set-difference coverage + per-module catalog pages
+    source.py         # read def-body snippets + body hashes (shared by packet/diff)
+    monikers.py       # parse SCIP symbol strings → descriptors (shared)
     connect.py        # Stage 7 (Phase 3)
     slug.py           # moniker ↔ filename
     state.py          # .cache/state/<slug>.json
@@ -103,9 +107,14 @@ wikify finalize <slug>
       # Stage 6. Lints the agent-written pages, assembles index.md, updates state.
       # Non-zero exit + a report if any citation is unresolved.
 wikify lint     <slug>            # Stage 6 lint only (re-runnable)
+wikify coverage <slug> [--emit]   # Stage 6b: report whole-repo coverage; --emit (re)writes catalogs
 wikify plan     <slug> [--ref]    # dry-run: print the delta, emit nothing
 wikify connect  [--repos a,b,...] # Phase 3
 ```
+
+`finalize` runs Stage 6b automatically (lint concerns → emit module catalogs →
+write the coverage report into `index.md`). `wikify coverage` is the standalone
+inspector — it answers "is the whole repo represented?" without re-synthesizing.
 
 `prepare`/`finalize` are the two halves the SKILL.md orchestrates around agent
 synthesis. `ingest` is the conceptual reconcile = `prepare` + agent + `finalize`.
@@ -188,16 +197,36 @@ creates any missing `symbols/<slug>.md` stubs for symbols it cites.
 Reconcile: new symbol body-hashes vs `state.symbols` → changed monikers → any page
 whose `cited` ∩ changed ≠ ∅ is `stale`. Concerns in config with no page = `build`.
 
+### 5.6 Coverage / catalog (`coverage.py`, Stage 6b)
+A **set-difference over the SCIP symbol table — NOT a graph walk** (see design
+decision 7 for the why). Contracts:
+- `documentable_symbols(graph)` = in-repo symbols with a def whose terminal
+  descriptor suffix ∈ {Type (class), Method (fn/method), Term (module value)}.
+  Externals (no def) and locals/params are excluded.
+- `covered` = monikers cited by a concern page (resolved via each page's stub
+  frontmatter, same resolver the linter uses).
+- A symbol is `covered` (deep, concern page), `catalog-only` (in a generated
+  module catalog), or `unrepresented` (a coverage hole — should be empty after
+  6b). `emit_catalogs` writes one `catalog/<def-file>.md` per module listing all
+  its documentable symbols, so the catalogued set == the documentable set.
+- The catalog page nests methods/terms under their owning class (via the
+  symbol's Type descriptors), shows signatures + def `file:line` + intra-module
+  calls/refs, and links covered symbols to their concern page. Generated straight
+  from SCIP ⇒ `extracted` provenance, correct by construction, not linted.
+- **Coverage is representation, not connection** — it never creates a missing
+  dynamic-dispatch edge (e.g. `model_parts[0](inputs)` → a model's `forward`).
+  That seam, and cross-model concept unification, are separate optional ops.
+
 ---
 
 ## 6. Phased plan (build in order; each phase ends at its acceptance test)
 
 ### Phase 1 — MVP: one Python repo, end to end  ← build this first
-Scope: Stages 0,1,2,5,6 for a **pure-Python** repo. **Skip** dispatch (Stage 3),
-C++, connect, discovery, and L4. Evidence (Stage 4) = **tests only**.
+Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
+(Stage 3), C++, connect, discovery, and L4. Evidence (Stage 4) = **tests only**.
 - `acquire` (git submodule + pin), `scip_index` (run scip-python, parse),
   `graph`, `config` (parse `config/<slug>.md`), `packet`, `lint`, `assemble`,
-  `state`, `cli` (`prepare`/`finalize`/`plan`).
+  `coverage`, `state`, `cli` (`prepare`/`finalize`/`coverage`/`plan`).
 - `skills/wikify-ingest-repo/SKILL.md` + `prompts/synthesis.md`.
 - **Target repo**: start tiny to debug the loop, then `torchtitan` (yours, pure
   Python). Concerns from a hand-written `config/torchtitan.md` with seeds.
@@ -212,6 +241,13 @@ C++, connect, discovery, and L4. Evidence (Stage 4) = **tests only**.
 5. Adding a concern to the config ⇒ `prepare` builds **only** that packet.
 6. A golden set of ~5 questions about torchtitan is answerable from the wiki alone
    (store them in `tests/golden/torchtitan.md`; manual check is fine for v1).
+7. **Whole-repo coverage (Stage 6b).** `finalize` emits a `catalog/` page per
+   module and a coverage report; **every class SCIP found is represented** in
+   either a concern page or a module catalog — in particular every model
+   (`Transformer`, `Attention`, `TransformerBlock`, `FeedForward`, per model).
+   Verify by enumerating SCIP class symbols and checking each appears in the
+   wiki. (Coverage represents and internally connects modules; it does not bridge
+   the dynamic trainer→model dispatch seam — that is explicitly out of Phase 1.)
 
 ### Phase 2 — C++ + dispatch
 - `scip-clang` path: out-of-tree build → `.cache/build/<slug>/compile_commands.json`

@@ -3,12 +3,12 @@
 The config is **markdown with YAML frontmatter** — the same shape as a wiki
 page, so the agent edits it with no second syntax. Frontmatter carries typed
 scalars (slug, languages, build, ref, tests/docs globs); the body's
-``## Concerns`` list is the wiki's table of contents, with optional per-concern
+``## Concepts`` list is the wiki's table of contents, with optional per-concept
 seed entry-point symbols.
 
 This module is pure Python (no model call): it parses the file into a
 ``RepoConfig`` and validates structure (known frontmatter keys, ``slug`` present,
-a ``## Concerns`` section) — the strict parse TOML would give, recovered with the
+a ``## Concepts`` section) — the strict parse TOML would give, recovered with the
 linter tooling already in the build.
 """
 
@@ -23,11 +23,11 @@ import yaml
 # Frontmatter keys the schema allows; anything else is a config error.
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo"}
 
-# Separators between a concern name and its ``seeds:`` clause: em-dash or hyphen.
+# Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
 
 # ``- **name** — seeds: ...`` or ``- name - seeds: ...``
-_CONCERN_RE = re.compile(
+_CONCEPT_RE = re.compile(
     r"^-\s+"                               # list bullet
     r"(?:\*\*(?P<bold>[^*]+)\*\*|(?P<word>\S+))"  # **name** or first word
     r"(?P<rest>.*)$"                       # remainder (dash + seeds + note)
@@ -45,8 +45,8 @@ _AUTO_RE = re.compile(r"^\(\s*(?:auto|discover\b.*?)\)\s*$", re.IGNORECASE)
 
 
 @dataclass
-class Concern:
-    """One architectural concern from the ``## Concerns`` list.
+class Concept:
+    """One architectural concept from the ``## Concepts`` list.
 
     ``seeds`` are backtick-quoted symbol tokens (backticks stripped); empty when
     the seeds clause was ``(auto)`` or ``(discover: ...)``, in which case
@@ -70,7 +70,7 @@ class RepoConfig:
     repo: str | None = None  # local path or git URL of the source (Stage 0)
     tests: list[str] = field(default_factory=list)
     docs: list[str] = field(default_factory=list)
-    concerns: list[Concern] = field(default_factory=list)
+    concepts: list[Concept] = field(default_factory=list)
 
 
 def _split_frontmatter(text: str) -> tuple[str, str]:
@@ -108,8 +108,8 @@ def _parse_seeds(payload: str) -> tuple[list[str], bool, str]:
     return seeds, False, note
 
 
-def _parse_concern(line: str) -> Concern:
-    """Parse one ``- ...`` concern list item into a ``Concern``."""
+def _parse_concept(line: str) -> Concept:
+    """Parse one ``- ...`` concept list item into a ``Concept``."""
     raw = line.rstrip()
     note_from_comment = ""
     comments = _HTML_COMMENT_RE.findall(raw)
@@ -120,9 +120,9 @@ def _parse_concern(line: str) -> Concern:
         ).strip()
         raw = _HTML_COMMENT_RE.sub("", raw).rstrip()
 
-    m = _CONCERN_RE.match(raw)
+    m = _CONCEPT_RE.match(raw)
     if not m:
-        raise ValueError(f"malformed concern list item: {line!r}")
+        raise ValueError(f"malformed concept list item: {line!r}")
     slug = (m.group("bold") or m.group("word")).strip()
     rest = m.group("rest")
 
@@ -138,28 +138,28 @@ def _parse_concern(line: str) -> Concern:
 
     if not note:
         note = note_from_comment
-    return Concern(slug=slug, seeds=seeds, auto=auto, note=note)
+    return Concept(slug=slug, seeds=seeds, auto=auto, note=note)
 
 
-def _parse_concerns(body: str) -> list[Concern]:
-    """Extract concerns from the ``## Concerns`` section of the body."""
+def _parse_concepts(body: str) -> list[Concept]:
+    """Extract concepts from the ``## Concepts`` section of the body."""
     lines = body.splitlines()
     start = None
     for i, line in enumerate(lines):
-        if re.match(r"^##\s+Concerns\s*$", line.strip()):
+        if re.match(r"^##\s+(Concepts|Concerns)\s*$", line.strip()):  # back-compat
             start = i + 1
             break
     if start is None:
-        raise ValueError("config has no '## Concerns' section")
+        raise ValueError("config has no '## Concepts' section")
 
-    concerns: list[Concern] = []
+    concepts: list[Concept] = []
     for line in lines[start:]:
         stripped = line.strip()
         if stripped.startswith("## "):       # next section ends the list
             break
         if stripped.startswith("- "):
-            concerns.append(_parse_concern(stripped))
-    return concerns
+            concepts.append(_parse_concept(stripped))
+    return concepts
 
 
 def validate_config(cfg: RepoConfig) -> None:
@@ -197,7 +197,7 @@ def load_config(path: str | Path) -> RepoConfig:
         repo=None if repo is None else str(repo),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),
-        concerns=_parse_concerns(body),
+        concepts=_parse_concepts(body),
     )
     validate_config(cfg)
     return cfg

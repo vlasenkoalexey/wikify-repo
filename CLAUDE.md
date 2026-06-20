@@ -35,6 +35,31 @@ ambiguous, ask — do not guess and invent.
    per module so every documentable symbol is represented. See "Why coverage is a
    set-difference" below. Coverage ≠ connection — it represents every module but
    does not invent the missing dynamic-dispatch edges.
+6. **Comprehension is derived and graded — not authored and binary** (design
+   decision 8). The agenda of what gets understood is computed from topology
+   (module tree + centrality), not a hand-written concern list; LLM effort on a
+   unit is *monotonic in its centrality*, a gradient of four bands: deep mechanism
+   page → **docstring annotation** (author's words, `extracted`, free) → purpose
+   blurb (LLM fallback where undocumented) → structural catalog. **Prefer
+   docstrings over synthesis**: they are ground-truth comprehension at zero model
+   cost, so spend the LLM only where the author was silent or the truth is
+   cross-symbol. Discovery/ranking/tiering are deterministic; only synthesis and
+   blurbs are LLM. *Implemented: coverage + catalogs + docstrings + `discover.py`
+   (derived, centrality-ranked, auto-seeded agenda) + scaled synthesis. The
+   mid-tier "purpose blurb" for undocumented modules is the one remaining band.*
+   **Concern synthesis is HEAVY processing** (`skills/prompts/synthesis.md`): the
+   agent reads the real source (packets truncate) and writes Overview + a grounded
+   **Mermaid diagram** + Design rationale + insight Mechanism with citations woven
+   in — never a citation-per-clause trace. A per-repo **overview page**
+   (`skills/prompts/overview.md`) is synthesized last: main concepts + core
+   system diagrams + a map of the wiki.
+7. **Symbols live in their module catalog, not in per-symbol stubs.** A citation
+   is a catalog anchor `../catalog/<module>.md#<QualifiedName>`; the catalog's
+   frontmatter `symbols:` map (anchor→moniker) is the linter's resolution table.
+   There is no `wiki/<slug>/symbols/` directory — it was folded into `catalog/`
+   (one home per symbol, source-tree organized). `coverage.catalog_ref` /
+   `qualified_name` are the single source of the anchor format, shared by the
+   packet (what to cite) and the catalog (what resolves).
 
 ## Why coverage is a set-difference (read before touching ingestion)
 The first torchtitan ingest covered the 3 hand-authored Trainer concerns and

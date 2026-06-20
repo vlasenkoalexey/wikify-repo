@@ -34,7 +34,7 @@ steps**. Keeping this boundary clean is the most important implementation rule.
 | symbol diff (reconcile) | **Python** | 2 |
 | dispatch extractor | **Python** | 3 |
 | evidence collection (tests/docs/dynamics-source) | **Python** | 4 |
-| **concern synthesis → mechanism pages** | **LLM agent** | 5 |
+| **concept synthesis → mechanism pages** | **LLM agent** | 5 |
 | citation linter, assemble, index | **Python** | 6 |
 | coverage set-difference → module catalogs | **Python** | 6b |
 | connect: dependency links | **Python** | 7a |
@@ -74,21 +74,22 @@ wikify-repo/
     evidence.py       # Stage 4: tests + dynamics-source + docs
     packet.py         # build synthesis packets (Python → LLM interface)
     lint.py           # Stage 6: citation linter
-    assemble.py       # Stage 6: write index.md, candidate concerns
-    coverage.py       # Stage 6b: set-difference coverage + per-module catalog pages
+    assemble.py       # Stage 6: write index.md, candidate concepts
+    coverage.py       # Stage 6b: set-difference coverage + per-module catalog pages (+ docstrings, connections)
+    discover.py       # Stage 5 agenda: cluster + centrality-rank + tier + auto-seed concepts (planned)
     source.py         # read def-body snippets + body hashes (shared by packet/diff)
     monikers.py       # parse SCIP symbol strings → descriptors (shared)
     connect.py        # Stage 7 (Phase 3)
     slug.py           # moniker ↔ filename
     state.py          # .cache/state/<slug>.json
-    config.py         # parse config/<slug>.md (frontmatter + concern list)
+    config.py         # parse config/<slug>.md (frontmatter + concept list)
   skills/
     wikify-ingest-repo/SKILL.md
     wikify-connect-repo/SKILL.md
     prompts/synthesis.md      # the Stage-5 instruction (section 7)
   config/
     <slug>.md         # per-repo markdown config (authored)
-    defaults.md       # shared default + type-aware concern sets
+    defaults.md       # shared default + type-aware concept sets
   tests/
 ```
 
@@ -101,8 +102,8 @@ three-bucket schema, NOT committed here.
 
 ```
 wikify prepare  <slug> [--ref <commit>] [--repo <url|path>]
-      # Stages 0–4. Idempotent. Emits .cache/packets/<slug>/<concern>.md and
-      # prints the plan (will build / rebuild / leave / candidate concerns).
+      # Stages 0–4. Idempotent. Emits .cache/packets/<slug>/<concept>.md and
+      # prints the plan (will build / rebuild / leave / candidate concepts).
 wikify finalize <slug>
       # Stage 6. Lints the agent-written pages, assembles index.md, updates state.
       # Non-zero exit + a report if any citation is unresolved.
@@ -112,7 +113,7 @@ wikify plan     <slug> [--ref]    # dry-run: print the delta, emit nothing
 wikify connect  [--repos a,b,...] # Phase 3
 ```
 
-`finalize` runs Stage 6b automatically (lint concerns → emit module catalogs →
+`finalize` runs Stage 6b automatically (lint concepts → emit module catalogs →
 write the coverage report into `index.md`). `wikify coverage` is the standalone
 inspector — it answers "is the whole repo represented?" without re-synthesizing.
 
@@ -164,38 +165,39 @@ Parse `.scip` (protobuf `Index`) → `documents[] → {occurrences[], symbols[]}
   2. In the `## Entry points` and `## Mechanism (step-by-step)` sections, **every
      list item must contain ≥1 symbol citation or an L2 evidence link**.
      Uncited assertion there = FAIL (move it into an `[!inferred]` block to pass).
-  3. No symbol cited that is absent from this concern's packet subgraph (catches
+  3. No symbol cited that is absent from this concept's packet subgraph (catches
      invented symbols). = FAIL.
 - The linter is **checkable without NLP** because rules 2–3 are scoped to named
   sections and list items, not arbitrary prose.
 
 ### 5.4 Synthesis packet (`packet.py`, Python → LLM)
-One markdown file per concern at `.cache/packets/<slug>/<concern>.md`:
+One markdown file per concept at `.cache/packets/<slug>/<concept>.md`:
 ```markdown
-# Packet: <concern>  (repo <slug> @ <ref>)
+# Packet: <concept>  (repo <slug> @ <ref>)
 ## Seeds
 <seed symbols, or "(discover: top-centrality in module X)">
 ## Subgraph
-<each symbol: moniker, signature, def file:line, callers[], callees[]>
+<each symbol: moniker, signature, def file:line, docstring summary, callers[], callees[]>
 ## Source
 <def-body snippets for the subgraph symbols>
 ## Evidence
-<matching tests (assert → symbols), dynamics-source snippets, doc excerpts>
+<matching tests (assert → symbols), dynamics-source snippets, DOCSTRINGS (author
+ intent, citable as L2 — prefer quoting these over guessing; decision 8)>
 ## Template + rules
 <the page template; the citation rules; "cite only symbols above; mark
  uncited claims [!inferred]; keep design-intent dynamics separate">
 ```
-The agent reads only the packet, writes `wiki/<slug>/concerns/<concern>.md`, and
+The agent reads only the packet, writes `wiki/<slug>/concepts/<concept>.md`, and
 creates any missing `symbols/<slug>.md` stubs for symbols it cites.
 
 ### 5.5 Reconcile state (`.cache/state/<slug>.json`)
 ```json
 { "ref": "<sha>",
   "symbols": { "<moniker>": "<body-sha>" },
-  "pages": { "<concern>": { "cited": ["<moniker>", ...], "built_ref": "<sha>" } } }
+  "pages": { "<concept>": { "cited": ["<moniker>", ...], "built_ref": "<sha>" } } }
 ```
 Reconcile: new symbol body-hashes vs `state.symbols` → changed monikers → any page
-whose `cited` ∩ changed ≠ ∅ is `stale`. Concerns in config with no page = `build`.
+whose `cited` ∩ changed ≠ ∅ is `stale`. Concepts in config with no page = `build`.
 
 ### 5.6 Coverage / catalog (`coverage.py`, Stage 6b)
 A **set-difference over the SCIP symbol table — NOT a graph walk** (see design
@@ -203,16 +205,25 @@ decision 7 for the why). Contracts:
 - `documentable_symbols(graph)` = in-repo symbols with a def whose terminal
   descriptor suffix ∈ {Type (class), Method (fn/method), Term (module value)}.
   Externals (no def) and locals/params are excluded.
-- `covered` = monikers cited by a concern page (resolved via each page's stub
+- `covered` = monikers cited by a concept page (resolved via each page's stub
   frontmatter, same resolver the linter uses).
-- A symbol is `covered` (deep, concern page), `catalog-only` (in a generated
+- A symbol is `covered` (deep, concept page), `catalog-only` (in a generated
   module catalog), or `unrepresented` (a coverage hole — should be empty after
   6b). `emit_catalogs` writes one `catalog/<def-file>.md` per module listing all
   its documentable symbols, so the catalogued set == the documentable set.
 - The catalog page nests methods/terms under their owning class (via the
   symbol's Type descriptors), shows signatures + def `file:line` + intra-module
-  calls/refs, and links covered symbols to their concern page. Generated straight
+  calls/refs, and links covered symbols to their concept page. Generated straight
   from SCIP ⇒ `extracted` provenance, correct by construction, not linted.
+- **Class connections** are rendered as `uses` / `used by` links, computed by
+  rolling each class's member edges (methods AND fields — so `self.x = Foo()`
+  counts) up to the class. This absorbs SCIP's member-granular reference scoping
+  and yields true class→class edges, linked to the target's catalog page.
+- **Docstrings (decision 8)** are rendered inline per class/function/module-value
+  as a summary line. The docstring prose is the symbol's
+  `SymbolInformation.documentation` with the leading signature code-fence stripped
+  (`Symbol.docstring` / `Symbol.doc_summary`). `extracted` provenance. ~27% of
+  torchtitan's documentable symbols carry one — a large free comprehension layer.
 - **Coverage is representation, not connection** — it never creates a missing
   dynamic-dispatch edge (e.g. `model_parts[0](inputs)` → a model's `forward`).
   That seam, and cross-model concept unification, are separate optional ops.
@@ -229,21 +240,21 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
   `coverage`, `state`, `cli` (`prepare`/`finalize`/`coverage`/`plan`).
 - `skills/wikify-ingest-repo/SKILL.md` + `prompts/synthesis.md`.
 - **Target repo**: start tiny to debug the loop, then `torchtitan` (yours, pure
-  Python). Concerns from a hand-written `config/torchtitan.md` with seeds.
+  Python). Concepts from a hand-written `config/torchtitan.md` with seeds.
 
 **Phase 1 acceptance (definition of done):**
-1. `wikify prepare torchtitan` runs scip-python, emits one packet per concern,
+1. `wikify prepare torchtitan` runs scip-python, emits one packet per concept,
    prints a plan. No model calls.
-2. Agent synthesis produces one page per concern under `wiki/torchtitan/concerns/`.
+2. Agent synthesis produces one page per concept under `wiki/torchtitan/concepts/`.
 3. `wikify finalize torchtitan` → linter exits 0: **every citation resolves**,
-   every config concern has a page, no invented symbols.
+   every config concept has a page, no invented symbols.
 4. Idempotency: re-running `prepare` with no source/config change ⇒ plan = no-op.
-5. Adding a concern to the config ⇒ `prepare` builds **only** that packet.
+5. Adding a concept to the config ⇒ `prepare` builds **only** that packet.
 6. A golden set of ~5 questions about torchtitan is answerable from the wiki alone
    (store them in `tests/golden/torchtitan.md`; manual check is fine for v1).
 7. **Whole-repo coverage (Stage 6b).** `finalize` emits a `catalog/` page per
    module and a coverage report; **every class SCIP found is represented** in
-   either a concern page or a module catalog — in particular every model
+   either a concept page or a module catalog — in particular every model
    (`Transformer`, `Attention`, `TransformerBlock`, `FeedForward`, per model).
    Verify by enumerating SCIP class symbols and checking each appears in the
    wiki. (Coverage represents and internally connects modules; it does not bridge
@@ -264,13 +275,13 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
 - `connect.py` 7a (dependency links): re-resolve external citations against other
   silos' `.cache/scip/*.scip`; upgrade dangling refs to cross-repo links;
   `compat.md` version-coherence gate. Deterministic, no model.
-- 7b (concept links): LLM judgment keyed on shared concerns; `_connect/decisions.md`
+- 7b (concept links): LLM judgment keyed on shared concepts; `_connect/decisions.md`
   cache; link-insertion only + re-lint.
 - Acceptance: torch_tpu → xla dependency links resolve; re-running connect is
   idempotent; a concept link survives an update without churn.
 
 ### Phase 4 — discovery, lanes, L4
-- Candidate-concern discovery → "Candidate concerns" in `index.md`.
+- Candidate-concept discovery → "Candidate concepts" in `index.md`.
 - Lane router (code-py / code-cpp / pallas-kernel / config / doc) + Pallas
   extractor + tpu-recipes config path.
 - Optional L4 runtime enrichment (`## Observed dynamics`), wired to XProf.
@@ -285,7 +296,7 @@ tune.
 ```markdown
 # Synthesis instruction — one mechanism page from one packet
 
-You are given ONE packet describing ONE concern of a codebase. Produce ONE
+You are given ONE packet describing ONE concept of a codebase. Produce ONE
 markdown mechanism page. You are documenting how the code WORKS, grounded only in
 the packet. You are not summarizing files.
 
@@ -303,14 +314,14 @@ the packet. You are not summarizing files.
 
 ## Page template
 ---
-title: <concern title>
-type: concern
+title: <concept title>
+type: concept
 provenance: mixed
-concern: <concern-slug>
+concept: <concept-slug>
 updated: <date>
 status: fresh
 ---
-# <concern title>
+# <concept title>
 <one-line scope>
 ## Entry points
 - [`Sym`](...) — what it is, when it's hit.

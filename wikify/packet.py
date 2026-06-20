@@ -1,12 +1,12 @@
 """Build synthesis packets — the Python → LLM interface (implementation.md §5.4).
 
-A packet is ONE markdown file per concern at ``.cache/packets/<slug>/<concern>.md``.
+A packet is ONE markdown file per concept at ``.cache/packets/<slug>/<concept>.md``.
 It carries the seeds, the implementing subgraph (symbols + callers/callees), the
 relevant source snippets, the test evidence, and the page template + citation
 rules. The agent reads ONLY the packet and writes one mechanism page.
 
 Determinism boundary: packet building is pure Python. The subgraph it pins is
-also written as a sidecar ``<concern>.subgraph.txt`` so the linter can enforce
+also written as a sidecar ``<concept>.subgraph.txt`` so the linter can enforce
 "no symbol cited outside this packet's subgraph" (§5.3 rule 3).
 """
 
@@ -15,10 +15,9 @@ from __future__ import annotations
 from collections import deque
 from pathlib import Path
 
-from . import evidence, source
-from .config import Concern
+from . import coverage, evidence, source
+from .config import Concept
 from .graph import SymbolGraph
-from .slug import slug_for
 
 MAX_SUBGRAPH = 50
 SNIPPET_LINES = 50
@@ -114,12 +113,20 @@ def build_packet(
     repo_root: str | Path,
     slug: str,
     ref: str,
-    concern: Concern,
+    concept: Concept,
     test_globs: list[str],
     date: str,
+    seed_monikers: list[str] | None = None,
 ) -> tuple[str, list[str]]:
-    """Render the packet markdown and return (text, subgraph_monikers)."""
-    seeds, unresolved = resolve_seeds(graph, concern.seeds)
+    """Render the packet markdown and return (text, subgraph_monikers).
+
+    ``seed_monikers`` (from discovery) are used directly; otherwise the concept's
+    seed tokens are resolved by name."""
+    if seed_monikers:
+        seeds = [m for m in seed_monikers if m in graph.symbols]
+        unresolved = []
+    else:
+        seeds, unresolved = resolve_seeds(graph, concept.seeds)
     if not seeds:
         seeds = auto_seeds(graph)
         seed_note = "(discover: top-importance symbols — no seeds resolved)"
@@ -134,7 +141,7 @@ def build_packet(
 
     lines: list[str] = []
     a = lines.append
-    a(f"# Packet: {concern.slug}  (repo {slug} @ {ref})")
+    a(f"# Packet: {concept.slug}  (repo {slug} @ {ref})")
     a("")
     a("## Seeds")
     a(seed_note)
@@ -146,9 +153,15 @@ def build_packet(
         sym = graph.symbols[m]
         a(f"### `{sym.name}`  ({_kind(sym)})")
         a(f"- moniker: `{m}`")
-        a(f"- stub-slug: `{slug_for(m)}`")
+        if sym.def_path:
+            a(f"- cite: [`{sym.name}`]({coverage.catalog_ref(sym.def_path, m)})")
+        else:
+            a("- cite: (external symbol — no catalog home; do not cite)")
         if sym.signature:
             a(f"- signature: `{sym.signature}`")
+        if sym.doc_summary:
+            # Author's docstring — citable L2 evidence; prefer quoting over guessing.
+            a(f"- doc (author intent, L2): {sym.doc_summary}")
         loc = f"{sym.def_path}:{(sym.def_line or 0) + 1}" if sym.def_path else "(unknown)"
         a(f"- def: {loc}")
         callees = sorted(_short(c, graph) for c in graph.callees(m) & subset)
@@ -184,82 +197,68 @@ def build_packet(
     a("")
 
     a("## Template + rules")
-    a(_TEMPLATE_RULES.format(concern=concern.slug, date=date))
+    a(_TEMPLATE_RULES.format(concept=concept.slug, date=date))
 
     return "\n".join(lines) + "\n", subgraph
 
 
 def write_packet(
-    cache_dir: str | Path, slug: str, concern_slug: str, text: str, subgraph: list[str]
+    cache_dir: str | Path, slug: str, concept_slug: str, text: str, subgraph: list[str]
 ) -> Path:
     out_dir = Path(cache_dir) / "packets" / slug
     out_dir.mkdir(parents=True, exist_ok=True)
-    pkt = out_dir / f"{concern_slug}.md"
+    pkt = out_dir / f"{concept_slug}.md"
     pkt.write_text(text, encoding="utf-8")
-    (out_dir / f"{concern_slug}.subgraph.txt").write_text(
+    (out_dir / f"{concept_slug}.subgraph.txt").write_text(
         "\n".join(subgraph) + "\n", encoding="utf-8"
     )
     return pkt
 
 
-def read_subgraph(cache_dir: str | Path, slug: str, concern_slug: str) -> set[str]:
-    p = Path(cache_dir) / "packets" / slug / f"{concern_slug}.subgraph.txt"
+def read_subgraph(cache_dir: str | Path, slug: str, concept_slug: str) -> set[str]:
+    p = Path(cache_dir) / "packets" / slug / f"{concept_slug}.subgraph.txt"
     if not p.exists():
         return set()
     return {ln for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()}
 
 
 _TEMPLATE_RULES = """\
-Write `wiki/{concern}.md` (under `wiki/<slug>/concerns/`) AND create a
-`symbols/<stub-slug>.md` stub for every symbol you cite.
+Write ONE file: `wiki/<slug>/concepts/{concept}.md`. You do NOT create any symbol
+stubs — every symbol already has a home in its module catalog. To cite a symbol,
+copy its `cite:` link from the Subgraph above VERBATIM (it points into the
+generated catalog, e.g. `[`Sym`](../catalog/<module>.md#Sym)`). The linter
+resolves each citation against the catalog's symbol table, so the link must match.
 
 HARD RULES:
 - Use ONLY symbols from the Subgraph above. Never name a symbol not listed there.
   If you need a missing one, say so in Open questions — do not invent it.
 - In "## Entry points" and "## Mechanism (step-by-step)", EVERY bullet/step must
-  cite a symbol as a markdown link to its stub: [`Sym`](../symbols/<stub-slug>.md),
-  optionally tagged `[extracted → `Sym`](...)`. Uncited claims there fail the lint.
+  carry a symbol citation: paste the symbol's `cite:` link, optionally tagged
+  `[extracted → `Sym`](../catalog/...#Sym)`. Uncited claims there fail the lint.
 - Any claim you cannot ground in a cited symbol or an Evidence item goes inside a
   `> [!inferred]` blockquote — never stated as fact.
-- "## Dynamics (design intent)" uses tests/source only; never claim runtime
-  behavior. Do not write an "Observed dynamics" section.
+- Prefer the author's `doc (author intent, L2)` lines over guessing; you may quote
+  them. "## Dynamics (design intent)" uses tests/source/docstrings only; never
+  claim runtime behavior. Do not write an "Observed dynamics" section.
 
 PAGE TEMPLATE:
 ---
-title: <concern title>
-type: concern
+title: <concept title>
+type: concept
 provenance: mixed
-concern: {concern}
+concept: {concept}
 updated: {date}
 status: fresh
 ---
-# <concern title>
+# <concept title>
 <one-line scope>
 ## Entry points
-- [`Sym`](../symbols/<stub-slug>.md) — what it is, when it's hit.
+- <cite link> — what it is, when it's hit.
 ## Mechanism (step-by-step)
-1. <step> [extracted → `Sym`](../symbols/<stub-slug>.md)
+1. <step> [extracted → `Sym`](../catalog/<module>.md#Sym)
 ## Key data structures
 ## Dynamics (design intent)
 ## Edge cases
 ## Open questions
 ## See also
-
-STUB TEMPLATE (`symbols/<stub-slug>.md`):
----
-title: "<name>"
-type: symbol
-provenance: extracted
-moniker: "<full moniker from Subgraph>"
-updated: {date}
----
-# <name>
-**Defined:** <def file:line>
-**Signature:** <signature>
-## Called by
-- <callers, as links where stubbed>
-## Calls / refs
-- <callees>  (reference-scoped, not true call resolution)
-## Cited by
-- [<concern title>](../concerns/{concern}.md)
 """

@@ -2,7 +2,7 @@
 
 "Tests as spec": a test function that, in its body, references in-repo symbols
 is treated as pinning their intended behavior. We reuse the SCIP reference edges
-already in the graph — a test ``T`` whose callees intersect a concern's subgraph
+already in the graph — a test ``T`` whose callees intersect a concept's subgraph
 exercises those symbols. No execution, no model.
 """
 

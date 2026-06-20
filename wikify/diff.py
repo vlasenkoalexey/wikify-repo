@@ -1,7 +1,7 @@
 """Stage 2 — structural diff & reconcile scoping (implementation.md §5.5).
 
 Hash each symbol's (signature + body) and compare to the recorded state to find
-changed monikers; any page citing a changed symbol is stale. Concerns in the
+changed monikers; any page citing a changed symbol is stale. Concepts in the
 config with no page are to be built. Pure Python, drives idempotent reconcile.
 """
 
@@ -17,7 +17,7 @@ from .graph import SymbolGraph
 
 @dataclass
 class Plan:
-    build: list[str] = field(default_factory=list)      # concerns with no page yet
+    build: list[str] = field(default_factory=list)      # concepts with no page yet
     rebuild: list[str] = field(default_factory=list)    # stale pages (cited symbol changed)
     leave: list[str] = field(default_factory=list)      # fresh pages
     changed_symbols: int = 0
@@ -62,8 +62,8 @@ def compute_plan(
     invalidating = changed | removed
 
     plan = Plan(changed_symbols=len(changed), removed_symbols=len(removed))
-    for concern in config.concerns:
-        name = concern.slug
+    for concept in config.concepts:
+        name = concept.slug
         if not state_mod.has_page(state, name):
             plan.build.append(name)
             continue

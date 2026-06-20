@@ -2,10 +2,10 @@
 
 WHY THIS EXISTS
 ---------------
-Concern synthesis (Stage 5) is **concern-driven and top-down by design** — it
-only documents the concerns it is given. That is correct for *depth* (it avoids
+Concept synthesis (Stage 5) is **concept-driven and top-down by design** — it
+only documents the concepts it is given. That is correct for *depth* (it avoids
 shallow file-by-file summaries), but on its own it silently drops whole
-subsystems: a hand-authored concern list that omits ``models/`` produces a wiki
+subsystems: a hand-authored concept list that omits ``models/`` produces a wiki
 where the models simply do not appear, even though SCIP indexed every one of
 their symbols.
 
@@ -24,12 +24,12 @@ code — only on enumeration:
 
   1. ``documentable_symbols`` — every in-repo class/function/method/term in the
      graph (SCIP found them all).
-  2. ``covered_monikers`` — the symbols cited by a concern page.
+  2. ``covered_monikers`` — the symbols cited by a concept page.
   3. difference ⇒ *catalog-only* symbols; emit one generated catalog page per
      module so nothing is unrepresented. Deterministic, no LLM.
 
 This guarantees **every module is represented** (the whole-repo guarantee) while
-keeping concern pages for *depth*. It does NOT create the missing dynamic edges
+keeping concept pages for *depth*. It does NOT create the missing dynamic edges
 (trainer→model) or unify cross-model concepts (the N ``Attention`` classes) —
 those are separate, optional operations. Coverage ≠ connection: enumeration
 sidesteps dynamic dispatch precisely because it never asks about connectivity.
@@ -38,11 +38,13 @@ sidesteps dynamic dispatch precisely because it never asks about connectivity.
 from __future__ import annotations
 
 import posixpath
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import lint
+import yaml
+
 from .graph import Symbol, SymbolGraph
 from .monikers import parse_symbol
 
@@ -73,15 +75,30 @@ def class_symbols(graph: SymbolGraph) -> dict[str, Symbol]:
     }
 
 
-def covered_monikers(wiki_slug_dir: str | Path) -> dict[str, str]:
-    """Map each concern-cited moniker → the concern page slug that cites it."""
+_CATALOG_LINK = re.compile(r"\]\(\.\./catalog/([^)#]+\.md)#([^)\s]+)\)")
+
+
+def covered_monikers(graph: SymbolGraph, wiki_slug_dir: str | Path) -> dict[str, str]:
+    """Map each concept-cited moniker → the concept page slug that cites it.
+
+    Resolves citations against the GRAPH (module from the link path + qualified-name
+    match), not the catalog files — so it works while catalogs are being generated.
+    """
+    # reverse index: (module-file, anchor) → moniker
+    index: dict[tuple[str, str], str] = {}
+    for m, s in documentable_symbols(graph).items():
+        index[(s.def_path, qualified_name(m))] = m
+
     covered: dict[str, str] = {}
-    concerns = Path(wiki_slug_dir) / "concerns"
-    if not concerns.is_dir():
+    concepts = Path(wiki_slug_dir) / "concepts"
+    if not concepts.is_dir():
         return covered
-    for page in sorted(concerns.glob("*.md")):
-        for moniker in lint.page_citations(page):
-            covered.setdefault(moniker, page.stem)
+    for page in sorted(concepts.glob("*.md")):
+        for catalog_rel, anchor in _CATALOG_LINK.findall(page.read_text(encoding="utf-8")):
+            module = catalog_rel[:-3] + ".py" if catalog_rel.endswith(".md") else catalog_rel
+            moniker = index.get((module, anchor))
+            if moniker:
+                covered.setdefault(moniker, page.stem)
     return covered
 
 
@@ -99,7 +116,7 @@ def by_module(symbols: dict[str, Symbol]) -> dict[str, list[str]]:
 @dataclass
 class CoverageReport:
     total: int = 0
-    covered: int = 0          # cited by a concern page (deep)
+    covered: int = 0          # cited by a concept page (deep)
     catalog_only: int = 0     # represented only in a generated catalog (shallow)
     modules: int = 0
     classes_total: int = 0
@@ -121,7 +138,7 @@ class CoverageReport:
     def render(self) -> str:
         lines = ["Coverage report:"]
         lines.append(f"  documentable symbols : {self.total}  across {self.modules} modules")
-        lines.append(f"  deep (concern pages) : {self.covered}  ({self.pct_deep:.1f}%)")
+        lines.append(f"  deep (concept pages) : {self.covered}  ({self.pct_deep:.1f}%)")
         lines.append(f"  catalog-only         : {self.catalog_only}")
         lines.append(f"  represented total    : {self.represented}  ({self.pct_represented:.1f}%)")
         lines.append(f"  classes              : {self.classes_represented}/{self.classes_total} represented")
@@ -138,11 +155,11 @@ def compute_report(
     """Classify every documentable symbol as covered / catalog-only / unrepresented.
 
     ``catalogued`` is the set of monikers that have (or will have) a catalog page;
-    pass the planned set to report post-catalog coverage. If None, only concern
+    pass the planned set to report post-catalog coverage. If None, only concept
     coverage counts (pre-catalog state).
     """
     docs = documentable_symbols(graph)
-    covered = covered_monikers(wiki_slug_dir)
+    covered = covered_monikers(graph, wiki_slug_dir)
     catalogued = catalogued if catalogued is not None else set()
 
     rep = CoverageReport(total=len(docs), modules=len(by_module(docs)))
@@ -173,6 +190,33 @@ def catalog_rel_path(module_path: str) -> str:
     if p.endswith(".py"):
         p = p[:-3]
     return f"{p}.md"
+
+
+def qualified_name(moniker: str) -> str:
+    """Anchor for a symbol within its module catalog: descriptor names after the
+    namespace, joined by '.' (e.g. ``Trainer.train_step``). Pure function of the
+    moniker, so packet citations and catalog frontmatter always agree."""
+    ps = parse_symbol(moniker)
+    if ps.is_local:
+        return f"local-{ps.local_id}"
+    names = [n for n, suf in ps.descriptors if suf != "Namespace" and n]
+    return ".".join(names) if names else moniker
+
+
+def catalog_ref(module_path: str, moniker: str) -> str:
+    """Citation target a concept page uses (``concepts/`` → ``../catalog/…#anchor``)."""
+    return f"../catalog/{catalog_rel_path(module_path)}#{qualified_name(moniker)}"
+
+
+def symbol_anchor_map(graph: SymbolGraph, monikers: list[str]) -> dict[str, str]:
+    """{anchor → moniker} for a module's symbols (the linter's resolution table).
+
+    On the rare anchor collision (two symbols, same qualified name in one module),
+    keep the higher-importance moniker — deterministic, resolution stays valid."""
+    out: dict[str, str] = {}
+    for m in sorted(monikers, key=lambda x: -graph.importance(x)):
+        out.setdefault(qualified_name(m), m)
+    return out
 
 
 def _owner_class(moniker: str) -> str | None:
@@ -253,25 +297,30 @@ def render_catalog(
             module_level.append(m)
 
     def _cov_tag(moniker: str) -> str:
-        concern = covered.get(moniker)
-        return f" — documented in [{concern}](../" + "../" * (module_path.count("/")) + \
-               f"concerns/{concern}.md)" if concern else ""
+        concept = covered.get(moniker)
+        return f" — documented in [{concept}](../" + "../" * (module_path.count("/")) + \
+               f"concepts/{concept}.md)" if concept else ""
 
     lines: list[str] = []
     a = lines.append
-    title = module_path
+    # Frontmatter carries the anchor→moniker map so the linter resolves citations
+    # to this catalog (replacing per-symbol stubs).
+    fm = {
+        "title": f"Module: {module_path}",
+        "type": "catalog",
+        "provenance": "extracted",
+        "module": module_path,
+        "status": "fresh",
+        "symbols": symbol_anchor_map(graph, monikers),
+    }
     a("---")
-    a(f'title: "Module: {title}"')
-    a("type: catalog")
-    a("provenance: extracted")
-    a(f"module: {module_path}")
-    a("status: fresh")
+    a(yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).rstrip())
     a("---")
     a(f"# Module: `{module_path}`")
     a("")
     a("Generated structural catalog (no synthesis). Every entry is grounded in the "
       "SCIP index; intra-module calls/refs are reference-scoped. Symbols documented "
-      "by a concern page link to it; the rest are catalogued here for coverage.")
+      "by a concept page link to it; the rest are catalogued here for coverage.")
     a("")
 
     def _link_targets(targets: list[str], cap: int = 40) -> str:
@@ -295,9 +344,11 @@ def render_catalog(
             csym = symbols[cm]
             rels = _rel_names(csym)
             base = f"  ·  implements/extends {', '.join(sorted(set(rels)))}" if rels else ""
-            a(f"### `{cname}`{base}")
+            a(f'### `{cname}` <a id="{cname}"></a>{base}')
             loc = f"{csym.def_path}:{(csym.def_line or 0) + 1}"
             a(f"- def: `{loc}`{_cov_tag(cm)}")
+            if csym.doc_summary:
+                a(f"- doc: {csym.doc_summary}")
             if _sig1(csym):
                 a(f"- signature: `{_sig1(csym)}`")
             meth = sorted(symbols[mm].name for mm in members.get(cname, []))
@@ -318,7 +369,9 @@ def render_catalog(
             sym = symbols[m]
             loc = f"{sym.def_path}:{(sym.def_line or 0) + 1}"
             sig = f"  `{_sig1(sym)}`" if _sig1(sym) else ""
-            a(f"- `{sym.name}` — `{loc}`{sig}{_cov_tag(m)}")
+            a(f'- `{sym.name}` <a id="{sym.name}"></a> — `{loc}`{sig}{_cov_tag(m)}')
+            if sym.doc_summary:
+                a(f"  - {sym.doc_summary}")
         a("")
     if terms:
         a("## Module values")
@@ -343,7 +396,7 @@ def emit_catalogs(
     wiki_slug_dir = Path(wiki_slug_dir)
     catalog_dir = wiki_slug_dir / "catalog"
     docs = documentable_symbols(graph)
-    covered = covered_monikers(wiki_slug_dir)
+    covered = covered_monikers(graph, wiki_slug_dir)
     modules = by_module(docs)
 
     catalogued: set[str] = set()

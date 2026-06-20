@@ -1,16 +1,19 @@
 """Stage 6 — the citation linter (implementation.md §5.3). The hallucination floor.
 
-Hard, deterministic gate. For each concern page it enforces:
-  1. Every link to ``symbols/*.md`` points to an existing stub whose frontmatter
-     ``moniker`` resolves in the silo's SCIP graph. Dead link = FAIL.
+Hard, deterministic gate. For each concept page it enforces:
+  1. Every symbol citation is a link into a module **catalog** with an anchor
+     (``../catalog/<module>.md#<anchor>``) that resolves, via the catalog's
+     frontmatter ``symbols`` map, to a moniker present in the silo's SCIP graph.
+     Dead/unresolvable citation = FAIL.
   2. In "## Entry points" and "## Mechanism (step-by-step)", every list item
      carries ≥1 symbol citation or an L2 evidence link — unless it is inside a
      ``> [!inferred]`` block. Uncited assertion there = FAIL.
-  3. No symbol cited that is absent from this concern's packet subgraph
+  3. No symbol cited that is absent from this concept's packet subgraph
      (catches invented symbols). = FAIL.
 
-Checkable without NLP because rules 2–3 are scoped to named sections and list
-items, not arbitrary prose.
+Symbols live in their module catalog (frontmatter ``symbols`` anchor→moniker map),
+not in per-symbol stubs — citations are catalog anchors. Checkable without NLP
+because rules 2–3 are scoped to named sections and list items.
 """
 
 from __future__ import annotations
@@ -49,26 +52,34 @@ class LintReport:
         return not self.errors
 
 
-def _frontmatter_moniker(stub_path: Path) -> str | None:
+def _frontmatter_dict(page_path: Path) -> dict:
     try:
-        text = stub_path.read_text(encoding="utf-8")
+        text = page_path.read_text(encoding="utf-8")
     except OSError:
-        return None
+        return {}
     if not text.startswith("---"):
-        return None
+        return {}
     end = text.find("\n---", 3)
     if end == -1:
-        return None
+        return {}
     try:
-        fm = yaml.safe_load(text[3:end]) or {}
+        return yaml.safe_load(text[3:end]) or {}
     except yaml.YAMLError:
-        return None
-    val = fm.get("moniker")
-    return str(val) if val else None
+        return {}
 
 
 def _is_symbol_link(target: str) -> bool:
-    return "symbols/" in target and target.endswith(".md")
+    """A symbol citation is a catalog link carrying an anchor."""
+    path = target.split("#", 1)[0]
+    return "catalog/" in path and path.endswith(".md") and "#" in target
+
+
+def _resolve_citation(page_path: Path, target: str) -> str | None:
+    """Resolve a ``../catalog/<module>.md#anchor`` citation → moniker (or None)."""
+    path, _, anchor = target.partition("#")
+    catalog_page = (page_path.parent / path).resolve()
+    syms = _frontmatter_dict(catalog_page).get("symbols") or {}
+    return syms.get(anchor)
 
 
 def _is_evidence_link(target: str) -> bool:
@@ -124,18 +135,19 @@ def lint_page(
         elif in_inferred and not stripped.startswith(">") and stripped:
             in_inferred = False
 
-        # rule 1 & 3: validate every symbol/evidence link on this line
+        # rule 1 & 3: validate every symbol citation (catalog anchor) on this line
         for label, target in _LINK.findall(line):
             if not _is_symbol_link(target):
                 continue
-            stub = (page_path.parent / target).resolve()
-            if not stub.exists():
-                errors.append(LintError(rel, i, 1, f"dead citation → {target} (no stub)"))
-                continue
-            moniker = _frontmatter_moniker(stub)
-            if moniker is None or moniker not in graph:
+            moniker = _resolve_citation(page_path, target)
+            if moniker is None:
                 errors.append(
-                    LintError(rel, i, 1, f"stub {target} moniker does not resolve in SCIP index")
+                    LintError(rel, i, 1, f"dead citation → {target} (anchor not in catalog)")
+                )
+                continue
+            if moniker not in graph:
+                errors.append(
+                    LintError(rel, i, 1, f"citation {target} resolves to a moniker not in the SCIP index")
                 )
                 continue
             if subgraph and moniker not in subgraph:
@@ -166,27 +178,16 @@ def lint_page(
 
 
 def page_citations(page_path: Path) -> set[str]:
-    """Resolve the monikers a concern page cites (via its stub frontmatter)."""
+    """Resolve the monikers a concept page cites (via catalog anchor resolution)."""
     monikers: set[str] = set()
     for line in page_path.read_text(encoding="utf-8").splitlines():
         for _label, target in _LINK.findall(line):
             if not _is_symbol_link(target):
                 continue
-            stub = (page_path.parent / target).resolve()
-            if stub.exists():
-                m = _frontmatter_moniker(stub)
-                if m:
-                    monikers.add(m)
+            m = _resolve_citation(page_path, target)
+            if m:
+                monikers.add(m)
     return monikers
-
-
-def lint_stub(stub_path: Path, graph: SymbolGraph) -> list[LintError]:
-    moniker = _frontmatter_moniker(stub_path)
-    if moniker is None:
-        return [LintError(stub_path.name, 1, 1, "stub missing frontmatter moniker")]
-    if moniker not in graph:
-        return [LintError(stub_path.name, 1, 1, f"stub moniker not in SCIP index: {moniker}")]
-    return []
 
 
 def lint_silo(
@@ -195,16 +196,11 @@ def lint_silo(
     cache_dir: str | Path,
     slug: str,
 ) -> LintReport:
-    """Lint every concern page + stub in a silo."""
+    """Lint every concept page in a silo (citations resolve into module catalogs)."""
     wiki_slug_dir = Path(wiki_slug_dir)
     errors: list[LintError] = []
-
-    for stub in sorted((wiki_slug_dir / "symbols").glob("*.md")):
-        errors.extend(lint_stub(stub, graph))
-
-    for page in sorted((wiki_slug_dir / "concerns").glob("*.md")):
-        concern_slug = page.stem
-        subgraph = packet.read_subgraph(cache_dir, slug, concern_slug)
+    for page in sorted((wiki_slug_dir / "concepts").glob("*.md")):
+        concept_slug = page.stem
+        subgraph = packet.read_subgraph(cache_dir, slug, concept_slug)
         errors.extend(lint_page(page, graph, subgraph))
-
     return LintReport(errors)

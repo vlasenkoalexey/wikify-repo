@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# wikify runtime buckets (regenerable / product, not committed in v1)
+.cache/
+raw/
+wiki/
+# generated protobuf bindings
+wikify/scip_pb2.py

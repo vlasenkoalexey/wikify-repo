@@ -1,0 +1,203 @@
+"""Per-repo config parser (design.md "Per-repo config (markdown, not TOML)").
+
+The config is **markdown with YAML frontmatter** — the same shape as a wiki
+page, so the agent edits it with no second syntax. Frontmatter carries typed
+scalars (slug, languages, build, ref, tests/docs globs); the body's
+``## Concerns`` list is the wiki's table of contents, with optional per-concern
+seed entry-point symbols.
+
+This module is pure Python (no model call): it parses the file into a
+``RepoConfig`` and validates structure (known frontmatter keys, ``slug`` present,
+a ``## Concerns`` section) — the strict parse TOML would give, recovered with the
+linter tooling already in the build.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+# Frontmatter keys the schema allows; anything else is a config error.
+_ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo"}
+
+# Separators between a concern name and its ``seeds:`` clause: em-dash or hyphen.
+_DASH = "—"
+
+# ``- **name** — seeds: ...`` or ``- name - seeds: ...``
+_CONCERN_RE = re.compile(
+    r"^-\s+"                               # list bullet
+    r"(?:\*\*(?P<bold>[^*]+)\*\*|(?P<word>\S+))"  # **name** or first word
+    r"(?P<rest>.*)$"                       # remainder (dash + seeds + note)
+)
+
+# ``— seeds: <payload>`` / ``- seeds: <payload>`` — capture the seeds payload.
+_SEEDS_RE = re.compile(
+    rf"[{_DASH}\-]\s*seeds:\s*(?P<payload>.*)$",
+    re.IGNORECASE,
+)
+
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_BACKTICK_TOKEN_RE = re.compile(r"`([^`]+)`")
+_AUTO_RE = re.compile(r"^\(\s*(?:auto|discover\b.*?)\)\s*$", re.IGNORECASE)
+
+
+@dataclass
+class Concern:
+    """One architectural concern from the ``## Concerns`` list.
+
+    ``seeds`` are backtick-quoted symbol tokens (backticks stripped); empty when
+    the seeds clause was ``(auto)`` or ``(discover: ...)``, in which case
+    ``auto`` is True (Stage 5 discovers entry points instead).
+    """
+
+    slug: str
+    seeds: list[str] = field(default_factory=list)
+    auto: bool = False
+    note: str = ""
+
+
+@dataclass
+class RepoConfig:
+    """Parsed ``config/<slug>.md`` — an authored ingest input, not a product."""
+
+    slug: str
+    languages: list[str] = field(default_factory=list)
+    build: str | None = None
+    ref: str | None = None
+    repo: str | None = None  # local path or git URL of the source (Stage 0)
+    tests: list[str] = field(default_factory=list)
+    docs: list[str] = field(default_factory=list)
+    concerns: list[Concern] = field(default_factory=list)
+
+
+def _split_frontmatter(text: str) -> tuple[str, str]:
+    """Return ``(frontmatter_yaml, body)`` from leading ``---`` fences."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("config must start with a '---' YAML frontmatter fence")
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return "\n".join(lines[1:i]), "\n".join(lines[i + 1:])
+    raise ValueError("unterminated YAML frontmatter (missing closing '---')")
+
+
+def _as_list(value: object) -> list[str]:
+    """Coerce an absent/scalar/list frontmatter value to a list of str."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+def _parse_seeds(payload: str) -> tuple[list[str], bool, str]:
+    """Parse a ``seeds:`` payload → ``(seeds, auto, note)``.
+
+    ``(auto)`` / ``(discover: ...)`` → ``auto=True`` with no seeds. Otherwise the
+    backtick-quoted tokens are the seeds; any trailing non-token text is the note.
+    """
+    payload = payload.strip()
+    if _AUTO_RE.match(payload):
+        return [], True, ""
+    seeds = [m.group(1).strip() for m in _BACKTICK_TOKEN_RE.finditer(payload)]
+    note = _BACKTICK_TOKEN_RE.sub("", payload)
+    note = note.strip().strip(",").strip()
+    return seeds, False, note
+
+
+def _parse_concern(line: str) -> Concern:
+    """Parse one ``- ...`` concern list item into a ``Concern``."""
+    raw = line.rstrip()
+    note_from_comment = ""
+    comments = _HTML_COMMENT_RE.findall(raw)
+    if comments:
+        # strip ``<!-- ... -->`` and keep its inner text as a note fallback
+        note_from_comment = " ".join(
+            c[len("<!--"):-len("-->")].strip() for c in comments
+        ).strip()
+        raw = _HTML_COMMENT_RE.sub("", raw).rstrip()
+
+    m = _CONCERN_RE.match(raw)
+    if not m:
+        raise ValueError(f"malformed concern list item: {line!r}")
+    slug = (m.group("bold") or m.group("word")).strip()
+    rest = m.group("rest")
+
+    seeds: list[str] = []
+    auto = False
+    note = ""
+    sm = _SEEDS_RE.search(rest)
+    if sm:
+        seeds, auto, note = _parse_seeds(sm.group("payload"))
+    else:
+        # no seeds clause; treat any remaining dash-prefixed text as a note
+        note = rest.lstrip(f" {_DASH}-").strip()
+
+    if not note:
+        note = note_from_comment
+    return Concern(slug=slug, seeds=seeds, auto=auto, note=note)
+
+
+def _parse_concerns(body: str) -> list[Concern]:
+    """Extract concerns from the ``## Concerns`` section of the body."""
+    lines = body.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(r"^##\s+Concerns\s*$", line.strip()):
+            start = i + 1
+            break
+    if start is None:
+        raise ValueError("config has no '## Concerns' section")
+
+    concerns: list[Concern] = []
+    for line in lines[start:]:
+        stripped = line.strip()
+        if stripped.startswith("## "):       # next section ends the list
+            break
+        if stripped.startswith("- "):
+            concerns.append(_parse_concern(stripped))
+    return concerns
+
+
+def validate_config(cfg: RepoConfig) -> None:
+    """Raise ``ValueError`` if the parsed config violates the schema."""
+    if not cfg.slug:
+        raise ValueError("config frontmatter is missing required key 'slug'")
+
+
+def load_config(path: str | Path) -> RepoConfig:
+    """Parse and validate ``config/<slug>.md`` into a ``RepoConfig``."""
+    text = Path(path).read_text(encoding="utf-8")
+    fm_text, body = _split_frontmatter(text)
+
+    fm = yaml.safe_load(fm_text) or {}
+    if not isinstance(fm, dict):
+        raise ValueError("config frontmatter must be a YAML mapping")
+
+    unknown = set(fm) - _ALLOWED_KEYS
+    if unknown:
+        raise ValueError(
+            f"unknown frontmatter key(s): {', '.join(sorted(unknown))}; "
+            f"allowed: {', '.join(sorted(_ALLOWED_KEYS))}"
+        )
+    if "slug" not in fm or fm["slug"] in (None, ""):
+        raise ValueError("config frontmatter is missing required key 'slug'")
+
+    build = fm.get("build")
+    ref = fm.get("ref")
+    repo = fm.get("repo")
+    cfg = RepoConfig(
+        slug=str(fm["slug"]),
+        languages=_as_list(fm.get("languages")),
+        build=None if build is None else str(build),
+        ref=None if ref is None else str(ref),
+        repo=None if repo is None else str(repo),
+        tests=_as_list(fm.get("tests")),
+        docs=_as_list(fm.get("docs")),
+        concerns=_parse_concerns(body),
+    )
+    validate_config(cfg)
+    return cfg

@@ -29,6 +29,7 @@ from . import (
     packet,
     scip_index,
     state as state_mod,
+    verify as verify_mod,
 )
 from .config import Concept, RepoConfig, load_config
 
@@ -269,6 +270,30 @@ def coverage(
         # Treat already-written catalog pages' documentable set as represented.
         catalogued = set(coverage_mod.documentable_symbols(graph)) if (p.wiki_slug / "catalog").is_dir() else set()
     typer.echo(coverage_mod.compute_report(graph, p.wiki_slug, catalogued=catalogued).render())
+
+
+@app.command()
+def verify(
+    slug: str,
+    page: str = typer.Option(None, help="Dump claims for one concept (stem or filename)."),
+    root: Path = typer.Option(Path("."), help="Project root."),
+) -> None:
+    """List the load-bearing claims to adversarially verify (worklist for the
+    verifier agent in skills/prompts/verify.md). Deterministic; runs no model."""
+    p, _cfg = _load(root, slug)
+    pages = sorted((p.wiki_slug / "concepts").glob("*.md"))
+    if page:
+        pages = [x for x in pages if page in (x.stem, x.name)]
+    total = 0
+    for pg in pages:
+        claims = verify_mod.load_bearing_claims(pg)
+        total += len(claims)
+        typer.echo(f"{pg.stem}: {len(claims)} claim(s)")
+        if page:
+            for c in claims:
+                cites = f"  [{len(c.citations)} cite]" if c.citations else ""
+                typer.echo(f"  L{c.line} [{c.section}]{cites} {c.text[:88]}")
+    typer.echo(f"\ntotal: {total} load-bearing claim(s) across {len(pages)} page(s)")
 
 
 @app.command()

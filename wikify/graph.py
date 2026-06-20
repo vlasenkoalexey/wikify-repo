@@ -99,6 +99,9 @@ class SymbolGraph:
         self._callers: dict[str, set[str]] = {}     # S -> {F, ...}
         self.ref_count: dict[str, int] = {}         # moniker -> reference count
         self.refs: dict[str, list[tuple[str, int]]] = {}  # moniker -> [(path, line)]
+        # Edges added by devirtualization (CHA), not by reference scoping — kept
+        # separate so they can be labelled "(virtual)" and audited.
+        self.virtual_edges: set[tuple[str, str]] = set()
 
     # -- construction -------------------------------------------------------
 
@@ -109,12 +112,17 @@ class SymbolGraph:
         self.ref_count.setdefault(sym.moniker, 0)
         self.refs.setdefault(sym.moniker, [])
 
-    def add_edge(self, caller: str, callee: str) -> None:
-        """Record that ``caller``'s body references in-repo symbol ``callee``."""
+    def add_edge(self, caller: str, callee: str, virtual: bool = False) -> None:
+        """Record that ``caller``'s body references in-repo symbol ``callee``.
+
+        ``virtual`` marks a devirtualization (CHA) edge — a *potential* dynamic
+        dispatch (base → override), not a static reference."""
         if caller not in self.symbols or callee not in self.symbols:
             return
         self._callees[caller].add(callee)
         self._callers[callee].add(caller)
+        if virtual:
+            self.virtual_edges.add((caller, callee))
 
     # -- queries ------------------------------------------------------------
 
@@ -133,8 +141,33 @@ class SymbolGraph:
         """Monikers whose terminal descriptor name == ``name`` (test/debug helper)."""
         return [m for m, s in self.symbols.items() if s.name == name]
 
+    def is_virtual(self, caller: str, callee: str) -> bool:
+        return (caller, callee) in self.virtual_edges
+
     def __len__(self) -> int:
         return len(self.symbols)
 
     def __contains__(self, moniker: str) -> bool:
         return moniker in self.symbols
+
+
+def devirtualize(graph: "SymbolGraph") -> int:
+    """Class Hierarchy Analysis: cross the dynamic-dispatch seam the reference
+    call graph cannot see. Returns the number of virtual edges added.
+
+    A call like ``model_parts[0](x)`` reaches ``nn.Module.__call__`` → the *base*
+    ``forward``, but the real work is in an override (``Transformer.forward``) that
+    no static reference edge points to — so traversal from a trainer dies at the
+    base. SCIP records ``is_implementation`` on each override (``S implements T``);
+    we add the edge ``T → S`` (base → override) so reaching the base also reaches
+    its implementations, and likewise ``BaseClass → Subclass``. This is the
+    "connection" op that coverage (a set-difference) deliberately leaves undone."""
+    added = 0
+    for moniker, sym in graph.symbols.items():
+        for target, kind in sym.relationships:
+            if kind != "is_implementation" or target not in graph.symbols:
+                continue
+            if moniker not in graph.callees(target):
+                graph.add_edge(target, moniker, virtual=True)
+                added += 1
+    return added

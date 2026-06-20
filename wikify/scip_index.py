@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 from . import ast_fallback, scip_pb2
-from .graph import Symbol, SymbolGraph
+from .graph import Symbol, SymbolGraph, devirtualize
 
 # scip-python is a Node CLI; pyright OOMs at Node's 4 GB default heap on large
 # repos (e.g. pytorch). Give it a generous ceiling — Node only allocates as
@@ -443,6 +443,10 @@ def build_graph(*indexes) -> SymbolGraph:
     for index in indexes:
         for doc in index.documents:
             _process_document(g, doc)
+
+    # 3) Devirtualization (CHA): add base→override / class→subclass edges from
+    # SCIP is_implementation relationships, so traversal crosses dynamic dispatch.
+    devirtualize(g)
     return g
 
 

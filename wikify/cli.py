@@ -24,6 +24,7 @@ from . import (
     coverage as coverage_mod,
     diff,
     discover,
+    fix as fix_mod,
     lint,
     packet,
     scip_index,
@@ -176,6 +177,7 @@ def finalize(
     slug: str,
     repo: str = typer.Option(None, help="Source path or git URL (overrides config)."),
     root: Path = typer.Option(Path("."), help="Project root."),
+    fix: bool = typer.Option(False, help="Auto-repair deterministically-fixable lint errors first."),
 ) -> None:
     """Stage 6: lint the agent-written pages, assemble the index, update state."""
     p, cfg = _load(root, slug)
@@ -190,7 +192,12 @@ def finalize(
     catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
     typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
 
-    report_lint = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
+    if fix:
+        edits, report_lint = fix_mod.fix_silo(p.wiki_slug, graph, p.cache, slug)
+        typer.echo(f"fix: applied {edits} repair(s); "
+                   f"{len(report_lint.errors)} error(s) remain")
+    else:
+        report_lint = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
     if not report_lint.ok:
         typer.echo(f"\nLINT FAILED ({len(report_lint.errors)} error(s)):", err=True)
         for e in report_lint.errors:
@@ -224,11 +231,16 @@ def finalize(
 def lint_cmd(
     slug: str,
     root: Path = typer.Option(Path("."), help="Project root."),
+    fix: bool = typer.Option(False, help="Auto-repair deterministically-fixable errors in place."),
 ) -> None:
-    """Re-run the citation linter alone (Stage 6 gate)."""
+    """Re-run the citation linter alone (Stage 6 gate); ``--fix`` auto-repairs first."""
     p, _cfg = _load(root, slug)
     graph = _graph(p)
-    report = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
+    if fix:
+        edits, report = fix_mod.fix_silo(p.wiki_slug, graph, p.cache, slug)
+        typer.echo(f"fix: applied {edits} repair(s)")
+    else:
+        report = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
     if report.ok:
         typer.echo("lint: OK")
         return

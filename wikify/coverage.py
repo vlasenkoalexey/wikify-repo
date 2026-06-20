@@ -339,7 +339,10 @@ def render_catalog(
         for sym, _t in items[:cap]:
             if sym.def_path:
                 rel = _rel_catalog_link(module_path, sym.def_path)
-                out.append(f"[`{sym.name}`]({rel})")
+                # Link to the symbol's anchor, not just the module page top — this
+                # also disambiguates same-named symbols (two classes' `__call__`)
+                # that would otherwise render as identical, duplicate-looking links.
+                out.append(f"[`{sym.name}`]({rel}#{qualified_name(_t)})")
             else:
                 out.append(f"`{sym.name}`")
         more = f" (+{len(items) - cap} more)" if len(items) > cap else ""

@@ -21,7 +21,8 @@ from pathlib import Path
 import yaml
 
 # Frontmatter keys the schema allows; anything else is a config error.
-_ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo"}
+_ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
+                 "compile_commands", "index_shards"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -68,6 +69,12 @@ class RepoConfig:
     build: str | None = None
     ref: str | None = None
     repo: str | None = None  # local path or git URL of the source (Stage 0)
+    compile_commands: str | None = None  # path to compile_commands.json (C++ path)
+    # Repo-relative globs to shard the Python index across processes (scip-python
+    # `--target-only`). Each expanded path is one concurrent indexer with a bounded
+    # working set — the only way to index repos too large for one pyright process
+    # (e.g. pytorch OOMs whole-repo). Empty → single whole-repo indexer.
+    index_shards: list[str] = field(default_factory=list)
     tests: list[str] = field(default_factory=list)
     docs: list[str] = field(default_factory=list)
     concepts: list[Concept] = field(default_factory=list)
@@ -189,12 +196,15 @@ def load_config(path: str | Path) -> RepoConfig:
     build = fm.get("build")
     ref = fm.get("ref")
     repo = fm.get("repo")
+    cc = fm.get("compile_commands")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
         build=None if build is None else str(build),
         ref=None if ref is None else str(ref),
         repo=None if repo is None else str(repo),
+        compile_commands=None if cc is None else str(cc),
+        index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),
         concepts=_parse_concepts(body),

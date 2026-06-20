@@ -23,6 +23,9 @@ from .graph import Symbol, SymbolGraph
 DEFAULT_EXCLUDES = (
     "experiments/", "tests/", "/tests/", "test/", "/test/", "/test_",
     "examples/", "example/", "scripts/", "benchmarks/", "benchmark/",
+    # Vendored third-party code: catalog it (coverage still represents it) but
+    # never elevate it to a *concept* — a deep page about bundled {fmt} is noise.
+    "third_party/", "/third_party/", "vendor/", "/vendor/", "node_modules/",
 )
 
 

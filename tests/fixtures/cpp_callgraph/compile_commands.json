@@ -1,0 +1,4 @@
+[
+  {"directory": "/mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph", "file": "/mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph/mathlib.cpp", "command": "clang++ -std=c++17 -I/mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph -c /mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph/mathlib.cpp"},
+  {"directory": "/mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph", "file": "/mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph/main.cpp", "command": "clang++ -std=c++17 -I/mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph -c /mnt/disks/persist/torch-tpu/wikify-repo/tests/fixtures/cpp_callgraph/main.cpp"}
+]

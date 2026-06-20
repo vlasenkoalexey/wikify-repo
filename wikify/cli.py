@@ -45,6 +45,7 @@ class Paths:
         self.raw = root / "raw"
         self.config = root / "config" / f"{slug}.md"
         self.scip = self.cache / "scip" / f"{slug}.scip"
+        self.scip_cpp = self.cache / "scip" / f"{slug}.cpp.scip"  # C++ index (scip-clang)
         self.state = state_mod.state_path(self.cache, slug)
         self.wiki = root / "wiki"
         self.wiki_slug = self.wiki / slug
@@ -52,6 +53,15 @@ class Paths:
 
 def _today() -> str:
     return datetime.date.today().isoformat()
+
+
+def _scip_clang_bin() -> str:
+    """The vendored scip-clang if present (glibc-compatible build), else PATH."""
+    vbin = Path(__file__).parents[1] / "vendor" / "bin"
+    for cand in sorted(vbin.glob("scip-clang*"), reverse=True):
+        if cand.is_file():
+            return str(cand)
+    return "scip-clang"
 
 
 def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
@@ -70,8 +80,25 @@ def _source(cfg: RepoConfig, repo: str | None) -> str:
     return src
 
 
+def _expand_shards(repo_dir: Path, patterns: list[str]) -> list[str]:
+    """Expand ``index_shards`` globs to sorted, de-duped repo-relative paths."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for pat in patterns:
+        for m in sorted(repo_dir.glob(pat)):
+            rel = m.relative_to(repo_dir).as_posix()
+            if rel not in seen:
+                seen.add(rel)
+                out.append(rel)
+    return out
+
+
 def _graph(p: Paths):
-    return scip_index.build_graph(scip_index.parse_index(p.scip))
+    """Build the graph, merging the C++ index (scip-clang) when present."""
+    indexes = [scip_index.parse_index(p.scip)] if p.scip.exists() else []
+    if p.scip_cpp.exists():
+        indexes.append(scip_index.parse_index(p.scip_cpp))
+    return scip_index.build_graph(*indexes)
 
 
 # --------------------------------------------------------------------------- #
@@ -90,9 +117,25 @@ def prepare(
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref)
     typer.echo(f"acquired {slug} @ {acq.commit[:10]}  ({acq.repo_dir})")
 
-    if reindex or not p.scip.exists():
-        typer.echo("indexing with scip-python ...")
-        scip_index.run_indexer(acq.repo_dir, p.scip, project_name=slug)
+    langs = cfg.languages or ["python"]
+    if "python" in langs and (reindex or not p.scip.exists()):
+        if cfg.index_shards:
+            targets = _expand_shards(acq.repo_dir, cfg.index_shards)
+            typer.echo(f"indexing with scip-python ({len(targets)} shards, "
+                       f"--target-only) ...")
+            scip_index.run_indexer_sharded(acq.repo_dir, p.scip, targets,
+                                           project_name=slug)
+        else:
+            typer.echo("indexing with scip-python ...")
+            scip_index.run_indexer(acq.repo_dir, p.scip, project_name=slug)
+    # C++ path (Stage 1, mixed-language): run scip-clang against the compile DB.
+    if cfg.compile_commands and (reindex or not p.scip_cpp.exists()):
+        cc = Path(cfg.compile_commands)
+        if not cc.is_absolute():
+            cc = acq.repo_dir / cc
+        typer.echo(f"indexing C++ with scip-clang ({cc}) ...")
+        scip_index.run_clang_indexer(acq.repo_dir, cc, p.scip_cpp,
+                                     scip_clang_bin=_scip_clang_bin())
     graph = _graph(p)
     typer.echo(f"graph: {len(graph)} symbols")
 
@@ -136,8 +179,8 @@ def finalize(
 ) -> None:
     """Stage 6: lint the agent-written pages, assemble the index, update state."""
     p, cfg = _load(root, slug)
-    if not p.scip.exists():
-        typer.echo(f"error: no SCIP index at {p.scip}; run `wikify prepare {slug}` first", err=True)
+    if not p.scip.exists() and not p.scip_cpp.exists():
+        typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref)
     graph = _graph(p)

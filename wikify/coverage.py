@@ -84,10 +84,11 @@ def covered_monikers(graph: SymbolGraph, wiki_slug_dir: str | Path) -> dict[str,
     Resolves citations against the GRAPH (module from the link path + qualified-name
     match), not the catalog files — so it works while catalogs are being generated.
     """
-    # reverse index: (module-file, anchor) → moniker
+    # reverse index keyed by the catalog page path (language-agnostic: works for
+    # .py/.h/.cpp alike, since the link IS catalog_rel_path(def_path)).
     index: dict[tuple[str, str], str] = {}
     for m, s in documentable_symbols(graph).items():
-        index[(s.def_path, qualified_name(m))] = m
+        index[(catalog_rel_path(s.def_path), qualified_name(m))] = m
 
     covered: dict[str, str] = {}
     concepts = Path(wiki_slug_dir) / "concepts"
@@ -95,8 +96,7 @@ def covered_monikers(graph: SymbolGraph, wiki_slug_dir: str | Path) -> dict[str,
         return covered
     for page in sorted(concepts.glob("*.md")):
         for catalog_rel, anchor in _CATALOG_LINK.findall(page.read_text(encoding="utf-8")):
-            module = catalog_rel[:-3] + ".py" if catalog_rel.endswith(".md") else catalog_rel
-            moniker = index.get((module, anchor))
+            moniker = index.get((catalog_rel, anchor))
             if moniker:
                 covered.setdefault(moniker, page.stem)
     return covered
@@ -192,15 +192,23 @@ def catalog_rel_path(module_path: str) -> str:
     return f"{p}.md"
 
 
+_ANCHOR_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
 def qualified_name(moniker: str) -> str:
     """Anchor for a symbol within its module catalog: descriptor names after the
     namespace, joined by '.' (e.g. ``Trainer.train_step``). Pure function of the
-    moniker, so packet citations and catalog frontmatter always agree."""
+    moniker, so packet citations and catalog frontmatter always agree.
+
+    The result is **link-safe** (no spaces/special chars): C++ monikers from
+    scip-clang can contain ``$``/spaces, which would break a markdown ``#anchor``."""
     ps = parse_symbol(moniker)
     if ps.is_local:
-        return f"local-{ps.local_id}"
-    names = [n for n, suf in ps.descriptors if suf != "Namespace" and n]
-    return ".".join(names) if names else moniker
+        base = f"local-{ps.local_id}"
+    else:
+        names = [n for n, suf in ps.descriptors if suf != "Namespace" and n]
+        base = ".".join(names) if names else moniker
+    return _ANCHOR_UNSAFE.sub("-", base).strip("-") or "sym"
 
 
 def catalog_ref(module_path: str, moniker: str) -> str:

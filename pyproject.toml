@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wikify-repo"
+version = "0.1.0"
+description = "Ingest a code repo into a grounded, lint-clean markdown wiki"
+requires-python = ">=3.11"
+dependencies = ["protobuf", "pyyaml", "typer", "gitpython"]
+
+[project.scripts]
+wikify = "wikify.cli:app"
+
+[tool.setuptools]
+packages = ["wikify"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

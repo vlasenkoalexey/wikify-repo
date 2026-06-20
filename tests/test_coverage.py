@@ -90,6 +90,17 @@ def test_catalog_pages_mirror_source_tree(tmp_path):
     assert "More detail." not in body  # only the summary line, not the full body
 
 
+def test_catalog_cross_links_carry_symbol_anchors():
+    """`uses`/`used by` links point at the symbol anchor, not the page top — so
+    they navigate to the symbol and same-named targets render distinctly."""
+    g = _graph()
+    g.add_edge(M_METHOD, M_ATTN)   # Transformer.forward references Attention
+    page = coverage.render_catalog(g, "demo/models.py",
+                                   [M_CLASS, M_METHOD, M_ATTN], covered={})
+    assert "[`Attention`](models.md#Attention)" in page   # anchored
+    assert "[`Attention`](models.md)" not in page         # never anchorless
+
+
 def test_docstring_strips_signature_fence():
     g = _graph()
     t = g.symbols[M_CLASS]

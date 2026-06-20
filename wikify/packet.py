@@ -19,7 +19,8 @@ from . import coverage, evidence, source
 from .config import Concept
 from .graph import SymbolGraph
 
-MAX_SUBGRAPH = 50
+MAX_SUBGRAPH = 60   # relevance-ranked budget (was a flat BFS-order cap)
+MAX_HOPS = 4        # how far to expand the candidate frontier before ranking
 SNIPPET_LINES = 50
 
 
@@ -74,23 +75,50 @@ def auto_seeds(graph: SymbolGraph, n: int = 8) -> list[str]:
 def gather_subgraph(
     graph: SymbolGraph, seeds: list[str], max_nodes: int = MAX_SUBGRAPH
 ) -> list[str]:
-    """BFS over callees from the seeds (plus seeds' direct callers for context)."""
-    result: list[str] = []
-    visited: set[str] = set()
+    """Relevance-bounded subgraph: keep the seeds, then the most relevant neighbours.
+
+    A flat BFS cap truncates by *discovery order* — for a hub like ``nn.Module``
+    (1000+ callers) it keeps an arbitrary first-50 and drops the load-bearing
+    collaborators. Instead we expand a frontier (``MAX_HOPS`` of callees + the
+    seeds' direct callers for entry-point context), score every candidate by
+    **importance ÷ (1 + distance from a seed)**, and fill the budget by score. So
+    the budget spends on the central, close symbols rather than whatever BFS hit
+    first. Deterministic: ties break on the moniker string."""
+    seeds = [s for s in seeds if s in graph.symbols]
+    dist: dict[str, int] = {s: 0 for s in seeds}
+
+    # Frontier: BFS over callees out to MAX_HOPS, recording each node's min depth.
     queue: deque[str] = deque(seeds)
-    for s in seeds:  # one hop of callers gives entry-point context
-        for caller in sorted(graph.callers(s)):
-            queue.append(caller)
-    while queue and len(result) < max_nodes:
+    while queue:
         m = queue.popleft()
-        if m in visited or m not in graph.symbols:
+        d = dist[m]
+        if d >= MAX_HOPS:
             continue
-        visited.add(m)
-        result.append(m)
-        for callee in sorted(graph.callees(m)):
-            if callee not in visited:
+        for callee in graph.callees(m):
+            if callee in graph.symbols and callee not in dist:
+                dist[callee] = d + 1
                 queue.append(callee)
-    return result
+    # One hop of callers gives entry-point context (who reaches the seeds).
+    for s in seeds:
+        for caller in graph.callers(s):
+            if caller in graph.symbols and caller not in dist:
+                dist[caller] = 1
+
+    def relevance(m: str) -> float:
+        return graph.importance(m) / (1 + dist[m])
+
+    # Seeds are always kept (in their given order); fill the rest by relevance.
+    selected = list(dict.fromkeys(seeds))
+    seed_set = set(selected)
+    candidates = sorted(
+        (m for m in dist if m not in seed_set),
+        key=lambda m: (-relevance(m), m),
+    )
+    for m in candidates:
+        if len(selected) >= max_nodes:
+            break
+        selected.append(m)
+    return selected
 
 
 # --------------------------------------------------------------------------- #
@@ -98,6 +126,13 @@ def gather_subgraph(
 # --------------------------------------------------------------------------- #
 def _short(moniker: str, graph: SymbolGraph) -> str:
     return graph.symbols[moniker].name or moniker
+
+
+def _edge_name(graph: SymbolGraph, src: str, dst: str) -> str:
+    """Display name for an edge ``src→dst``, tagged ``(virtual)`` if it is a
+    devirtualization (dynamic-dispatch) edge rather than a static reference."""
+    name = _short(dst, graph)
+    return f"{name} (virtual)" if graph.is_virtual(src, dst) else name
 
 
 def _kind(sym) -> str:
@@ -148,6 +183,8 @@ def build_packet(
     a("")
     a("## Subgraph")
     a("Cite ONLY these symbols. Each: moniker · signature · def · calls/refs.")
+    a("A `(virtual)` edge is a dynamic dispatch (base→override / class→subclass) "
+      "recovered by class-hierarchy analysis — a real connection, not a static call.")
     a("")
     for m in subgraph:
         sym = graph.symbols[m]
@@ -164,8 +201,8 @@ def build_packet(
             a(f"- doc (author intent, L2): {sym.doc_summary}")
         loc = f"{sym.def_path}:{(sym.def_line or 0) + 1}" if sym.def_path else "(unknown)"
         a(f"- def: {loc}")
-        callees = sorted(_short(c, graph) for c in graph.callees(m) & subset)
-        callers = sorted(_short(c, graph) for c in graph.callers(m) & subset)
+        callees = sorted(_edge_name(graph, m, c) for c in graph.callees(m) & subset)
+        callers = sorted(_edge_name(graph, c, m) for c in graph.callers(m) & subset)
         a(f"- calls/refs: {', '.join(callees) if callees else '(none in subgraph)'}")
         a(f"- called by: {', '.join(callers) if callers else '(none in subgraph)'}")
         a("")

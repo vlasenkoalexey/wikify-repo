@@ -240,8 +240,32 @@ def _owner_class(moniker: str) -> str | None:
     return types[-1] if types else None
 
 
-def _sig1(sym: Symbol) -> str:
-    return sym.signature.splitlines()[0].strip() if sym.signature else ""
+def _clean_sig(sym: Symbol) -> str:
+    """The real `def …`/`class …` line — decorator lines stripped, collapsed to one
+    line (scip-python stores the signature as a multi-line fenced block whose first
+    line is often a `@decorator`, which is why catalogs used to show `@…`)."""
+    if not sym.signature:
+        return ""
+    body = [ln for ln in sym.signature.splitlines() if not ln.strip().startswith("@")]
+    s = re.sub(r"\s+", " ", " ".join(ln.strip() for ln in body)).strip()
+    return s.replace("( ", "(").replace(" )", ")").replace(" ,", ",")
+
+
+def _params(sym: Symbol) -> str:
+    """The parameter tuple from a callable's signature, e.g. ``(self, modules=None)``."""
+    s = _clean_sig(sym)
+    i = s.find("(")
+    if i < 0:
+        return ""
+    depth = 0
+    for j in range(i, len(s)):
+        if s[j] == "(":
+            depth += 1
+        elif s[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return s[i:j + 1]
+    return ""
 
 
 def _rel_catalog_link(from_module: str, to_module: str) -> str:
@@ -355,6 +379,18 @@ def render_catalog(
         link = _src_link(source_base, sym.def_path, line)
         return f"[`{loc}`]({link})" if link else f"`{loc}`"
 
+    def _loc_line(sym) -> str:
+        """Compact source link `Lnnn` (the file is the catalog's module)."""
+        line = (sym.def_line or 0) + 1
+        link = _src_link(source_base, sym.def_path, line)
+        return f"[`L{line}`]({link})" if link else f"`L{line}`"
+
+    def _detail(sym, moniker: str) -> str:
+        """One symbol's detail bullet: `name(params)` — Lnnn — docstring summary."""
+        sig = f"`{sym.name}{_params(sym)}`" if sym.is_callable and _params(sym) else f"`{sym.name}`"
+        doc = f" — {sym.doc_summary}" if sym.doc_summary else ""
+        return f"{sig} — {_loc_line(sym)}{doc}{_cov_tag(moniker)}"
+
     lines: list[str] = []
     a = lines.append
     # Frontmatter carries the anchor→moniker map so the linter resolves citations.
@@ -421,11 +457,24 @@ def render_catalog(
             a(f"- def: {_loc(csym)}{_cov_tag(cm)}")
             if csym.doc_summary:
                 a(f"- doc: {csym.doc_summary}")
-            if _sig1(csym):
-                a(f"- signature: `{_sig1(csym)}`")
-            meth = sorted(symbols[mm].name for mm in members.get(cname, []))
-            if meth:
-                a(f"- members: {', '.join(f'`{x}`' for x in meth)}")
+            if _clean_sig(csym):
+                a(f"- signature: `{_clean_sig(csym)}`")
+            # Members: public or documented → full detail (public-first); the rest
+            # (undocumented dunder/private) → folded but present and linked. No caps —
+            # a module's own contents are the deterministic content of the page.
+            mem = [(symbols[mm], mm) for mm in members.get(cname, [])]
+            detailed = [(s, m) for s, m in mem if not s.name.startswith("_") or s.doc_summary]
+            det = {m for _s, m in detailed}
+            folded = [(s, m) for s, m in mem if m not in det]
+            detailed.sort(key=lambda it: (not it[0].is_callable, it[0].name))
+            folded.sort(key=lambda it: it[0].name)
+            if detailed:
+                a("- members:")
+                for s, m in detailed:
+                    a(f"  - {_detail(s, m)}")
+            if folded:
+                fold = ", ".join(f"`{s.name}`{_loc_line(s)}" for s, _m in folded)
+                a(f"- protocol/private: {fold}")
             uses, used_by = class_connections(graph, cm, members.get(cname, []))
             if uses:
                 a(f"- uses (calls/refs, reference-scoped): {_link_targets(uses)}")
@@ -438,17 +487,12 @@ def render_catalog(
     if funcs:
         a("## Functions")
         for m in sorted(funcs, key=lambda x: symbols[x].name):
-            sym = symbols[m]
-            sig = f"  `{_sig1(sym)}`" if _sig1(sym) else ""
-            a(f"- `{sym.name}` — {_loc(sym)}{sig}{_cov_tag(m)}")
-            if sym.doc_summary:
-                a(f"  - {sym.doc_summary}")
+            a(f"- {_detail(symbols[m], m)}")
         a("")
     if terms:
         a("## Module values")
         for m in sorted(terms, key=lambda x: symbols[x].name):
-            sym = symbols[m]
-            a(f"- `{sym.name}` — {_loc(sym)}{_cov_tag(m)}")
+            a(f"- {_detail(symbols[m], m)}")
         a("")
 
     return "\n".join(lines) + "\n"

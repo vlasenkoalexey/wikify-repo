@@ -134,6 +134,65 @@ def test_used_by_excludes_tests_and_ranks_by_importance():
     assert ub.index("AHi") < ub.index("BLo")       # ranked by importance, not name
 
 
+def test_docstring_extracted_into_catalog():
+    """The author's docstring (parsed from scip `documentation`) reaches the page —
+    on the class line, the method line, and a module-level function line."""
+    g = SymbolGraph()
+    C = f"{PKG} `demo.m`/Widget#"
+    meth = f"{PKG} `demo.m`/Widget#render()."
+    fn = f"{PKG} `demo.m`/build()."
+    g.add_symbol(Symbol(moniker=C, kind="Class", suffix="Type", name="Widget",
+                        def_path="demo/m.py", def_line=0,
+                        documentation="```python\nclass Widget:\n```\nA drawable widget."))
+    g.add_symbol(Symbol(moniker=meth, kind="Method", suffix="Method", name="render",
+                        def_path="demo/m.py", def_line=5, signature="def render(self):",
+                        documentation="```python\ndef render(self):\n```\nDraw the widget to the screen."))
+    g.add_symbol(Symbol(moniker=fn, kind="Method", suffix="Method", name="build",
+                        def_path="demo/m.py", def_line=9, signature="def build():",
+                        documentation="```python\ndef build():\n```\nConstruct a default widget."))
+    page = coverage.render_catalog(g, "demo/m.py", [C, meth, fn], covered={})
+    assert "- doc: A drawable widget." in page           # class docstring
+    assert "Draw the widget to the screen." in page      # method docstring (in members)
+    assert "Construct a default widget." in page         # function docstring
+    # and it really came from `documentation`, not invented
+    assert g.symbols[meth].doc_summary == "Draw the widget to the screen."
+
+
+def test_member_detail_promotes_documented_and_folds_plumbing():
+    """A: public/documented members get full detail (name(params) — line — doc);
+    undocumented dunder/private fold to a present-but-terse list."""
+    g = SymbolGraph()
+    C = f"{PKG} `demo.m`/C#"
+    pub = f"{PKG} `demo.m`/C#append()."      # public method, documented
+    dund_doc = f"{PKG} `demo.m`/C#__repr__()."  # dunder WITH doc → promoted
+    dund = f"{PKG} `demo.m`/C#__init__()."    # dunder, no doc → folded
+    priv = f"{PKG} `demo.m`/C#_modules."      # private, no doc → folded
+    g.add_symbol(Symbol(moniker=C, kind="Class", suffix="Type", name="C",
+                        def_path="demo/m.py", def_line=0,
+                        signature="@final\nclass C(Base):"))   # decorator → stripped
+    g.add_symbol(Symbol(moniker=pub, kind="Method", suffix="Method", name="append",
+                        def_path="demo/m.py", def_line=9,
+                        signature="@deco\ndef append(\n  self,\n  x\n):",
+                        documentation="```python\n@deco\ndef append(self, x):\n```\nAdd x to the end."))
+    g.add_symbol(Symbol(moniker=dund_doc, kind="Method", suffix="Method", name="__repr__",
+                        def_path="demo/m.py", def_line=20, signature="def __repr__(self):",
+                        documentation="```python\ndef __repr__(self):\n```\nCustom repr."))
+    g.add_symbol(Symbol(moniker=dund, kind="Method", suffix="Method", name="__init__",
+                        def_path="demo/m.py", def_line=4))
+    g.add_symbol(Symbol(moniker=priv, kind="Term", suffix="Term", name="_modules",
+                        def_path="demo/m.py", def_line=2))
+    page = coverage.render_catalog(g, "demo/m.py", [C, pub, dund_doc, dund, priv],
+                                   covered={}, source_base="https://x/blob/abc")
+    # public method: name(params) + source line + doc
+    assert "`append(self, x)` — [`L10`](https://x/blob/abc/demo/m.py#L10) — Add x to the end." in page
+    assert "`__repr__(self)`" in page and "Custom repr." in page   # documented dunder promoted
+    # undocumented plumbing folded, but present and linked
+    assert "- protocol/private:" in page
+    assert "`__init__`[`L5`]" in page and "`_modules`[`L3`]" in page
+    # signature: decorator stripped (was the @deco wart)
+    assert "- signature: `class C(Base):`" in page
+
+
 def test_catalog_drops_boilerplate_paragraph():
     page = coverage.render_catalog(_graph(), "demo/models.py", [M_CLASS], covered={})
     assert "Generated structural catalog" not in page   # implied by type: catalog

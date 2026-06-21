@@ -75,9 +75,10 @@ class RepoConfig:
     # so a mixed bazel repo indexes with one command. Takes precedence over
     # compile_commands when set.
     bazel_targets: str | None = None
-    # Base URL for source permalinks in catalogs (e.g.
-    # "https://github.com/org/repo/blob/<commit>"). When unset, finalize derives it
-    # from the repo's git remote + pinned commit; set to "" to disable links.
+    # Source links in catalogs. Default (unset): a path RELATIVE to each catalog
+    # page, pointing at the local indexed repo (never an absolute path). Set to a
+    # base URL (e.g. "https://github.com/org/repo/blob/<commit>") for a published
+    # wiki, or "" to disable links.
     source_url: str | None = None
     # Repo-relative globs to shard the Python index across processes (scip-python
     # `--target-only`). Each expanded path is one concurrent indexer with a bounded

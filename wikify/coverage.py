@@ -501,15 +501,22 @@ def render_catalog(
 def emit_catalogs(
     graph: SymbolGraph,
     wiki_slug_dir: str | Path,
-    source_base: str | None = None,
+    repo_dir: str | Path | None = None,
+    source_url: str | None = None,
 ) -> tuple[set[str], list[Path]]:
     """Write one catalog page per in-repo module. Returns (catalogued monikers, paths).
 
     Every documentable symbol ends up on its module's catalog page, so the
     returned set is exactly the documentable set — the whole-repo guarantee.
-    ``source_base`` (when given) makes def locations link into the pinned source."""
+
+    Source links: ``source_url`` (a base URL, e.g. github ``…/blob/<commit>``) is
+    used verbatim; otherwise, if ``repo_dir`` is given, each page links to the local
+    source via a path **relative to that page** (never an absolute path — a leading
+    ``/`` in markdown means repo-root, which would be a broken link). ``source_url=""``
+    disables links."""
     wiki_slug_dir = Path(wiki_slug_dir)
     catalog_dir = wiki_slug_dir / "catalog"
+    repo_abs = Path(repo_dir).resolve() if repo_dir else None
     docs = documentable_symbols(graph)
     covered = covered_monikers(graph, wiki_slug_dir)
     modules = by_module(docs)
@@ -517,8 +524,17 @@ def emit_catalogs(
     catalogued: set[str] = set()
     written: list[Path] = []
     for module_path, monikers in sorted(modules.items()):
-        text = render_catalog(graph, module_path, monikers, covered, source_base=source_base)
         out = catalog_dir / catalog_rel_path(module_path)
+        if source_url == "":
+            base = None
+        elif source_url:
+            base = source_url
+        elif repo_abs is not None:
+            # relative path from THIS page's directory to the source repo root.
+            base = os.path.relpath(repo_abs, out.parent.resolve())
+        else:
+            base = None
+        text = render_catalog(graph, module_path, monikers, covered, source_base=base)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")
         written.append(out)

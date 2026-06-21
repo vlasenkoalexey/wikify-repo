@@ -207,6 +207,27 @@ def test_catalog_def_lines_link_to_source_when_base_given():
     assert f"({base}/demo/models.py#L11)" in page        # Transformer def_line 10 → L11
 
 
+def test_emit_uses_relative_source_path_never_absolute(tmp_path):
+    """Source links from a local repo are RELATIVE to the catalog page — never an
+    absolute path (a leading `/` in markdown is repo-root, i.e. a broken link)."""
+    repo = tmp_path / "src"
+    (repo / "demo").mkdir(parents=True)
+    wiki = tmp_path / "wiki" / "demo"
+    import re
+    g = _graph()
+    coverage.emit_catalogs(g, wiki, repo_dir=repo)
+    page_dir = wiki / "catalog" / "demo"
+    page = (page_dir / "models.md").read_text()
+    links = [t for _l, t in re.findall(r"\[([^\]]*)\]\(([^)]+)\)", page) if "src/demo/models.py" in t]
+    assert links, "expected source links into the repo"
+    for link in links:
+        path = link.split("#")[0]
+        assert not path.startswith("/")                          # NEVER absolute
+        assert path.startswith("../")                            # relative
+        assert (page_dir / path).resolve() == (repo / "demo/models.py").resolve()  # resolves on disk
+    assert any("#L" in t for t in links)                         # def lines carry the line anchor
+
+
 def test_catalog_no_source_links_without_base():
     page = coverage.render_catalog(_graph(), "demo/models.py", [M_CLASS], covered={})
     assert "https://" not in page and "- def: `demo/models.py:11`" in page

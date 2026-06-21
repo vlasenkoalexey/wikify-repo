@@ -75,18 +75,6 @@ def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
     return p, load_config(p.config)
 
 
-def _source_base(repo_dir: Path, commit: str, override: str | None) -> str | None:
-    """Base for source links in catalogs. Default: the LOCAL indexed repo on disk
-    (so links open the actual file that was indexed, not a remote URL).
-
-    ``cfg.source_url`` overrides — set it to a remote base like
-    ``https://github.com/org/repo/blob/<commit>`` for a published wiki, or to ``""``
-    to disable links entirely."""
-    if override is not None:
-        return override or None
-    return str(Path(repo_dir).resolve())
-
-
 def _source(cfg: RepoConfig, repo: str | None) -> str:
     src = repo or cfg.repo
     if not src:
@@ -211,8 +199,10 @@ def finalize(
 
     # Stage 6b FIRST — emit module catalogs (the symbol homes). Citations resolve
     # against their frontmatter `symbols` map, so catalogs must exist before lint.
-    source_base = _source_base(acq.repo_dir, acq.commit, cfg.source_url)
-    catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug, source_base=source_base)
+    # Source links default to a path relative to each catalog page (local repo);
+    # cfg.source_url overrides with a base URL, or "" disables them.
+    catalogued, catalog_paths = coverage_mod.emit_catalogs(
+        graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url)
     typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
 
     if fix:

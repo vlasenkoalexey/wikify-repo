@@ -37,6 +37,7 @@ sidesteps dynamic dispatch precisely because it never asks about connectivity.
 
 from __future__ import annotations
 
+import os
 import posixpath
 import re
 from collections import defaultdict
@@ -281,13 +282,38 @@ def _rel_names(sym: Symbol) -> list[str]:
     return out
 
 
+def _src_link(source_base: str | None, path: str, line: int | None = None) -> str | None:
+    """Permalink into the pinned source (``<base>/<path>#L<line>``), or None."""
+    if not source_base:
+        return None
+    return f"{source_base.rstrip('/')}/{path}" + (f"#L{line}" if line else "")
+
+
+def _compress_anchor_map(anchor_map: dict[str, str]) -> tuple[str, dict[str, str]]:
+    """Factor the common moniker prefix out of an anchor→moniker map.
+
+    Returns ``(base, {anchor: suffix})`` where ``base + suffix`` reconstructs the
+    full moniker. Every symbol in a catalog shares the scheme/project/version (and,
+    for Python, the module namespace), so the common prefix is large; storing it
+    once removes ~55 bytes × N of repetition per page."""
+    monikers = list(anchor_map.values())
+    if not monikers:
+        return "", {}
+    base = os.path.commonprefix(monikers)
+    return base, {a: m[len(base):] for a, m in anchor_map.items()}
+
+
 def render_catalog(
     graph: SymbolGraph,
     module_path: str,
     monikers: list[str],
     covered: dict[str, str],
+    source_base: str | None = None,
 ) -> str:
-    """Render one module's catalog page from the graph (no synthesis)."""
+    """Render one module's catalog page from the graph (no synthesis).
+
+    ``source_base`` (e.g. ``https://github.com/org/repo/blob/<commit>``) makes the
+    module header and every ``def:`` line a permalink into the pinned source."""
     symbols = {m: graph.symbols[m] for m in monikers}
     # Partition into classes, their members, and module-level defs.
     classes: dict[str, str] = {}          # class_name -> moniker
@@ -309,26 +335,35 @@ def render_catalog(
         return f" — documented in [{concept}](../" + "../" * (module_path.count("/")) + \
                f"concepts/{concept}.md)" if concept else ""
 
+    def _loc(sym) -> str:
+        """`def: file:line`, linked to the pinned source when ``source_base`` is set."""
+        line = (sym.def_line or 0) + 1
+        loc = f"{sym.def_path}:{line}"
+        link = _src_link(source_base, sym.def_path, line)
+        return f"[`{loc}`]({link})" if link else f"`{loc}`"
+
     lines: list[str] = []
     a = lines.append
-    # Frontmatter carries the anchor→moniker map so the linter resolves citations
-    # to this catalog (replacing per-symbol stubs).
+    # Frontmatter carries the anchor→moniker map so the linter resolves citations.
+    # Every Python moniker in one catalog shares the same prefix (scheme + project +
+    # version + module namespace); factor it into `symbol_base` once so the map is
+    # anchor→terminal, not 100 copies of the same 55-char prefix.
+    base, suffixes = _compress_anchor_map(symbol_anchor_map(graph, monikers))
     fm = {
         "title": f"Module: {module_path}",
         "type": "catalog",
         "provenance": "extracted",
         "module": module_path,
         "status": "fresh",
-        "symbols": symbol_anchor_map(graph, monikers),
+        "symbol_base": base,
+        "symbols": suffixes,
     }
     a("---")
     a(yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).rstrip())
     a("---")
-    a(f"# Module: `{module_path}`")
-    a("")
-    a("Generated structural catalog (no synthesis). Every entry is grounded in the "
-      "SCIP index; intra-module calls/refs are reference-scoped. Symbols documented "
-      "by a concept page link to it; the rest are catalogued here for coverage.")
+    src = _src_link(source_base, module_path)
+    header = f"[`{module_path}`]({src})" if src else f"`{module_path}`"
+    a(f"# Module: {header}")
     a("")
 
     def _link_targets(targets: list[str], cap: int = 40) -> str:
@@ -355,9 +390,8 @@ def render_catalog(
             csym = symbols[cm]
             rels = _rel_names(csym)
             base = f"  ·  implements/extends {', '.join(sorted(set(rels)))}" if rels else ""
-            a(f'### `{cname}` <a id="{cname}"></a>{base}')
-            loc = f"{csym.def_path}:{(csym.def_line or 0) + 1}"
-            a(f"- def: `{loc}`{_cov_tag(cm)}")
+            a(f"### `{cname}`{base}")
+            a(f"- def: {_loc(csym)}{_cov_tag(cm)}")
             if csym.doc_summary:
                 a(f"- doc: {csym.doc_summary}")
             if _sig1(csym):
@@ -378,9 +412,8 @@ def render_catalog(
         a("## Functions")
         for m in sorted(funcs, key=lambda x: symbols[x].name):
             sym = symbols[m]
-            loc = f"{sym.def_path}:{(sym.def_line or 0) + 1}"
             sig = f"  `{_sig1(sym)}`" if _sig1(sym) else ""
-            a(f'- `{sym.name}` <a id="{sym.name}"></a> — `{loc}`{sig}{_cov_tag(m)}')
+            a(f"- `{sym.name}` — {_loc(sym)}{sig}{_cov_tag(m)}")
             if sym.doc_summary:
                 a(f"  - {sym.doc_summary}")
         a("")
@@ -388,8 +421,7 @@ def render_catalog(
         a("## Module values")
         for m in sorted(terms, key=lambda x: symbols[x].name):
             sym = symbols[m]
-            loc = f"{sym.def_path}:{(sym.def_line or 0) + 1}"
-            a(f"- `{sym.name}` — `{loc}`{_cov_tag(m)}")
+            a(f"- `{sym.name}` — {_loc(sym)}{_cov_tag(m)}")
         a("")
 
     return "\n".join(lines) + "\n"
@@ -398,12 +430,13 @@ def render_catalog(
 def emit_catalogs(
     graph: SymbolGraph,
     wiki_slug_dir: str | Path,
+    source_base: str | None = None,
 ) -> tuple[set[str], list[Path]]:
     """Write one catalog page per in-repo module. Returns (catalogued monikers, paths).
 
     Every documentable symbol ends up on its module's catalog page, so the
     returned set is exactly the documentable set — the whole-repo guarantee.
-    """
+    ``source_base`` (when given) makes def locations link into the pinned source."""
     wiki_slug_dir = Path(wiki_slug_dir)
     catalog_dir = wiki_slug_dir / "catalog"
     docs = documentable_symbols(graph)
@@ -413,7 +446,7 @@ def emit_catalogs(
     catalogued: set[str] = set()
     written: list[Path] = []
     for module_path, monikers in sorted(modules.items()):
-        text = render_catalog(graph, module_path, monikers, covered)
+        text = render_catalog(graph, module_path, monikers, covered, source_base=source_base)
         out = catalog_dir / catalog_rel_path(module_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")

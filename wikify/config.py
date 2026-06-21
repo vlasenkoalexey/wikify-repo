@@ -22,7 +22,7 @@ import yaml
 
 # Frontmatter keys the schema allows; anything else is a config error.
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
-                 "compile_commands", "index_shards", "bazel_targets"}
+                 "compile_commands", "index_shards", "bazel_targets", "source_url"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -75,6 +75,10 @@ class RepoConfig:
     # so a mixed bazel repo indexes with one command. Takes precedence over
     # compile_commands when set.
     bazel_targets: str | None = None
+    # Base URL for source permalinks in catalogs (e.g.
+    # "https://github.com/org/repo/blob/<commit>"). When unset, finalize derives it
+    # from the repo's git remote + pinned commit; set to "" to disable links.
+    source_url: str | None = None
     # Repo-relative globs to shard the Python index across processes (scip-python
     # `--target-only`). Each expanded path is one concurrent indexer with a bounded
     # working set — the only way to index repos too large for one pyright process
@@ -203,6 +207,7 @@ def load_config(path: str | Path) -> RepoConfig:
     repo = fm.get("repo")
     cc = fm.get("compile_commands")
     bt = fm.get("bazel_targets")
+    su = fm.get("source_url")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
@@ -211,6 +216,7 @@ def load_config(path: str | Path) -> RepoConfig:
         repo=None if repo is None else str(repo),
         compile_commands=None if cc is None else str(cc),
         bazel_targets=None if bt is None else str(bt),
+        source_url=None if su is None else str(su),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

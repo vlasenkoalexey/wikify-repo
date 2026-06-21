@@ -75,11 +75,18 @@ def _is_symbol_link(target: str) -> bool:
 
 
 def _resolve_citation(page_path: Path, target: str) -> str | None:
-    """Resolve a ``../catalog/<module>.md#anchor`` citation → moniker (or None)."""
+    """Resolve a ``../catalog/<module>.md#anchor`` citation → moniker (or None).
+
+    The catalog stores anchors → moniker *suffix* under a factored-out
+    ``symbol_base`` (the common prefix); reconstruct ``base + suffix``. Falls back
+    to the raw value when ``symbol_base`` is absent (older, uncompressed catalogs)."""
     path, _, anchor = target.partition("#")
     catalog_page = (page_path.parent / path).resolve()
-    syms = _frontmatter_dict(catalog_page).get("symbols") or {}
-    return syms.get(anchor)
+    fm = _frontmatter_dict(catalog_page)
+    syms = fm.get("symbols") or {}
+    if anchor not in syms:
+        return None
+    return f"{fm.get('symbol_base', '')}{syms[anchor]}"
 
 
 def _is_evidence_link(target: str) -> bool:

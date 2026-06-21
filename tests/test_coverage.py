@@ -90,6 +90,45 @@ def test_catalog_pages_mirror_source_tree(tmp_path):
     assert "More detail." not in body  # only the summary line, not the full body
 
 
+def test_catalog_frontmatter_factors_out_moniker_prefix(tmp_path):
+    """The repeated scheme/project/version/namespace prefix is stored once as
+    `symbol_base`, and the citation linter reconstructs base+suffix."""
+    import yaml
+    from wikify import lint
+    g = _graph()
+    page = coverage.render_catalog(g, "demo/models.py", [M_CLASS, M_METHOD, M_ATTN], covered={})
+    fm = yaml.safe_load(page.split("---")[1])
+    assert fm["symbol_base"] == "scip-python python demo 0.0.0 `demo.models`/"
+    assert fm["symbols"]["Transformer"] == "Transformer#"           # suffix only
+    assert "scip-python" not in fm["symbols"]["Transformer"]        # prefix factored out
+    # round-trip: a concept page citing this catalog resolves to the full moniker.
+    (tmp_path / "catalog/demo").mkdir(parents=True)
+    (tmp_path / "catalog/demo/models.md").write_text(page)
+    (tmp_path / "concepts").mkdir()
+    cpage = tmp_path / "concepts/c.md"
+    cpage.write_text("# C\n## Entry points\n- [`Transformer`](../catalog/demo/models.md#Transformer)\n")
+    assert lint._resolve_citation(cpage, "../catalog/demo/models.md#Transformer") == M_CLASS
+
+
+def test_catalog_drops_boilerplate_paragraph():
+    page = coverage.render_catalog(_graph(), "demo/models.py", [M_CLASS], covered={})
+    assert "Generated structural catalog" not in page   # implied by type: catalog
+
+
+def test_catalog_def_lines_link_to_source_when_base_given():
+    base = "https://github.com/org/repo/blob/abc123"
+    page = coverage.render_catalog(_graph(), "demo/models.py", [M_CLASS, M_FUNC],
+                                   covered={}, source_base=base)
+    # module header links to the file; class def links to the exact line (1-based).
+    assert f"[`demo/models.py`]({base}/demo/models.py)" in page
+    assert f"({base}/demo/models.py#L11)" in page        # Transformer def_line 10 → L11
+
+
+def test_catalog_no_source_links_without_base():
+    page = coverage.render_catalog(_graph(), "demo/models.py", [M_CLASS], covered={})
+    assert "https://" not in page and "- def: `demo/models.py:11`" in page
+
+
 def test_catalog_cross_links_carry_symbol_anchors():
     """`uses`/`used by` links point at the symbol anchor, not the page top — so
     they navigate to the symbol and same-named targets render distinctly."""

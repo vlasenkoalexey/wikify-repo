@@ -75,6 +75,28 @@ def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
     return p, load_config(p.config)
 
 
+def _source_base(repo_dir: Path, commit: str, override: str | None) -> str | None:
+    """Base URL for source permalinks: ``<host>/<org>/<repo>/blob/<commit>``.
+
+    Uses ``cfg.source_url`` when given (``""`` disables links); else derives it from
+    the repo's ``origin`` remote. Returns None when no remote (links are skipped)."""
+    if override is not None:
+        return override or None
+    import subprocess
+    try:
+        remote = subprocess.run(
+            ["git", "-C", str(repo_dir), "remote", "get-url", "origin"],
+            capture_output=True, text=True).stdout.strip()
+    except Exception:
+        remote = ""
+    if not remote:
+        return None
+    remote = remote.removesuffix(".git")
+    if remote.startswith("git@"):                       # git@github.com:org/repo
+        remote = "https://" + remote[4:].replace(":", "/", 1)
+    return f"{remote}/blob/{commit}"
+
+
 def _source(cfg: RepoConfig, repo: str | None) -> str:
     src = repo or cfg.repo
     if not src:
@@ -199,7 +221,8 @@ def finalize(
 
     # Stage 6b FIRST — emit module catalogs (the symbol homes). Citations resolve
     # against their frontmatter `symbols` map, so catalogs must exist before lint.
-    catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
+    source_base = _source_base(acq.repo_dir, acq.commit, cfg.source_url)
+    catalogued, catalog_paths = coverage_mod.emit_catalogs(graph, p.wiki_slug, source_base=source_base)
     typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
 
     if fix:

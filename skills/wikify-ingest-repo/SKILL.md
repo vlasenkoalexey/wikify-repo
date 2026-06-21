@@ -48,19 +48,28 @@ synthesis in Python; never push linting into your prose.
    and a map of which concept answers which question. It is synthesis over the
    concept pages (no new grounding).
 
-4. **Finalize (deterministic gate).** Run:
+4. **Doc concepts (LAST synthesis step).** `prepare` wrote a doc worklist at
+   `.cache/docs/<slug>.txt` (the project's own README / `docs/`, globbed from
+   `config.docs`). For each doc, follow `${CLAUDE_SKILL_DIR}/prompts/ingest-docs.md`:
+   read the doc, extract its concepts, and write **one grounded page per concept**
+   into `wiki/<slug>/doc-concepts/<concept>.md` — each linking the symbols the doc
+   names to their **catalog** entries and cross-linking sibling doc-concepts + code
+   concepts. The doc stays in place (never moved). Skip if the worklist is empty.
+
+5. **Finalize (deterministic gate).** Run:
    ```
    wikify finalize <slug>
    ```
-   The citation linter is a hard gate: every `symbols/*.md` citation must resolve
-   to a real SCIP symbol, every Entry-points/Mechanism item must be cited, and no
-   symbol outside the packet subgraph may appear. On success it also runs
-   **Stage 6b coverage**: it emits a `catalog/<module>.md` page for every module
-   (deterministic, no model) so the *whole repo* is represented — not just the
-   concepts you wrote — and prints a coverage report (deep % vs catalog-only).
-   It then assembles `wiki/<slug>/index.md` and updates reconcile state.
+   The citation linter is a hard gate over `concepts/`: every catalog citation must
+   resolve to a real SCIP symbol, every Entry-points/Mechanism item must be cited,
+   and no symbol outside the packet subgraph may appear. `doc-concepts/` get a
+   lighter gate (citations must resolve — rule 1 — no subgraph/uncited gates). On
+   success it also runs **Stage 6b coverage**: it emits a `catalog/<module>.md` page
+   for every module (deterministic, no model) so the *whole repo* is represented,
+   prints a coverage report, assembles `wiki/<slug>/index.md` (concepts + areas +
+   **doc-derived concepts**), and updates reconcile state.
 
-5. **Repair loop.** If `finalize` exits non-zero, it lists each failing
+6. **Repair loop.** If `finalize` exits non-zero, it lists each failing
    `page:line [rule N]`. Fix those pages (add the missing citation or move the
    claim into an `[!inferred]` block) and run `wikify finalize <slug>` again.
    Repeat until it exits 0.

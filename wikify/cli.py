@@ -83,6 +83,25 @@ def _source(cfg: RepoConfig, repo: str | None) -> str:
     return src
 
 
+def _find_docs(repo_dir: Path, patterns: list[str]) -> list[str]:
+    """Repo-relative project-doc paths matched by ``cfg.docs`` globs (sorted, deduped).
+
+    Skips vendored/build/checkpoint noise so the doc-ingest worklist is the real
+    authored docs (README / docs/), not generated or third-party markdown."""
+    skip = ("bazel-", ".git/", "third_party/", "vendor/", "node_modules/",
+            ".ipynb_checkpoints/", "build/")
+    out: list[str] = []
+    seen: set[str] = set()
+    for pat in patterns:
+        for m in sorted(repo_dir.glob(pat)):
+            rel = m.relative_to(repo_dir).as_posix()
+            if rel in seen or any(s in rel for s in skip) or not m.is_file():
+                continue
+            seen.add(rel)
+            out.append(rel)
+    return out
+
+
 def _expand_shards(repo_dir: Path, patterns: list[str]) -> list[str]:
     """Expand ``index_shards`` globs to sorted, de-duped repo-relative paths."""
     out: list[str] = []
@@ -181,6 +200,17 @@ def prepare(
     else:
         typer.echo(f"\nWrote {built} packet(s). Now run agent synthesis, then `wikify finalize {slug}`.")
 
+    # Doc worklist: glob the project's own docs (cfg.docs) for the last synthesis
+    # step (doc-concept extraction, skills/prompts/ingest-docs.md). The docs stay in
+    # place; we only record which to process, relative to the repo root.
+    docs = _find_docs(acq.repo_dir, cfg.docs)
+    if docs:
+        manifest = p.cache / "docs" / f"{slug}.txt"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("\n".join(docs) + "\n", encoding="utf-8")
+        typer.echo(f"docs: {len(docs)} project doc(s) to ingest → {manifest} "
+                   f"(run the doc-concept step, then finalize)")
+
 
 @app.command()
 def finalize(
@@ -211,6 +241,10 @@ def finalize(
                    f"{len(report_lint.errors)} error(s) remain")
     else:
         report_lint = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
+    # Doc-derived concepts (doc-concepts/, from the doc-ingest step) — light gate:
+    # their catalog citations must resolve (rule 1), no subgraph/uncited gates.
+    doc_report = lint.lint_doc_concepts(p.wiki_slug, graph)
+    report_lint = lint.LintReport(report_lint.errors + doc_report.errors)
     if not report_lint.ok:
         typer.echo(f"\nLINT FAILED ({len(report_lint.errors)} error(s)):", err=True)
         for e in report_lint.errors:

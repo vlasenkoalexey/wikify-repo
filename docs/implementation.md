@@ -536,6 +536,15 @@ instead of an alphabetical slice. Seeds are always kept.
 - **Overview** (`skills/prompts/overview.md`, SKILL step 3): synthesized
   `wiki/<slug>/overview.md` AFTER concepts; `assemble` links it from `index.md`
   ("Start here → Overview").
+- **Doc-concept ingest** (the LAST synthesis step — `skills/prompts/ingest-docs.md`,
+  SKILL step 4; adapts the autoresearch INGEST-SOURCE op to a silo). `prepare` globs
+  `config.docs` → a worklist (`.cache/docs/<slug>.txt`); per doc, an agent extracts
+  its concepts and writes **one grounded page per concept** into
+  `wiki/<slug>/doc-concepts/` — each links the symbols the doc names to their
+  **catalog** entries and cross-links siblings. The doc is never moved. `finalize`
+  lints `doc-concepts/` on **rule 1 only** (`lint.lint_doc_concepts` — citations
+  resolve; no subgraph/uncited gate, since these come from a doc not a packet), and
+  `index.md` gets a **"Doc-derived concepts"** section.
 
 ### 10.5 Config keys (frontmatter)
 `index_shards` (shard globs), `compile_commands` (pre-existing C++ DB),

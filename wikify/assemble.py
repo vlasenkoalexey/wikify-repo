@@ -43,6 +43,15 @@ def write_repo_index(
     if not concept_status and not area_pages:
         concepts_section = "## Concepts\n_(none synthesized; see `catalog/` for the structural index)_\n"
 
+    # Front door: the synthesized overview page (skills/prompts/overview.md), when
+    # it exists, is what a newcomer should read first.
+    overview_section = ""
+    if (wiki_slug_dir / "overview.md").exists():
+        overview_section = (
+            "\n**Start here → [Overview](overview.md)** — the whole system in one "
+            "page (main concepts + core diagrams + a map of the wiki).\n"
+        )
+
     coverage_section = ""
     if report is not None:
         coverage_section = f"""
@@ -71,7 +80,7 @@ updated: {date}
 
 Generated, grounded wiki. Start from a concept (or an area); drill into cited symbols.
 The commit pin above is the single source version for every page in this silo.
-
+{overview_section}
 {concepts_section}{coverage_section}
 ## Provenance
 `extracted` = from SCIP / source. `inferred` = LLM judgment, treat as such.

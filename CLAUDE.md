@@ -87,19 +87,21 @@ Root cause analysis settled the approach:
 Implemented in `wikify/coverage.py`; emitted by `finalize` (Stage 6b) and
 inspectable via `wikify coverage <slug>`.
 
-## Current objective: PHASE 1 ONLY
-Build Phase 1 per `docs/implementation.md` §6 — one pure-Python repo end to end
-(scip-python → symbol graph → packets → [agent synthesis] → lint → **coverage
-catalogs** → markdown).
-NOTHING else: no C++, no dispatch extractor, no connect, no discovery, no L4.
-**Done = the §6 acceptance test passes on `torchtitan`, including coverage:
-every class is represented in a concern page or a module catalog.** Do not start
-later phases until Phase 1 passes and I confirm.
+## Status (was "Phase 1 only" — now well beyond)
+Phase 1 (Python end-to-end) ✅ and Phase 2 (C++) ✅ are done, validated on
+**pytorch, jax, torch_tpu** (mixed C++/Python) plus torchtitan. Realized beyond
+the original plan — **read `design.md` "Decisions log" + `implementation.md` §10
+(authoritative) before touching these**:
+- Stage 1: sharded scip-python (`index_shards`) + AST fallback + orphan-synthesis;
+  C++ via scip-clang with an auto-generated bazel compile DB (`bazel_targets`).
+- build_graph: devirtualization (CHA over `is_implementation`).
+- packets: relevance-bounded subgraph.
+- Stage 6: catalog format (symbol_base compression, per-member detail + docstrings,
+  RELATIVE source links, test-filtered/importance-ranked uses-by); `finalize --fix`;
+  adversarial `verify`; synthesized `overview.md` linked from the index.
+- `symbols/` stubs are gone — folded into `catalog/` (see invariant 7).
 
-## Build order within Phase 1
-Start with `scip_index.py` + `graph.py`, and specifically the **SCIP-occurrence →
-callers/callees derivation** (`implementation.md` §5.1). It is the risky
-foundation everything else rests on (SCIP has no "call" role; it's a
-reference-scoping heuristic). Write a focused pytest validating callers/callees
-against a small repo with a known call structure, and show it passing, BEFORE
-building anything downstream.
+The risky foundation remains the **SCIP-occurrence → callers/callees derivation**
+(`implementation.md` §5.1) — reference-scoping, since SCIP has no "call" role;
+keep its focused pytest green. New mechanisms each ship with a pinning test (now
+93 tests).

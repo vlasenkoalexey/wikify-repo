@@ -21,6 +21,7 @@ import typer
 from . import (
     acquire,
     assemble,
+    bazel_cc,
     coverage as coverage_mod,
     diff,
     discover,
@@ -131,10 +132,18 @@ def prepare(
             typer.echo("indexing with scip-python ...")
             scip_index.run_indexer(acq.repo_dir, p.scip, project_name=slug)
     # C++ path (Stage 1, mixed-language): run scip-clang against the compile DB.
-    if cfg.compile_commands and (reindex or not p.scip_cpp.exists()):
-        cc = Path(cfg.compile_commands)
-        if not cc.is_absolute():
-            cc = acq.repo_dir / cc
+    # `bazel_targets` auto-generates the DB from bazel (build+aquery); otherwise a
+    # pre-existing `compile_commands` path is used.
+    if (cfg.bazel_targets or cfg.compile_commands) and (reindex or not p.scip_cpp.exists()):
+        if cfg.bazel_targets:
+            typer.echo(f"generating C++ compile DB from bazel ({cfg.bazel_targets}); "
+                       f"first run does a full build to materialize headers ...")
+            cc = bazel_cc.generate_compile_db(
+                acq.repo_dir, cfg.bazel_targets, p.cache / "scip" / f"{slug}.compile_commands.json")
+        else:
+            cc = Path(cfg.compile_commands)
+            if not cc.is_absolute():
+                cc = acq.repo_dir / cc
         typer.echo(f"indexing C++ with scip-clang ({cc}) ...")
         scip_index.run_clang_indexer(acq.repo_dir, cc, p.scip_cpp,
                                      scip_clang_bin=_scip_clang_bin())

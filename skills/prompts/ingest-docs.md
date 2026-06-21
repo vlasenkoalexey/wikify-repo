@@ -24,11 +24,24 @@ extract from it.
    up in the catalog (`wiki/<slug>/catalog/<module>.md`) to get their `cite:`
    anchors. A doc-concept is valuable precisely because it links the doc's prose to
    the real code.
-3. **Write one page** `wiki/<slug>/doc-concepts/<concept-slug>.md` (slug: short,
+3. **Survey what's already in the silo BEFORE writing** — `ls wiki/<slug>/concepts/`
+   and skim titles. A doc-concept almost always overlaps a code concept (e.g. a
+   "compilation cache" doc-concept ↔ the `…cache_key` concept page). You must wire
+   those links.
+4. **Write one page** `wiki/<slug>/doc-concepts/<concept-slug>.md` (slug: short,
    lowercase, hyphenated). De-dup: if a concept already has a doc-concept page,
    *update* it (add this doc as a source) rather than duplicate.
-4. **Cross-link** (the "update connections" step): each page links to sibling
-   doc-concepts and to related code concepts; mention which catalog modules own it.
+5. **Cross-link (REQUIRED where it makes sense — this is the point of the step).**
+   Each page connects three ways:
+   - **to code concept pages** (`../concepts/<concept>.md`) — the deep page(s) on the
+     same subsystem. Look for them in step 3; link every one that's genuinely
+     related. (This is what was being missed.)
+   - **to catalog files** — both the symbol anchors inline (grounding) AND a link to
+     the owning **module catalog page** (`../catalog/<module>.md`) so a reader can
+     jump to the full per-module index.
+   - **to sibling doc-concepts** (`other-concept.md`).
+   Don't force links that don't fit — but if a related code concept exists, linking
+   it is mandatory, not optional.
 
 ## Page format
 ```
@@ -53,8 +66,10 @@ How it maps to the code — link the symbols the doc names to their catalog entr
 The doc's rationale and the conditions it calls out.
 
 ## Connections
+- Code concepts: [<concept>](../concepts/<concept>.md) — the deep page(s) on this
+  subsystem (link every related one).
+- Module catalogs: [<module>](../catalog/<module>.md) — the full per-module index.
 - Related doc-concepts: [other](other-concept.md)
-- Related code concepts: [concept](../concepts/<concept>.md)
 
 ## Source
 Extracted from `<repo-relative doc path>` (kept in place).

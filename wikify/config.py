@@ -22,7 +22,7 @@ import yaml
 
 # Frontmatter keys the schema allows; anything else is a config error.
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
-                 "compile_commands", "index_shards"}
+                 "compile_commands", "index_shards", "bazel_targets"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -69,7 +69,12 @@ class RepoConfig:
     build: str | None = None
     ref: str | None = None
     repo: str | None = None  # local path or git URL of the source (Stage 0)
-    compile_commands: str | None = None  # path to compile_commands.json (C++ path)
+    compile_commands: str | None = None  # path to a pre-existing compile_commands.json
+    # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
+    # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
+    # so a mixed bazel repo indexes with one command. Takes precedence over
+    # compile_commands when set.
+    bazel_targets: str | None = None
     # Repo-relative globs to shard the Python index across processes (scip-python
     # `--target-only`). Each expanded path is one concurrent indexer with a bounded
     # working set — the only way to index repos too large for one pyright process
@@ -197,6 +202,7 @@ def load_config(path: str | Path) -> RepoConfig:
     ref = fm.get("ref")
     repo = fm.get("repo")
     cc = fm.get("compile_commands")
+    bt = fm.get("bazel_targets")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
@@ -204,6 +210,7 @@ def load_config(path: str | Path) -> RepoConfig:
         ref=None if ref is None else str(ref),
         repo=None if repo is None else str(repo),
         compile_commands=None if cc is None else str(cc),
+        bazel_targets=None if bt is None else str(bt),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

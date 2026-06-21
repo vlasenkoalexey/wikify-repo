@@ -294,7 +294,15 @@ def run_clang_indexer(
         scip_clang_bin,
         f"--compdb-path={Path(compile_commands_path).resolve()}",
         f"--index-output-path={output_path.resolve()}",
+        # Large C++ TUs (e.g. anything pulling the torch/XLA header graph) produce
+        # per-TU analysis messages well over scip-clang's 1 MB IPC default and take
+        # minutes each — raise both ceilings so they don't fail/skip. Overridable.
+        f"--ipc-size-hint-bytes={os.environ.get('WIKIFY_SCIP_CLANG_IPC', 67108864)}",
+        f"--receive-timeout-seconds={os.environ.get('WIKIFY_SCIP_CLANG_TIMEOUT', 600)}",
     ]
+    jobs = os.environ.get("WIKIFY_SCIP_CLANG_JOBS")
+    if jobs:
+        cmd.append(f"-j={jobs}")
     # scip-clang invokes `clang++` (found via the compile DB) to determine the
     # resource directory. If no clang++ is on PATH (e.g. only g++ present), give
     # it one by symlinking a C++ compiler — keeps the C++ path working anywhere.
@@ -306,9 +314,12 @@ def run_clang_indexer(
             (shim / "clang++").symlink_to(cxx)
             env["PATH"] = f"{shim}{os.pathsep}{env.get('PATH', '')}"
     proc = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True, env=env)
-    if proc.returncode != 0:
+    # scip-clang exits nonzero on per-TU diagnostics it suppressed; as with
+    # scip-python, accept a non-empty emitted index and only fail on no output.
+    if not _has_documents(output_path):
         raise RuntimeError(
-            f"scip-clang failed ({proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
+            f"scip-clang failed ({proc.returncode}), no index emitted:"
+            f"\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}"
         )
     return output_path
 

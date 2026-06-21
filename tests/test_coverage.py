@@ -110,6 +110,30 @@ def test_catalog_frontmatter_factors_out_moniker_prefix(tmp_path):
     assert lint._resolve_citation(cpage, "../catalog/demo/models.md#Transformer") == M_CLASS
 
 
+def test_used_by_excludes_tests_and_ranks_by_importance():
+    g = SymbolGraph()
+    C = f"{PKG} `demo.models`/Target#"
+    A = f"{PKG} `demo.a`/AHi#"          # high importance (many outbound edges)
+    B = f"{PKG} `demo.b`/BLo#"          # low importance
+    T = f"{PKG} `demo.testing.t`/TFix#" # a test fixture → must be filtered
+    for m, name, path in [(C, "Target", "demo/models.py"), (A, "AHi", "demo/a.py"),
+                          (B, "BLo", "demo/b.py"), (T, "TFix", "demo/testing/t.py")]:
+        g.add_symbol(Symbol(moniker=m, kind="Class", suffix="Type", name=name,
+                            def_path=path, def_line=1))
+    for caller in (A, B, T):
+        g.add_edge(caller, C)           # all three "use" Target
+    for i in range(5):                  # boost A's importance
+        x = f"{PKG} `demo.a`/x{i}."
+        g.add_symbol(Symbol(moniker=x, kind="Term", suffix="Term", name=f"x{i}",
+                            def_path="demo/a.py", def_line=1))
+        g.add_edge(A, x)
+    page = coverage.render_catalog(g, "demo/models.py", [C], covered={})
+    ub = next(l for l in page.splitlines() if l.startswith("- used by:"))
+    assert "TFix" not in ub                        # test fixture excluded
+    assert "1 test-only" in ub                     # ...and the omission noted
+    assert ub.index("AHi") < ub.index("BLo")       # ranked by importance, not name
+
+
 def test_catalog_drops_boilerplate_paragraph():
     page = coverage.render_catalog(_graph(), "demo/models.py", [M_CLASS], covered={})
     assert "Generated structural catalog" not in page   # implied by type: catalog

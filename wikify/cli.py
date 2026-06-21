@@ -76,25 +76,15 @@ def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
 
 
 def _source_base(repo_dir: Path, commit: str, override: str | None) -> str | None:
-    """Base URL for source permalinks: ``<host>/<org>/<repo>/blob/<commit>``.
+    """Base for source links in catalogs. Default: the LOCAL indexed repo on disk
+    (so links open the actual file that was indexed, not a remote URL).
 
-    Uses ``cfg.source_url`` when given (``""`` disables links); else derives it from
-    the repo's ``origin`` remote. Returns None when no remote (links are skipped)."""
+    ``cfg.source_url`` overrides — set it to a remote base like
+    ``https://github.com/org/repo/blob/<commit>`` for a published wiki, or to ``""``
+    to disable links entirely."""
     if override is not None:
         return override or None
-    import subprocess
-    try:
-        remote = subprocess.run(
-            ["git", "-C", str(repo_dir), "remote", "get-url", "origin"],
-            capture_output=True, text=True).stdout.strip()
-    except Exception:
-        remote = ""
-    if not remote:
-        return None
-    remote = remote.removesuffix(".git")
-    if remote.startswith("git@"):                       # git@github.com:org/repo
-        remote = "https://" + remote[4:].replace(":", "/", 1)
-    return f"{remote}/blob/{commit}"
+    return str(Path(repo_dir).resolve())
 
 
 def _source(cfg: RepoConfig, repo: str | None) -> str:

@@ -43,6 +43,18 @@ def write_repo_index(
     if not concept_status and not area_pages:
         concepts_section = "## Concepts\n_(none synthesized; see `catalog/` for the structural index)_\n"
 
+    # Doc-derived concepts (from the doc-ingest step) — extracted from the project's
+    # own docs and grounded to the catalog; kept separate from code concepts.
+    doc_concept_pages = sorted((wiki_slug_dir / "doc-concepts").glob("*.md"))
+    if doc_concept_pages:
+        rows_d = "\n".join(f"- [{p.stem}](doc-concepts/{p.name})" for p in doc_concept_pages)
+        concepts_section += (
+            "\n## Doc-derived concepts\n"
+            "Concepts extracted from the project's own docs (README / `docs/`), "
+            "grounded to the symbol catalog. The source docs stay in place.\n"
+            + rows_d + "\n"
+        )
+
     # Front door: the synthesized overview page (skills/prompts/overview.md), when
     # it exists, is what a newcomer should read first.
     overview_section = ""

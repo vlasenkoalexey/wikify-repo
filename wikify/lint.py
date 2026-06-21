@@ -197,6 +197,31 @@ def page_citations(page_path: Path) -> set[str]:
     return monikers
 
 
+def lint_doc_concepts(wiki_slug_dir: str | Path, graph: SymbolGraph) -> LintReport:
+    """Light lint for doc-derived concept pages (`doc-concepts/`): every catalog
+    citation must resolve to a real symbol (rule 1). These come from a project doc,
+    not a SCIP packet, so the subgraph gate (rule 3) and uncited-item gate (rule 2)
+    do NOT apply — a doc-concept may state prose freely; it just may not cite a
+    symbol that doesn't exist."""
+    errors: list[LintError] = []
+    d = Path(wiki_slug_dir) / "doc-concepts"
+    if not d.is_dir():
+        return LintReport(errors)
+    for page in sorted(d.glob("*.md")):
+        for i, line in enumerate(page.read_text(encoding="utf-8").splitlines(), start=1):
+            for _label, target in _LINK.findall(line):
+                if not _is_symbol_link(target):
+                    continue
+                moniker = _resolve_citation(page, target)
+                if moniker is None:
+                    errors.append(LintError(page.name, i, 1,
+                                  f"dead citation → {target} (anchor not in catalog)"))
+                elif moniker not in graph:
+                    errors.append(LintError(page.name, i, 1,
+                                  f"citation {target} resolves to a moniker not in the SCIP index"))
+    return LintReport(errors)
+
+
 def lint_silo(
     wiki_slug_dir: str | Path,
     graph: SymbolGraph,

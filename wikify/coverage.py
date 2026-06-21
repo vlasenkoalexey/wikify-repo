@@ -282,6 +282,19 @@ def _rel_names(sym: Symbol) -> list[str]:
     return out
 
 
+# Path segments whose symbols are TEST/example noise in uses/used-by lists — a
+# class "used by" 1000 test fixtures tells you nothing about how the library works,
+# and (alphabetically) buries the real callers. Dependencies (third_party/, vendor/)
+# are NOT filtered: a vendored/3p symbol as a caller is a legitimate relationship.
+_NOISE_SEGMENTS = {"test", "tests", "testing", "example", "examples",
+                   "benchmark", "benchmarks"}
+
+
+def _is_noise_path(def_path: str | None) -> bool:
+    segs = (def_path or "").split("/")
+    return any(s in _NOISE_SEGMENTS or s.startswith("test_") for s in segs)
+
+
 def _src_link(source_base: str | None, path: str, line: int | None = None) -> str | None:
     """Permalink into the pinned source (``<base>/<path>#L<line>``), or None."""
     if not source_base:
@@ -367,21 +380,35 @@ def render_catalog(
     a("")
 
     def _link_targets(targets: list[str], cap: int = 40) -> str:
-        """Render in-repo edge targets, classes first, linked to their catalog page."""
+        """Render in-repo edge targets, ranked by importance, linked to their catalog.
+
+        Test/example/vendored callers are filtered out (they're noise and bury the
+        real users), and the rest are ranked by centrality so the cap keeps the
+        load-bearing callers, not an alphabetical slice. Hidden counts are reported
+        (no silent truncation)."""
         items = [(graph.symbols[t], t) for t in targets if t in graph.symbols]
-        items.sort(key=lambda it: (it[0].suffix != "Type", it[0].name or ""))
+        kept = [it for it in items if not _is_noise_path(it[0].def_path)]
+        hidden_tests = len(items) - len(kept)
+        # importance first (central callers), classes before non-classes, then name.
+        kept.sort(key=lambda it: (-graph.importance(it[1]), it[0].suffix != "Type",
+                                  it[0].name or ""))
         out: list[str] = []
-        for sym, _t in items[:cap]:
+        for sym, _t in kept[:cap]:
             if sym.def_path:
                 rel = _rel_catalog_link(module_path, sym.def_path)
-                # Link to the symbol's anchor, not just the module page top — this
-                # also disambiguates same-named symbols (two classes' `__call__`)
-                # that would otherwise render as identical, duplicate-looking links.
+                # Anchor disambiguates same-named symbols (two classes' `__call__`).
                 out.append(f"[`{sym.name}`]({rel}#{qualified_name(_t)})")
             else:
                 out.append(f"`{sym.name}`")
-        more = f" (+{len(items) - cap} more)" if len(items) > cap else ""
-        return ", ".join(out) + more if out else "(none in-repo)"
+        notes = []
+        if len(kept) > cap:
+            notes.append(f"+{len(kept) - cap} more")
+        if hidden_tests:
+            notes.append(f"{hidden_tests} test-only")
+        tail = f"  ({'; '.join(notes)})" if notes else ""
+        if not out:
+            return f"({hidden_tests} test-only callers)" if hidden_tests else "(none in-repo)"
+        return ", ".join(out) + tail
 
     if classes:
         a("## Classes")

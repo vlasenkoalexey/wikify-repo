@@ -171,6 +171,46 @@ stays easy.
    In layer terms: **L3's agenda is a deterministic function of L1's topology, and
    L3's effort density is monotonic in symbol centrality.**
 
+### Decisions log (settled across the pytorch / jax / torch_tpu ingests)
+
+These were forced or refined by real ingests; recorded so they aren't relitigated.
+The *how* lives in `implementation.md` §10.
+
+- **Scale by sharding, not heap.** scip-python is single-process and OOMs on
+  pytorch at any heap size; the fix is `--target-only` shards unioned by global
+  moniker — never "give pyright more memory."
+- **A symbol-recovery floor.** A type checker can't index everything: it drops
+  symbols on `RangeError` (→ orphan-synthesis from the definition occurrence) and
+  fails some files entirely (→ deterministic AST fallback whose monikers match
+  scip-python's scheme). Ingestion is robust to partial indexer failure.
+- **Devirtualization IS the connection op.** CHA over SCIP `is_implementation`
+  builds the base→override edges reference-scoping misses (decision 7's deferred
+  "connection"). Coverage still ≠ connection; this is the bridge.
+- **C++ comes from bazel.** For repos with no checked-in compile DB, generate one
+  from `bazel build`+`aquery` (`bazel_targets:`); the sources are kept in-project by
+  setting `directory` = the real repo root, which also drops external dep headers.
+- **A correctness floor above the grounding floor.** The linter proves every claim
+  cites a real symbol; *adversarial verify* (skeptic agents refuting against
+  source) proves the claim is *true*. Both are gates, at different altitudes.
+- **The catalog is a navigation surface, not a symbol dump.** Per-member detail
+  with extracted docstrings + relative source links; uniform and **uncapped on a
+  module's own members** (so an agent can deterministically find any symbol);
+  `uses`/`used by` are the only capped lists (unbounded cross-refs), test-filtered
+  and importance-ranked. The `symbols/` per-symbol stubs are gone — folded into the
+  module catalog (one home per symbol).
+- **Source links are relative and local, never absolute, never github-by-default.**
+  An absolute `/…` path is a broken link in markdown (reads as repo-root); a github
+  URL isn't local. Default: a path relative to the catalog page into the indexed
+  repo. `source_url` opts into a URL base.
+- **`project_version` stays `0.0.0`.** A SCIP moniker field we leave at the
+  placeholder — nothing depends on its value (monikers need only internal
+  consistency), and pinning it to the commit would churn every moniker per ingest
+  and hurt reconcile diffs.
+- **`third_party`/`vendor` are dependencies, not noise.** Excluded from *concept
+  discovery* (don't write a deep page about vendored fmt) but kept in `uses`/`used
+  by` (a vendored caller is a real relationship); only test/example paths are
+  filtered there.
+
 ---
 
 ## Architecture
@@ -666,10 +706,17 @@ per-repo silos at `wiki/<slug>/`, the cross-repo layer at `wiki/_connect/`
 ## Worked examples
 
 > Symbol names below are **illustrative** for a hypothetical `torch_tpu` backend,
-> to show the schema — not claims about real code. Citations are plain markdown
-> links to symbol-stub pages; each stub holds the authoritative SCIP moniker +
-> location. The linter checks every such link resolves and that its moniker
-> exists in the SCIP index.
+> to show the schema — not claims about real code. The linter checks every
+> citation link resolves and that its moniker exists in the SCIP index.
+>
+> ⚠️ **Superseded:** these examples predate two realized decisions (see the
+> Decisions log and `implementation.md` §10). The per-symbol `symbols/<…>.md` stub
+> files **no longer exist** — every symbol's home is its **module catalog**
+> (`catalog/<module>.md`), and a citation targets a catalog anchor
+> (`../catalog/<module>.md#Qualified.Name`) resolved via the catalog's
+> `symbol_base` + `symbols` frontmatter map. Read the `symbols/...md (stub)` pages
+> below as "the symbol's catalog entry." The catalog format also evolved
+> (per-member detail + docstrings + relative source links).
 
 ### Layout (concrete)
 
@@ -678,17 +725,16 @@ wiki/
   index.md                   top-level catalog (all repos)
   torch_tpu/                 the silo
     index.md
+    overview.md              synthesized top-level overview (front door)
     concepts/
       compilation-pipeline.md
       dispatch-path.md
       compute-comm-overlap.md
       memory-management.md
+    catalog/                 one page per module — every symbol's home
+      torch_tpu/...md        (replaces the old symbols/ stub dir)
     maps/
       dispatch.md
-    symbols/
-      cxx-torch_tpu-LazyGraphExecutor-Compile.md
-      cxx-torch_tpu-Compiler-LowerToHlo.md
-      cxx-torch_tpu-CollectiveScheduler-Schedule.md
     tests/
       compute-comm-overlap.md
     sources/

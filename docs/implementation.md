@@ -459,3 +459,92 @@ One standalone GitHub repo is simultaneously: the **PyPI source** (engine), the
 **plugin marketplace** (builder + reader), and the **build home**. When wikify is
 later folded into the autoresearch repo, Channels 2–3 move inside it; the
 mechanics are unchanged.
+
+---
+
+## 10. Realized mechanisms (post-v1 iteration — authoritative)
+
+The §1–9 plan held, but three real ingests (torchtitan, **pytorch**, **jax**,
+**torch_tpu**) forced mechanisms beyond it. Where this section conflicts with an
+earlier one, **this section wins**. Phase status: Phase 1 (Python) ✅; Phase 2
+(C++) ✅ via bazel; discovery + scaled synthesis ✅.
+
+### 10.1 Stage 1 — indexing at scale & C++ from bazel
+- **Sharded scip-python** (`run_indexer_sharded`, config `index_shards: ["pkg/*"]`).
+  scip-python/pyright is single-process and OOMs (exit 144) on pytorch even at
+  128 GB heap — *more heap does not help; shard instead*. Each shard is one
+  `scip-python --target-only <path>` process with a bounded working set; monikers
+  are global so shards union via `build_graph(*indexes)`. `merge_shards` repairs
+  each doc's target-relative path back to repo-relative (falling back to the path
+  derived from the symbol moniker for ambiguous `../` spillover).
+- **AST fallback** (`ast_fallback.py`). Some files crash pyright with an unbounded
+  `RangeError` and emit *nothing* (e.g. `torch/_tensor.py` = `torch.Tensor`). We
+  parse them with Python's `ast` and synthesize symbols whose monikers match
+  scip-python's scheme exactly, so the thousands of existing references join
+  (Tensor recovered with 4990 callers). Run automatically for any target file the
+  shards didn't emit.
+- **C++ via scip-clang**, auto-generated compile DB from bazel (`bazel_targets:
+  "//pkg/..."`, `wikify/bazel_cc.py`). `prepare` runs `bazel build` (materialize
+  generated headers), `bazel aquery` (compile actions), converts to
+  `compile_commands.json` — splitting combined `-isystem path` tokens, absolutizing
+  includes against the execroot, `directory` = the real repo root (so sources are
+  in-project and external torch/XLA/llvm headers drop), stripping output flags —
+  then runs scip-clang with a raised `--ipc-size-hint-bytes` and long
+  `--receive-timeout-seconds` (these TUs pull the whole torch header graph). A
+  pre-existing `compile_commands:` path is the alternative. `build_graph` unions
+  the Python + C++ indexes.
+
+### 10.2 build_graph — recovery & connection
+- **Orphan-synthesis (step 1.5)**: pyright drops a symbol's `SymbolInformation`
+  when it fails to type it (RangeError), yet records the definition occurrence; we
+  synthesize the node from that occurrence so the symbol stays citable/coverable
+  (recovered `nn.Module` + ~2000 symbols).
+- **Devirtualization (step 3, `graph.devirtualize`)**: Class Hierarchy Analysis
+  over SCIP `is_implementation` → base→override / class→subclass edges, crossing
+  the dynamic-dispatch seam reference-scoping can't see (pytorch: 8026 virtual
+  edges; `nn.Module` → its 400 subclasses). Tracked in `graph.virtual_edges` and
+  shown as `(virtual)` in packets. This is the "connection" op decision 7 deferred.
+
+### 10.3 Packets — relevance-bounded subgraph
+`packet.gather_subgraph` replaces the flat 50-symbol BFS cap with a frontier scored
+by **importance ÷ (1 + distance from a seed)**, filling a budget (60) by relevance
+so a hub (e.g. `nn.Module`, 1000+ callers) keeps its load-bearing collaborators
+instead of an alphabetical slice. Seeds are always kept.
+
+### 10.4 Stage 6 — catalog format, fix, verify, overview
+- **Catalog format** (`coverage.render_catalog`): frontmatter factors the common
+  moniker prefix into `symbol_base:` (anchors→terminal, ~70% shorter); no
+  per-page boilerplate paragraph (implied by `type: catalog`). Each class lists
+  **per-member detail** — `name(params) — Lline — docstring` for public/documented
+  members (no caps: a module's own contents are the deterministic content an agent
+  navigates to), with undocumented dunder/private folded but present+linked.
+  Signatures are decorator-stripped. **Source links are RELATIVE** to the catalog
+  page (never absolute — a leading `/` is repo-root, a broken link); `source_url`
+  overrides with a base URL (github `…/blob/<commit>`), `""` disables.
+- **`uses` / `used by`**: the only capped lists (unbounded cross-refs). Test/example
+  callers are filtered (path segments test/tests/testing/example/benchmark — but
+  NOT third_party/vendor, which are legit deps), the rest ranked by importance,
+  hidden counts reported (`(+440 more; 671 test-only)`).
+- **`finalize --fix`** (`fix.py`): deterministic auto-repair of the three lint
+  rules against the packet (wrong anchor → packet's link; out-of-subgraph →
+  de-link; uncited Mechanism step → link a symbol it names). Only removes or swaps
+  in the packet's own link — never manufactures grounding; residuals reported.
+- **Adversarial verify** (`verify.py`, `skills/prompts/verify.md`, `wikify
+  verify`): the correctness floor above the grounding floor. Extracts load-bearing
+  claims; a skeptic agent tries to refute each against real source; verdicts fold
+  to pass/fail. (On jax it caught 3 real errors in 323 claims.)
+- **Overview** (`skills/prompts/overview.md`, SKILL step 3): synthesized
+  `wiki/<slug>/overview.md` AFTER concepts; `assemble` links it from `index.md`
+  ("Start here → Overview").
+
+### 10.5 Config keys (frontmatter)
+`index_shards` (shard globs), `compile_commands` (pre-existing C++ DB),
+`bazel_targets` (auto-generate the C++ DB from bazel), `source_url` (catalog
+source-link base; default relative-local, `""` disables).
+
+### 10.6 Vendored tools / setup
+`scripts/setup-vendor.sh` fetches scip-python (npm) + scip-clang (pinned binary,
+~130 MB — NOT committed, exceeds GitHub's limit) and generates `scip_pb2.py`.
+`scripts/bazel_compile_commands.py` is a thin CLI over `wikify.bazel_cc`.
+`project_version` stays `"0.0.0"` (a placeholder; nothing depends on its value —
+monikers only need internal consistency).

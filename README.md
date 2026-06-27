@@ -1,39 +1,39 @@
 # wikify-repo
 
-> ### 🧠 Compile any codebase into a knowledge base your AI agent can actually *trust*. ✅
+**Compile any codebase into a knowledge base your AI agent can actually trust.**
 
-wikify-repo turns a repo into a grounded, lint-clean **markdown wiki** where **every claim is
-traced to a real, compiler-resolved symbol** — behind a citation linter that **fails the build** if
-one doesn't check out. 🔒 No graph database. No dashboard. No hosted service. The output is plain
-markdown your agent answers from with `grep` — and that **you own**, in your own git repo, forever. 📂
+wikify-repo turns a repo into a grounded, lint-clean **markdown wiki** where every claim is traced to
+a real, compiler-resolved symbol — behind a citation linter that **fails the build** if one doesn't
+check out. No graph database, no dashboard, no hosted service: the output is plain markdown your agent
+answers from with `grep`, and that you own in your own git repo. Deterministic Python does the
+grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the synthesis.
+See `docs/design.md` (what/why) and `docs/implementation.md` (how).
 
-The others hand you a graph to click around 🕸️ or a hosted chatbot that politely warns it *"might be
-wrong"* ⚠️. wikify-repo is the **real product**: a *verifiable*, *complete*, *self-updating* knowledge
-base that needs **zero tooling to query**. 🚀
+## How wikify-repo compares
 
-## 🥊 wikify-repo vs. the toys
+| | **wikify-repo** | graphify | understand-anything | Google Code Wiki |
+|---|---|---|---|---|
+| **Output** | Markdown wiki — pages in your git repo | Knowledge graph (HTML + JSON) | React-Flow graph dashboard | Hosted web docs |
+| **Code structure from** | **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang) | tree-sitter AST, **name-based** (20 languages) | file + import scanners | Gemini (closed) |
+| **Faithfulness** | **Citation linter is a hard build gate**; uncited claims quarantined to `[!inferred]` | relationships labeled `EXTRACTED / INFERRED / AMBIGUOUS` — honest, but not gated | LLM per-node summaries, unverified | *"AI-generated map, not a source of truth"* |
+| **Coverage** | **Deterministic set-difference** — every module gets a page | Leiden community clustering | scanners enumerate all files | not specified |
+| **Inputs** | code + prose (docs / articles) | **widest** — code, SQL, shell, docs, papers, images, audio/video | code + docs / LLM-wikis | code repos |
+| **Retrieval** | `grep` + `index.md` — **no embeddings, no DB** | graph queries + clusters (no embeddings) | name + semantic search in the dashboard | hosted UI + Gemini chat |
+| **Updates** | **idempotent reconcile** — `--ref` rebuilds only changed symbols | re-run (caches transcripts) | full regenerate (snapshot) | auto-maintained (hosted) |
+| **Ownership** | plain markdown in your repo — offline, git-diffable | local graph files | local dashboard | **Google-hosted** (private repos waitlisted) |
 
-| | 🟢 **wikify-repo** | graphify | understand-anything | Google Code Wiki |
-|---|:---:|:---:|:---:|:---:|
-| 🔒 **Grounded & verified** — every claim cites a resolved symbol, behind a hard build gate | ✅ | ⚠️ *labels guesses, no gate* | ❌ *unverified LLM prose* | ❌ *"can make mistakes"* |
-| 🎯 **Compiler-grade symbols** — SCIP resolution, not name-matching | ✅ | ❌ *tree-sitter names* | ❌ *file/import scan* | ❓ *closed* |
-| 🧩 **No silent gaps** — deterministic coverage, every module represented | ✅ | ⚠️ | ⚠️ | ❌ |
-| 🔧 **Zero tools to read it** — just markdown + `grep`, from any agent | ✅ | ❌ *needs the graph runtime* | ❌ *needs the dashboard app* | ❌ *needs Google's website* |
-| 📂 **You own the output** — plain markdown in your git repo | ✅ | ⚠️ *graph files* | ⚠️ *dashboard* | ❌ *hosted by Google* |
-| ♻️ **Incremental updates** — rebuild only what changed | ✅ | ❌ *full re-run* | ❌ *full snapshot* | ✅ *(but hosted)* |
-| 🔐 **Private / offline** — no SaaS, no upload | ✅ | ✅ | ✅ | ❌ *private repos waitlisted* |
+The other three optimize for navigation and reach — a graph to traverse ([graphify](https://github.com/safishamsi/graphify)),
+a visual dashboard to explore ([understand-anything](https://github.com/labolado/understand-anything)),
+a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)).
+wikify-repo optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
+gate, a deterministic coverage pass guarantees no module is silently dropped, and the result is plain
+markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS.
 
-The others optimize for a **demo** — a graph to look at, a chatbot to ask. wikify-repo optimizes for
-**trust**: a knowledge base you can *cite*, that can't *silently miss* a subsystem, and that an agent
-reads with **nothing but `grep`** — no graph DB, no MCP server, no website. Deterministic Python does
-the grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the
-synthesis. See `docs/design.md` (what/why) and `docs/implementation.md` (how).
-
-## Status — battle-tested ⚙️
+## Status — battle-tested
 
 End to end on real repos: `scip-python / scip-clang → symbol graph → packets →
 [agent synthesis] → citation lint → markdown wiki`. Validated on **pytorch**, **jax**,
-**torch_tpu** (mixed C++/Python), **torchtitan**, and **mini-pytorch-xla** — Python ✅ and C++ ✅.
+**torch_tpu** (mixed C++/Python), **torchtitan**, and **mini-pytorch-xla** — Python and C++.
 
 ## Install
 

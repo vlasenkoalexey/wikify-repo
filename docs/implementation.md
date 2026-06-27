@@ -187,7 +187,7 @@ One markdown file per concept at `.cache/packets/<slug>/<concept>.md`:
 <the page template; the citation rules; "cite only symbols above; mark
  uncited claims [!inferred]; keep design-intent dynamics separate">
 ```
-The agent reads only the packet, writes `wiki/<slug>/concepts/<concept>.md`, and
+The agent reads only the packet, writes `wiki/code/<slug>/concepts/<concept>.md`, and
 creates any missing `symbols/<slug>.md` stubs for symbols it cites.
 
 ### 5.5 Reconcile state (`.cache/state/<slug>.json`)
@@ -265,7 +265,7 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
   → index. Mixed-language repos union the Python + C++ indexes.
 - `dispatch.py`: prefer parsing **`native_functions.yaml`** (structured) over
   macro-parsing; fall back to `TORCH_LIBRARY_IMPL` sites only where the YAML is
-  absent. Output `wiki/<slug>/maps/dispatch.md`.
+  absent. Output `wiki/code/<slug>/maps/dispatch.md`.
 - Add dynamics-source + in-repo-docs evidence (rest of Stage 4).
 - Target: `pytorch/xla`, then `torch_tpu`.
 - Acceptance: torch_tpu ingests; dispatch map rows all cite a registration site;
@@ -534,13 +534,13 @@ instead of an alphabetical slice. Seeds are always kept.
   claims; a skeptic agent tries to refute each against real source; verdicts fold
   to pass/fail. (On jax it caught 3 real errors in 323 claims.)
 - **Overview** (`.agents/skills/wikify-ingest-repo/prompts/overview.md`, SKILL step 3): synthesized
-  `wiki/<slug>/overview.md` AFTER concepts; `assemble` links it from `index.md`
+  `wiki/code/<slug>/overview.md` AFTER concepts; `assemble` links it from `index.md`
   ("Start here → Overview").
 - **Doc-concept ingest** (the LAST synthesis step — `.agents/skills/wikify-ingest-repo/prompts/ingest-docs.md`,
   SKILL step 4; adapts the autoresearch INGEST-SOURCE op to a silo). `prepare` globs
   `config.docs` → a worklist (`.cache/docs/<slug>.txt`); per doc, an agent extracts
   its concepts and writes **one grounded page per concept** into
-  `wiki/<slug>/doc-concepts/` — each links the symbols the doc names to their
+  `wiki/code/<slug>/doc-concepts/` — each links the symbols the doc names to their
   **catalog** entries and cross-links siblings. The doc is never moved. `finalize`
   lints `doc-concepts/` on **rule 1 only** (`lint.lint_doc_concepts` — citations
   resolve; no subgraph/uncited gate, since these come from a doc not a packet), and

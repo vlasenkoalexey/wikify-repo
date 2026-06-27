@@ -96,7 +96,7 @@ Sibling concept pages.
 
 ## Citations resolve into the catalog (no stubs)
 You write ONE file: the concept page. Every symbol already lives in its module
-catalog (`wiki/<slug>/catalog/<module>.md`), whose frontmatter holds an
+catalog (`wiki/code/<slug>/catalog/<module>.md`), whose frontmatter holds an
 anchor→moniker map. Paste the packet's `cite:` link for a symbol verbatim; the
 linter resolves the anchor there and checks it is in the SCIP index and this
 packet's subgraph.

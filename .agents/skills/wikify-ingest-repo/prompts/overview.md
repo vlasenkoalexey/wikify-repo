@@ -1,13 +1,13 @@
 # Overview synthesis — the highest-level page of a repo's wiki
 
-After the concept pages exist, produce ONE top-level page, `wiki/<slug>/overview.md`,
+After the concept pages exist, produce ONE top-level page, `wiki/code/<slug>/overview.md`,
 that a newcomer reads FIRST to get the whole system in their head. It is the
 "god-node" view: main concepts, how the subsystems compose, and the core diagrams.
 It is synthesized from the concept pages (and their cited grounding) — you are
 stitching the per-subsystem mental models into a single system mental model.
 
 ## Method
-1. Read every page in `wiki/<slug>/concepts/` (their Overview + Design rationale
+1. Read every page in `wiki/code/<slug>/concepts/` (their Overview + Design rationale
    sections are the raw material — that's where each subsystem's essence lives).
 2. Identify the 5–10 **main concepts** of the whole repo and how they relate.
 3. Write the page below. Link concepts to their concept pages; do not re-explain

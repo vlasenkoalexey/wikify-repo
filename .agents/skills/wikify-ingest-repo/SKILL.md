@@ -49,7 +49,7 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
 2. **Synthesize (this is your job — heavy processing, not annotation).** For EACH
    packet the plan built, read the packet and follow
    `prompts/synthesis.md` exactly to write ONE file: the
-   mechanism page `wiki/<slug>/concepts/<concept>.md`. The packet is your grounding
+   mechanism page `wiki/code/<slug>/concepts/<concept>.md`. The packet is your grounding
    index; **READ THE ACTUAL SOURCE** at the `file:line` it gives you (the snippets
    are truncated) so the page explains *how it really works and why*, not a cited
    trace. Lead with Overview + a Mermaid **Diagram** + Design rationale; weave
@@ -59,7 +59,7 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    `> [!inferred]` block.
 
 3. **Overview (after all concepts exist).** Follow
-   `prompts/overview.md` to write `wiki/<slug>/overview.md` —
+   `prompts/overview.md` to write `wiki/code/<slug>/overview.md` —
    the highest-level page: the main concepts, core system-level Mermaid diagrams,
    and a map of which concept answers which question. It is synthesis over the
    concept pages (no new grounding).
@@ -68,7 +68,7 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    `.cache/docs/<slug>.txt` (the project's own README / `docs/`, globbed from
    `config.docs`). For each doc, follow `prompts/ingest-docs.md`:
    read the doc, extract its concepts, and write **one grounded page per concept**
-   into `wiki/<slug>/doc-concepts/<concept>.md` — each linking the symbols the doc
+   into `wiki/code/<slug>/doc-concepts/<concept>.md` — each linking the symbols the doc
    names to their **catalog** entries and cross-linking sibling doc-concepts + code
    concepts. The doc stays in place (never moved). Skip if the worklist is empty.
 
@@ -82,7 +82,7 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    lighter gate (citations must resolve — rule 1 — no subgraph/uncited gates). On
    success it also runs **Stage 6b coverage**: it emits a `catalog/<module>.md` page
    for every module (deterministic, no model) so the *whole repo* is represented,
-   prints a coverage report, assembles `wiki/<slug>/index.md` (concepts + areas +
+   prints a coverage report, assembles `wiki/code/<slug>/index.md` (concepts + areas +
    **doc-derived concepts**), and updates reconcile state.
 
 6. **Repair loop.** If `finalize` exits non-zero, it lists each failing
@@ -91,6 +91,9 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    Repeat until it exits 0.
 
 ## Notes
+- **Where pages go**: `wiki/<wiki_subdir>/<slug>/` — `wiki_subdir` defaults to `code`
+  (so `wiki/code/<slug>/`, leaving `wiki/` for a curated index + prose). Set
+  `wiki_subdir: ""` in `config/<slug>.md` for the classic flat `wiki/<slug>/` layout.
 - **Adding a concept later**: add it to `config/<slug>.md` and re-run from step 1;
   `prepare` builds only the new packet (same commit, nothing else marked stale).
 - **Version bump**: `wikify prepare <slug> --ref <newcommit>` — only changed

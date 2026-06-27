@@ -37,6 +37,23 @@ def test_config_parses_acquire_field(tmp_path):
     assert load_config(cfg).acquire is None  # default unset
 
 
+def test_wiki_subdir_defaults_to_code_and_is_configurable(tmp_path):
+    from wikify.cli import Paths
+
+    p = Paths(tmp_path, "s")                     # default
+    assert p.wiki_slug == tmp_path / "wiki" / "code" / "s"
+    p.set_wiki_subdir("")                        # classic flat layout
+    assert p.wiki_slug == tmp_path / "wiki" / "s"
+    p.set_wiki_subdir("codebases")               # custom
+    assert p.wiki_slug == tmp_path / "wiki" / "codebases" / "s"
+
+    cfg = tmp_path / "s.md"
+    cfg.write_text("---\nslug: s\n---\n## Concepts\n")
+    assert load_config(cfg).wiki_subdir == "code"   # config default
+    cfg.write_text('---\nslug: s\nwiki_subdir: ""\n---\n## Concepts\n')
+    assert load_config(cfg).wiki_subdir == ""
+
+
 def test_submodule_mode_adds_gitlink(tmp_path, monkeypatch):
     # git blocks the file:// transport for submodule clones by default (a CVE mitigation);
     # real https:// URLs are unaffected. Inject the override into every git subprocess.

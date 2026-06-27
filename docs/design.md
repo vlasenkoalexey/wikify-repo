@@ -352,7 +352,7 @@ model), a grounded **Mermaid diagram** of the mechanism, a **Design rationale**
 paragraph, no `[extracted →]` tag spam). The bar: a reader learns something they
 could not get by skimming the code.
 
-**A top-level overview page per repo** (`wiki/<slug>/overview.md`) is synthesized
+**A top-level overview page per repo** (`wiki/code/<slug>/overview.md`) is synthesized
 last, over the concept pages: the main concepts, core *system-level* diagrams, and
 a map of which concept answers which question — the god-node entry point.
 
@@ -387,7 +387,7 @@ for it + neighbors (a new concept can create cross-repo correspondences).
 - **Citation linter** (hard gate): every citation must resolve to a symbol in
   the SCIP index. Dead citation = build failure. Pages with uncited assertions
   outside `[!inferred]` blocks = build failure. *This is the hallucination floor.*
-- Write the per-repo `wiki/<slug>/index.md` catalog + the top-level
+- Write the per-repo `wiki/code/<slug>/index.md` catalog + the top-level
   `wiki/index.md` (all repos + connection status) + per-page provenance frontmatter.
 - Product is the `wiki/` markdown tree. Nothing else is shipped.
 
@@ -398,7 +398,7 @@ the concept pages are linted, classify every documentable symbol by a
 - `documentable` = every in-repo class / function / method / module value SCIP
   found (locals, params, externals already pruned).
 - `covered` = the symbols cited by a concept page (read back from the pages).
-- For each module (`= def file`), emit `wiki/<slug>/catalog/<module-path>.md`: a
+- For each module (`= def file`), emit `wiki/code/<slug>/catalog/<module-path>.md`: a
   generated structural index of that module's symbols — signatures, def
   `file:line`, intra-module calls/refs, class→class `uses`/`used-by` edges, and a
   link to the concept page for any covered symbol. **Every** documentable symbol
@@ -409,7 +409,7 @@ the concept pages are linted, classify every documentable symbol by a
   catalog conveys *meaning*, not just structure — the cheapest, highest-grounding
   comprehension layer, with no model call. Undocumented symbols fall back to
   structure only.
-- Emit a **coverage report** into `wiki/<slug>/index.md`: documentable total,
+- Emit a **coverage report** into `wiki/code/<slug>/index.md`: documentable total,
   deep (concept) %, catalog-only count, classes represented. This makes
   "whole repo ingested" a measured property, not a hope.
 
@@ -471,7 +471,7 @@ raw/                           immutable inputs ONLY
 
 **Where the commit SHA lives — per-repo, not per-page.** Every page in a silo is
 generated from one ingested commit, so repeating it on every page is redundant.
-Record it **once** in the per-repo `wiki/<slug>/index.md`. The currency a page
+Record it **once** in the per-repo `wiki/code/<slug>/index.md`. The currency a page
 needs is *"am I valid for the silo's current commit?"*, which is answered by the
 per-page `status: fresh | stale` flag (maintained by Stage 2 diff) against the
 repo's single commit — not by a per-page SHA. After an incremental update,
@@ -481,7 +481,7 @@ consumer version check both read the *per-repo* commit. (Optional: a page may
 carry `synthesized_at: <sha>` purely as an audit trail of when its prose was last
 written — separate from version-pinning, and never the currency source of truth.)
 
-Per-repo frontmatter (`wiki/<slug>/index.md`):
+Per-repo frontmatter (`wiki/code/<slug>/index.md`):
 ```yaml
 slug: <slug>
 commit: <sha>            # the one ingested source commit for this silo
@@ -697,7 +697,7 @@ across regeneration because everything is recomputed.
 ### Layout
 
 See the canonical three-bucket layout under **Wiki output schema** above:
-per-repo silos at `wiki/<slug>/`, the cross-repo layer at `wiki/_connect/`
+per-repo silos at `wiki/code/<slug>/`, the cross-repo layer at `wiki/_connect/`
 (`decisions.md` + `compat.md`), and SCIP indexes at `.cache/scip/<slug>.scip`
 (derived — read by connect, never under `raw/`).
 

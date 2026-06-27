@@ -51,7 +51,13 @@ class Paths:
         self.scip_cpp = self.cache / "scip" / f"{slug}.cpp.scip"  # C++ index (scip-clang)
         self.state = state_mod.state_path(self.cache, slug)
         self.wiki = root / "wiki"
-        self.wiki_slug = self.wiki / slug
+        self.set_wiki_subdir("code")  # default; _load() overrides from config
+
+    def set_wiki_subdir(self, subdir: str | None) -> None:
+        """Place this repo's wiki at ``wiki/<subdir>/<slug>`` (subdir="" → ``wiki/<slug>``)."""
+        self.wiki_subdir = subdir or ""
+        self.wiki_base = self.wiki / self.wiki_subdir if self.wiki_subdir else self.wiki
+        self.wiki_slug = self.wiki_base / self.slug
 
 
 def _today() -> str:
@@ -72,7 +78,9 @@ def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
     if not p.config.exists():
         typer.echo(f"error: no config at {p.config}", err=True)
         raise typer.Exit(2)
-    return p, load_config(p.config)
+    cfg = load_config(p.config)
+    p.set_wiki_subdir(cfg.wiki_subdir)
+    return p, cfg
 
 
 def _source(cfg: RepoConfig, repo: str | None) -> str:
@@ -270,8 +278,12 @@ def finalize(
     assemble.write_repo_index(
         p.wiki_slug, slug, acq.commit, scip_tool, concept_status, _today(), report=report
     )
-    assemble.write_top_index(p.wiki, [d.name for d in p.wiki.iterdir() if d.is_dir()], _today())
-    typer.echo(f"assembled wiki/{slug}/index.md  (commit {acq.commit[:10]})")
+    # Top catalog of code wikis, written into the configured base (wiki/code/ by default,
+    # or wiki/ when wiki_subdir=""). Leaves a curated wiki/index.md untouched when subdir'd.
+    assemble.write_top_index(
+        p.wiki_base, [d.name for d in p.wiki_base.iterdir() if d.is_dir()], _today())
+    rel = f"{p.wiki_subdir}/{slug}" if p.wiki_subdir else slug
+    typer.echo(f"assembled wiki/{rel}/index.md  (commit {acq.commit[:10]})")
 
 
 @app.command(name="lint")

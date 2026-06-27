@@ -44,7 +44,7 @@ In any of the supported agents — **Claude Code, Codex, or Antigravity** — ju
 
 That's it. The agent runs the `wikify-ingest-repo` procedure: it bootstraps the config itself,
 then drives the whole pipeline — index → symbol graph → write the concept pages → citation lint →
-assemble — and writes the wiki to `wiki/<slug>/`. Re-running is idempotent: only changed concepts
+assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is idempotent: only changed concepts
 rebuild.
 
 ## Use it in your own project
@@ -59,10 +59,10 @@ This works for all three agents from one install: Codex and Antigravity read the
 [Antigravity](https://antigravity.google/docs/skills)), and Claude Code picks it up via the soft-link
 in `.claude/skills/`. Then just ask any of them to “ingest `<repo>`”.
 
-**To only answer questions from an existing wiki** (no install needed) — drop `wiki/<slug>/`
+**To only answer questions from an existing wiki** (no install needed) — drop `wiki/code/<slug>/`
 into the project and add this to its `SCHEMA.md` (referenced by `CLAUDE.md` / `AGENTS.md` /
 `GEMINI.md`) so agents retrieve from it cheaply:
-> Source of truth: the wiki at `wiki/<slug>/`. **Retrieve** from it — use `overview.md` as the
+> Source of truth: the wiki at `wiki/code/<slug>/`. **Retrieve** from it — use `overview.md` as the
 > index, grep to locate the relevant concept/catalog page, read only that section and cite it;
 > do not bulk-read whole pages.
 

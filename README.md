@@ -29,7 +29,7 @@ The idea is simple: record every class, method, and their relationships with SCI
 The other three optimize for navigation and reach — a graph to traverse ([graphify](https://github.com/safishamsi/graphify)),
 a visual dashboard to explore ([understand-anything](https://github.com/labolado/understand-anything)),
 a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)).
-wikify-repo optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
+**wikify-repo** optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
 gate, a deterministic coverage pass guarantees no module is silently dropped, and the result is plain
 markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo**, just a few changes to your CLAUDE.md/AGENTS.md to instruct agent to navigate code wiki.
 

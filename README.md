@@ -1,4 +1,4 @@
-# 🧠 wikify-repo
+# 🧠 wikify repo
 
 **Compile any codebase into a knowledge base your AI agent can actually trust.**
 
@@ -17,9 +17,9 @@ See `docs/design.md` (what/why) and `docs/implementation.md` (how).
 | **Output** | ✅ Markdown wiki — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ❌ Hosted web docs only |
 | **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang) | ➖ tree-sitter AST, **name-based** (20 languages) | ➖ tree-sitter AST, **name-based** | ❓ Gemini (closed) |
 | **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
-| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ scanners enumerate all files | ❓ not specified |
+| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❓ not specified |
 | **Inputs** | ➖ code + prose (docs / articles) | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only |
-| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
+| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, not additional tools** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
 | **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed *symbols* | ✅ `--update` re-extracts only changed *files* (caches semantic passes) | ✅ incremental — re-analyzes only changed *files* | ✅ auto-maintained (hosted) |
 | **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ❌ **Google-hosted** (private repos waitlisted) |
 

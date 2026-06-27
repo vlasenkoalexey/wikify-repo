@@ -14,7 +14,7 @@ See `docs/design.md` (what/why) and `docs/implementation.md` (how).
 | | **wikify-repo** | graphify | understand-anything | Google Code Wiki |
 |---|---|---|---|---|
 | **Output** | Markdown wiki — pages in your git repo | Knowledge graph (HTML + JSON) | React-Flow graph dashboard | Hosted web docs |
-| **Code structure from** | **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang) | tree-sitter AST, **name-based** (20 languages) | file + import scanners | Gemini (closed) |
+| **Code structure from** | **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang) | tree-sitter AST, **name-based** (20 languages) | tree-sitter AST, **name-based** | Gemini (closed) |
 | **Faithfulness** | **Citation linter is a hard build gate**; uncited claims quarantined to `[!inferred]` | relationships labeled `EXTRACTED / INFERRED / AMBIGUOUS` — honest, but not gated | LLM per-node summaries, unverified | *"AI-generated map, not a source of truth"* |
 | **Coverage** | **Deterministic set-difference** — every module gets a page | Leiden community clustering | scanners enumerate all files | not specified |
 | **Inputs** | code + prose (docs / articles) | **widest** — code, SQL, shell, docs, papers, images, audio/video | code + docs / LLM-wikis | code repos |

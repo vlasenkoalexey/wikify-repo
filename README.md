@@ -3,10 +3,12 @@
 **Compile any codebase into a knowledge base wiki your AI agent can actually trust.**
 
 **wikify-repo** turns a repo into a grounded, lint-clean [**Andrej Karpathy style LLM markdown wiki**](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) where every claim is traced to
-a real, compiler-resolved symbol — behind a citation linter that **fails the build** if one doesn't
+a real, compiler-resolved symbol — behind a citation linter that fails the build if one doesn't
 check out. No graph database, no dashboard, no hosted service: the output is plain markdown your agent
 answers from with `grep`, and that you own in your own git repo. Deterministic tool does the
-grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the synthesis. Idea is simple, generate and record all classes and methods and relationship between them using SCIP. Then annotate top ~20% of most imporant nodes using LLM that should cover ~80% of the repo meaning.
+grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the synthesis.
+
+Idea is simple, generate and record all classes and methods and relationship between them using SCIP. Then annotate top ~20% of most imporant nodes using LLM that should cover ~80% of the repo meaning.
 
 ## How wikify-repo compares
 
@@ -67,7 +69,9 @@ a live graph you have to query.
 is a live, populated wiki *produced by this tool* — two real codebases
 ([`mini_pytorch_xla`](https://github.com/vlasenkoalexey/wikify-repo-demo/blob/main/wiki/code/mini_pytorch_xla/overview.md)
 and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
-(click image above for interactive view)
+
+[![Force-directed graph of the wiki: two ingested codebases (mini_pytorch_xla and wikify-repo) plus the prose pages, colored by page type](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
+(click image for interactive view)
 
 It plays two roles:
 
@@ -102,33 +106,55 @@ is harmless.
 
 ## Quick start
 
-In any of the supported agents — **Claude Code, Codex, or Antigravity** — just say:
+wikify writes into a **Karpathy-style wiki repo** — a project that carries the `wikify-ingest-repo`
+skill and the agent conventions (`SCHEMA.md` + `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`), with the
+`wiki/` output committed alongside. Two ways to get one — both assume the [Install](#install) above
+(the `wikify` CLI + `scip-python`) is done:
 
-> ingest https://github.com/owner/myrepo      (a local path works too)
+**A — Start from the template.** Clone the demo's empty
+[`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch; it ships the skill and
+conventions pre-wired, with an empty `wiki/`:
+```bash
+git clone -b clean https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki
+scripts/install-skill.sh my-wiki   # wires the Claude Code symlink (Codex/Antigravity already see it)
+```
 
-That's it. The agent runs the `wikify-ingest-repo` procedure: it bootstraps the config itself,
-then drives the whole pipeline — index → symbol graph → write the concept pages → citation lint →
-assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is idempotent: only changed concepts
-rebuild.
-
-## Use it in your own project
-
-**To build / maintain a wiki** — install the skill (step 3 above) into your project so an agent can
-drive `prepare → write pages → finalize`:
+**B — Add it to an existing repo.** Install the skill into a project you already have — it drops the
+self-contained skill into `.agents/skills/` (read natively by Codex + Antigravity) and soft-links it
+into `.claude/skills/` for Claude Code:
 ```bash
 scripts/install-skill.sh /path/to/your-project
 ```
-This works for all three agents from one install: Codex and Antigravity read the skill natively from
-`.agents/skills/wikify-ingest-repo/` (project-scoped — [Codex](https://developers.openai.com/codex/skills),
-[Antigravity](https://antigravity.google/docs/skills)), and Claude Code picks it up via the soft-link
-in `.claude/skills/`. Then just ask any of them to “ingest `<repo>`”.
 
-**To only answer questions from an existing wiki** (no install needed) — drop `wiki/code/<slug>/`
-into the project and add this to its `SCHEMA.md` (referenced by `CLAUDE.md` / `AGENTS.md` /
-`GEMINI.md`) so agents retrieve from it cheaply:
-> Source of truth: the wiki at `wiki/code/<slug>/`. **Retrieve** from it — use `overview.md` as the
-> index, grep to locate the relevant concept/catalog page, read only that section and cite it;
-> do not bulk-read whole pages.
+Then, in **Claude Code, Codex, or Antigravity** opened on that project, just say:
+
+> ingest https://github.com/owner/myrepo      (a local path works too)
+
+The agent runs the `wikify-ingest-repo` procedure — bootstrap config → index → symbol graph → write the
+concept pages → citation lint → assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is
+idempotent: only changed concepts rebuild.
+
+## Use it in your own project
+
+wikify splits cleanly into a **producer** side (build/maintain the wiki — needs the install) and a
+**consumer** side (answer from it — needs nothing).
+
+**Producing** is the [Quick start](#quick-start) above. The point worth adding: because the skill lives
+in `.agents/skills/` and the output is plain markdown, wikify slots into **any existing LLM-wiki
+project** as the *code* source type — sitting alongside prose pages in a
+[Karpathy-style](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) knowledge base and
+sharing one `index.md` / `log.md`. (That's exactly what
+[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo) does — code wikis under
+`wiki/code/` next to hand-written `topics/` and `sources/`.) So you don't need a dedicated repo: drop it
+into the wiki you already keep.
+
+**Consuming needs no install at all.** To let an agent answer from a wiki someone else built, commit the
+`wiki/code/<slug>/` folder and point your agent config at it — no `wikify` CLI, no skill, no
+`scip-python`. The markdown *is* the interface. Add this to your `SCHEMA.md` (or `CLAUDE.md` /
+`AGENTS.md` / `GEMINI.md`):
+> Source of truth: the wiki at `wiki/code/<slug>/`. **Retrieve** from it — read `overview.md` as the
+> index, grep to locate the relevant concept/catalog page, read only that section and cite it; do not
+> bulk-read whole pages.
 
 ## C++ ingestion (mixed repos only)
 

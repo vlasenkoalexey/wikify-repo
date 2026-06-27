@@ -8,7 +8,7 @@ check out. No graph database, no dashboard, no hosted service: the output is pla
 answers from with `grep`, and that you own in your own git repo. Deterministic tool does the
 grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the synthesis.
 
-Idea is simple, generate and record all classes and methods and relationship between them using SCIP. Then annotate top ~20% of most imporant nodes using LLM that should cover ~80% of the repo meaning.
+The idea is simple: record every class, method, and their relationships with SCIP, then spend the LLM annotating only the most central ~20% of nodes — enough to explain ~80% of the repo, while the rest still get a deterministic catalog page so nothing is dropped.
 
 ## How wikify-repo compares
 
@@ -20,7 +20,7 @@ Idea is simple, generate and record all classes and methods and relationship bet
 | **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
 | **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❔ not specified |
 | **Inputs** | ➖ code + prose (docs / articles) | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only |
-| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, not additional tools** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
+| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, no additional tools** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
 | **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed *symbols* | ✅ `--update` re-extracts only changed *files* (caches semantic passes) | ✅ incremental — re-analyzes only changed *files* | ✅ auto-maintained (hosted) |
 | **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ❌ **Google-hosted** (private repos waitlisted) |
 
@@ -31,7 +31,7 @@ a visual dashboard to explore ([understand-anything](https://github.com/labolado
 a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)).
 wikify-repo optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
 gate, a deterministic coverage pass guarantees no module is silently dropped, and the result is plain
-markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo**, just a few changes to your CLAUDE.md/AGENTS.md to instruct agent to navigage code wiki.
+markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo**, just a few changes to your CLAUDE.md/AGENTS.md to instruct agent to navigate code wiki.
 
 ## SCIP vs AST parsing
 
@@ -55,7 +55,7 @@ call for navigation, the wrong one for *citeable* grounding.
 The consumer is an **AI agent**, and agents already read markdown and retrieve with `grep` / `ripgrep`
 natively — no query language, no graph runtime, no vector index, no MCP server, even no skill. **The output is the
 interface.** Drop `wiki/` into a repo and any agent (Claude Code, Codex, Antigravity) answers from it
-with zero adapter. 
+with zero adapter.
 
 Honest tradeoff: a graph DB wins at arbitrary transitive queries ("every transitive caller of `X`").
 wikify's answer is to **materialize** the common ones into the pages — per-symbol uses-by lists,
@@ -102,7 +102,6 @@ the folder **Codex** and **Antigravity** read project skills from — and soft-l
 `.claude/skills/` for **Claude Code**. One install, all three agents.
 Use any Python ≥3.11 env (conda, venv, or pipx-managed). Every script is idempotent, so re-running
 is harmless.
-
 
 ## Quick start
 
@@ -162,17 +161,7 @@ A grounded wiki for <repo> lives at `wiki/code/<slug>/`. To answer questions abo
 
 The markdown *is* the interface — that's the whole integration.
 
-# Architecture (the Python ↔ LLM split is hard)
-
-| Stage | Module | Who |
-|---|---|---|
-| 0 acquire & pin | `acquire.py` | Python |
-| 1 SCIP index → graph | `scip_index.py`, `graph.py`, `monikers.py` | Python |
-| 2 reconcile diff | `diff.py`, `state.py`, `source.py` | Python |
-| 4 evidence (tests) | `evidence.py` | Python |
-| — packet build | `packet.py`, `slug.py`, `config.py` | Python |
-| 5 concern synthesis | `.agents/skills/…/SKILL.md` + `prompts/synthesis.md` | **LLM agent** |
-| 6 citation lint + assemble | `lint.py`, `assemble.py` | Python |
+## Architecture (the Python ↔ LLM split is hard)
 
 The hard rule behind the table: **the deterministic stages are pure Python — zero model calls** (SCIP
 parse, reconcile diff, packet build, dependency links, coverage, citation lint), and the LLM is invoked
@@ -184,8 +173,17 @@ testable. It's also why coverage is a deterministic *set-difference* over the SC
 than a model pass: enumeration can't miss a module, so the LLM is spent only where the truth is genuinely
 cross-symbol.
 
+| Stage | Module | Who |
+|---|---|---|
+| 0 acquire & pin | `acquire.py` | Python |
+| 1 SCIP index → graph | `scip_index.py`, `graph.py`, `monikers.py` | Python |
+| 2 reconcile diff | `diff.py`, `state.py`, `source.py` | Python |
+| 4 evidence (tests) | `evidence.py` | Python |
+| — packet build | `packet.py`, `slug.py`, `config.py` | Python |
+| 5 concern synthesis | `.agents/skills/…/SKILL.md` + `prompts/synthesis.md` | **LLM agent** |
+| 6 citation lint + assemble | `lint.py`, `assemble.py` | Python |
+
 The risky foundation is the **SCIP-occurrence → callers/callees** heuristic (SCIP
 has no "call" role); it's reference-scoped, not true call resolution, and is
 validated by `tests/test_callers_callees.py`.
-
 

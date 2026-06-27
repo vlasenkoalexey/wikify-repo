@@ -2,7 +2,7 @@
 
 **Compile any codebase into a knowledge base wiki your AI agent can actually trust.**
 
-**wikify-repo** turns a repo into a grounded, lint-clean **markdown wiki** where every claim is traced to
+**wikify-repo** turns a repo into a grounded, lint-clean [**Andrej Karpathy style LLM markdown wiki**](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) where every claim is traced to
 a real, compiler-resolved symbol — behind a citation linter that **fails the build** if one doesn't
 check out. No graph database, no dashboard, no hosted service: the output is plain markdown your agent
 answers from with `grep`, and that you own in your own git repo. Deterministic tool does the
@@ -63,21 +63,18 @@ a live graph you have to query.
 
 ## Demo and template
 
-See the output before you install anything. **[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo)**
+**[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo)**
 is a live, populated wiki *produced by this tool* — two real codebases
 ([`mini_pytorch_xla`](https://github.com/vlasenkoalexey/wikify-repo-demo/blob/main/wiki/code/mini_pytorch_xla/overview.md)
 and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
-
-[![The whole demo wiki as a force-directed graph: 92 pages, 384 links, two ingested codebases plus prose, colored by page type](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
-
-*The entire demo wiki at a glance — 92 pages, 384 links. Each node is a page, each edge a markdown link; the two dense clusters are the ingested codebases. [Click for the interactive viewer.](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)*
+(click image above for interactive view)
 
 It plays two roles:
 
 - **Showcase** — browse a finished wiki end to end (`overview.md` → `concepts/` → `catalog/` → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
 - **Template** — click **"Use this template"** (or start from the empty [`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch) to get a new repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then just `ingest <your-repo>`.
 
-## Install
+But it is important to note that wikify-repo can be integrated into any LLM wiki project.
 
 ## Install
 

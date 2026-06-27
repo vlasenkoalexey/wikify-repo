@@ -114,7 +114,7 @@ wikify has a **producer** side (build/maintain the wiki — needs the install) a
 wikify writes into a **Karpathy-style wiki repo** — a project carrying the `wikify-ingest-repo` skill,
 the agent conventions, and the committed `wiki/`. Two ways to get one (after [Install](#install)):
 
-**A — Start from the template.** Clone the demo's empty
+**A — Start from the new clean wiki template.** Clone the demo's empty
 [`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch; it ships the skill and
 conventions pre-wired, with an empty `wiki/`:
 ```bash
@@ -162,14 +162,7 @@ A grounded wiki for <repo> lives at `wiki/code/<slug>/`. To answer questions abo
 
 The markdown *is* the interface — that's the whole integration.
 
-## C++ ingestion (mixed repos only)
-
-scip-clang indexes against a `compile_commands.json`. For a repo like pytorch, first produce
-one (and any generated headers) with the project's own build — e.g. CMake with
-`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` plus the codegen targets — and point wikify at it via the
-`compile_commands:` config key. wikify consumes that file; it does not run your build.
-
-## Architecture (the Python ↔ LLM split is hard)
+# Architecture (the Python ↔ LLM split is hard)
 
 | Stage | Module | Who |
 |---|---|---|
@@ -181,12 +174,18 @@ one (and any generated headers) with the project's own build — e.g. CMake with
 | 5 concern synthesis | `.agents/skills/…/SKILL.md` + `prompts/synthesis.md` | **LLM agent** |
 | 6 citation lint + assemble | `lint.py`, `assemble.py` | Python |
 
+The hard rule behind the table: **the deterministic stages are pure Python — zero model calls** (SCIP
+parse, reconcile diff, packet build, dependency links, coverage, citation lint), and the LLM is invoked
+at exactly **one** step — concern *synthesis* (plus concept-link judgment). Synthesis never leaks into
+Python and linting never leaks into a prompt: the model proposes prose, Python decides what's true. That
+boundary is what keeps the wiki both grounded *and* cheap — the expensive, hallucination-prone work is
+fenced to a single file-handoff stage, while everything that has to be exact stays mechanical and
+testable. It's also why coverage is a deterministic *set-difference* over the SCIP symbol table rather
+than a model pass: enumeration can't miss a module, so the LLM is spent only where the truth is genuinely
+cross-symbol.
+
 The risky foundation is the **SCIP-occurrence → callers/callees** heuristic (SCIP
 has no "call" role); it's reference-scoped, not true call resolution, and is
 validated by `tests/test_callers_callees.py`.
 
-## Tests
 
-```bash
-python -m pytest          # all module tests (callers/callees needs scip-python on PATH)
-```

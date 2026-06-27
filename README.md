@@ -2,7 +2,7 @@
 
 **Compile any codebase into a knowledge base wiki your AI agent can actually trust.**
 
-wikify-repo turns a repo into a grounded, lint-clean **markdown wiki** where every claim is traced to
+**wikify-repo** turns a repo into a grounded, lint-clean **markdown wiki** where every claim is traced to
 a real, compiler-resolved symbol — behind a citation linter that **fails the build** if one doesn't
 check out. No graph database, no dashboard, no hosted service: the output is plain markdown your agent
 answers from with `grep`, and that you own in your own git repo. Deterministic tool does the
@@ -33,46 +33,27 @@ markdown an agent reads with **nothing but `grep`** — no runtime, no database,
 
 ## SCIP vs AST parsing
 
-Most code-knowledge tools (graphify, understand-anything) parse with **tree-sitter** — a fast,
-build-free AST, one tree per file. Great for breadth (20+ languages, no toolchain), but it resolves
-references **by name**: it sees a call to something *called* `forward`, not *which* `forward`.
-Cross-file bindings, import aliases, inheritance/overrides, and overloads are guesses. The textbook
-failure is dynamic dispatch — a model invoked as `model_parts[0](x)` through `nn.Module.__call__` has
-**no static name edge**, so a name-based call graph silently misses it (or worse, flags the model as
-dead code).
+Most code-knowledge tools (graphify, understand-anything) parse with [**tree-sitter**](https://tree-sitter.github.io/tree-sitter/) — a fast,
+build-free [AST](https://en.wikipedia.org/wiki/Abstract_syntax_tree), one tree per file. Great for breadth (20+ languages, no toolchain), but it resolves
+references syntactically **by name**: it sees a call to something *called* `forward`, not *which* `forward`.
+Cross-file bindings, import aliases, inheritance/overrides, and overloads are guesses.
 
-wikify-repo indexes with **SCIP** (Sourcegraph's Code Intelligence Protocol) via `scip-python`
+**wikify-repo** indexes with [**SCIP**](https://github.com/sourcegraph/scip) (Sourcegraph's Code Intelligence Protocol) via `scip-python`
 (pyright) and `scip-clang` (clang) — the language's *real* name-and-type resolver. Every definition
 and reference binds to a globally-unique **moniker**, so a citation points at *the* symbol, across
 files — not a string that happens to match. That's what makes grounding *enforceable*: a claim's
 `cite:` either resolves to a real symbol in the SCIP table, or the **linter fails the build**.
 
 Honest tradeoffs: SCIP needs a real indexer (`scip-python` over npm; a `compile_commands.json` for
-C++) — heavier than a zero-build parse, which is the price of precision. And SCIP records
-*occurrences*, not *calls*, so wikify derives callers/callees by reference-scoping — a heuristic,
-pinned by `tests/test_callers_callees.py`. Tree-sitter trades that precision for breadth: the right
+C++) — heavier than a zero-build parse, which is the price of precision. Tree-sitter trades that precision for breadth: the right
 call for navigation, the wrong one for *citeable* grounding.
 
 ## Why use a wiki as the storage format
 
 The consumer is an **AI agent**, and agents already read markdown and retrieve with `grep` / `ripgrep`
-natively — no query language, no graph runtime, no vector index, no MCP server. **The output is the
+natively — no query language, no graph runtime, no vector index, no MCP server, even no skill. **The output is the
 interface.** Drop `wiki/` into a repo and any agent (Claude Code, Codex, Antigravity) answers from it
-with zero adapter. Why plain interlinked markdown beats the alternatives:
-
-- **It's git.** Versioned, diffable, branchable, offline. A wiki change shows up in a PR and gets
-  reviewed like code; a graph DB or hosted doc can't. The knowledge evolves under the same VCS as the
-  source.
-- **`grep` beats embeddings at this scale.** A read-first `index.md` + `ripgrep` finds the right page
-  deterministically — no embedding infra, no similarity-threshold misses, no re-indexing. (Works well
-  into the hundreds of pages.)
-- **One artifact, two readers.** The same page serves a human browsing on GitHub and an agent
-  answering a question. A JSON graph or vector store is machine-only — you can't read it.
-- **The graph is in the links.** Markdown links + catalog anchors (`catalog/<module>.md#Symbol`)
-  encode the relationships, and the citation linter keeps them resolvable — graph-like navigation with
-  no graph database to stand up.
-- **You own it.** Plain files in your repo: no SaaS, no lock-in, no upload, tool-neutral — and
-  markdown outlives every proprietary format.
+with zero adapter. 
 
 Honest tradeoff: a graph DB wins at arbitrary transitive queries ("every transitive caller of `X`").
 wikify's answer is to **materialize** the common ones into the pages — per-symbol uses-by lists,
@@ -80,11 +61,9 @@ per-module catalogs — so the frequent questions are already answered as text, 
 drops to the pinned source. For *agent retrieval of internals knowledge*, materialized markdown beats
 a live graph you have to query.
 
-## Status — battle-tested
+## Demo and template
 
-End to end on real repos: `scip-python / scip-clang → symbol graph → packets →
-[agent synthesis] → citation lint → markdown wiki`. Validated on **pytorch**, **jax**,
-**torch_tpu** (mixed C++/Python), **torchtitan**, and **mini-pytorch-xla** — Python and C++.
+TODO
 
 ## Install
 

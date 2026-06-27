@@ -32,33 +32,22 @@ the page-writing (synthesis) stage is **LLM-in-the-loop**, so an agent must run 
 `<project>/.claude/skills` path to scope it to one project). Use any Python ≥3.11 env (conda,
 venv, or pipx-managed). Both scripts are idempotent, so re-running is harmless.
 
-> **Why clone, not `pip install git+https://…`?** Two files can't ship in the wheel:
-> `scip_pb2.py` is generated from `vendor/scip.proto` **against your local protobuf**
-> (committing it would cause gencode/runtime version mismatches), and the `scip-clang`
-> binary is ~130 MB (over GitHub's file limit). `setup-vendor.sh` produces both. So a
-> clone is the reliable path; a bare `pip install git+…` would import-fail on the proto.
 
-## Quick start — ingest a repo
+## Quick start
 
-1. **Say what to ingest** in `config/<slug>.md`:
+1. **Point at the repo** in `config/myrepo.md`:
    ```markdown
    ---
    slug: myrepo
    repo: https://github.com/owner/myrepo      # or a local path
    ---
-   ## Concepts          # optional — discovery auto-seeds from code centrality if omitted
    ```
-2. **Build it:**
-   ```bash
-   wikify prepare  myrepo     # index → symbol graph → packets + reconcile plan (pure Python, no model)
-   #   → an LLM agent writes one concept page per packet (install the skill below)
-   wikify finalize myrepo     # citation lint (hard gate) + catalogs/coverage + assemble wiki/myrepo/index.md
-   ```
-   Output is `wiki/myrepo/`. Reconcile is **idempotent**: re-running `prepare` with no change
-   is a no-op; adding a concept builds only that packet.
+2. **Ask Claude Code to ingest it** — run the `wikify-ingest-repo` skill, e.g. just say:
+   > ingest myrepo
 
-   More: `wikify plan <slug>` (dry-run delta) · `wikify lint <slug>` (re-run the citation gate) ·
-   `wikify coverage <slug>` (per-module coverage report).
+The skill drives the whole pipeline — index → symbol graph → write the concept pages →
+citation lint → assemble — and writes the wiki to `wiki/myrepo/`. Re-running is idempotent:
+only changed concepts rebuild.
 
 ## Use it in your own project
 

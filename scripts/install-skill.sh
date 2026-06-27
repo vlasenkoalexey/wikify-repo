@@ -24,9 +24,18 @@ if [ "$DEST" != "$SRC" ]; then
 fi
 echo "Codex+AG : $DEST  (.agents/skills — native for Codex & Antigravity)"
 
-# 2. Claude Code: soft-link the same skill into its skills dir (one source, stays in sync)
+# 2. Claude Code: soft-link the same skill into its skills dir (one source, stays in sync).
+#    Claude reads ONLY .claude/skills/; the symlink is just a local mirror of the canonical
+#    .agents/skills/ copy, so keep it out of git — the tree shows one skill, not two.
 mkdir -p "$PROJ/.claude/skills"
 ln -sfn "../../.agents/skills/wikify-ingest-repo" "$PROJ/.claude/skills/wikify-ingest-repo"
 echo "Claude   : .claude/skills/wikify-ingest-repo -> ../../.agents/skills/wikify-ingest-repo (symlink)"
+GI="$PROJ/.gitignore"
+if [ -e "$PROJ/.git" ] || [ -f "$GI" ]; then
+  if ! grep -qxF "/.claude/skills/" "$GI" 2>/dev/null; then
+    printf '\n# Claude-only mirror of .agents/skills/ (install-skill.sh) — not committed\n/.claude/skills/\n' >> "$GI"
+    echo "gitignore: added /.claude/skills/ (canonical skill stays in .agents/skills/)"
+  fi
+fi
 
 echo "Done. In Claude Code / Codex / Antigravity, ask: ingest <repo>"

@@ -226,3 +226,8 @@ wikify/scip_pb2.py
 
 # Large vendored binaries — fetched by scripts/setup-vendor.sh, not committed
 vendor/bin/
+
+# Claude Code reads skills only from .claude/skills/, but the canonical copy lives in
+# .agents/skills/ (shared with Codex + Antigravity). install-skill.sh symlinks it here;
+# don't commit the mirror — keep one source of truth visible in the tree.
+/.claude/skills/

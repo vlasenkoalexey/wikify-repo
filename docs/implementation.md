@@ -238,7 +238,7 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
 - `acquire` (git submodule + pin), `scip_index` (run scip-python, parse),
   `graph`, `config` (parse `config/<slug>.md`), `packet`, `lint`, `assemble`,
   `coverage`, `state`, `cli` (`prepare`/`finalize`/`coverage`/`plan`).
-- `skills/wikify-ingest-repo/SKILL.md` + `prompts/synthesis.md`.
+- `.agents/skills/wikify-ingest-repo/SKILL.md` + `prompts/synthesis.md`.
 - **Target repo**: start tiny to debug the loop, then `torchtitan` (yours, pure
   Python). Concepts from a hand-written `config/torchtitan.md` with seeds.
 
@@ -529,14 +529,14 @@ instead of an alphabetical slice. Seeds are always kept.
   rules against the packet (wrong anchor → packet's link; out-of-subgraph →
   de-link; uncited Mechanism step → link a symbol it names). Only removes or swaps
   in the packet's own link — never manufactures grounding; residuals reported.
-- **Adversarial verify** (`verify.py`, `skills/wikify-ingest-repo/prompts/verify.md`, `wikify
+- **Adversarial verify** (`verify.py`, `.agents/skills/wikify-ingest-repo/prompts/verify.md`, `wikify
   verify`): the correctness floor above the grounding floor. Extracts load-bearing
   claims; a skeptic agent tries to refute each against real source; verdicts fold
   to pass/fail. (On jax it caught 3 real errors in 323 claims.)
-- **Overview** (`skills/wikify-ingest-repo/prompts/overview.md`, SKILL step 3): synthesized
+- **Overview** (`.agents/skills/wikify-ingest-repo/prompts/overview.md`, SKILL step 3): synthesized
   `wiki/<slug>/overview.md` AFTER concepts; `assemble` links it from `index.md`
   ("Start here → Overview").
-- **Doc-concept ingest** (the LAST synthesis step — `skills/wikify-ingest-repo/prompts/ingest-docs.md`,
+- **Doc-concept ingest** (the LAST synthesis step — `.agents/skills/wikify-ingest-repo/prompts/ingest-docs.md`,
   SKILL step 4; adapts the autoresearch INGEST-SOURCE op to a silo). `prepare` globs
   `config.docs` → a worklist (`.cache/docs/<slug>.txt`); per doc, an agent extracts
   its concepts and writes **one grounded page per concept** into

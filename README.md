@@ -29,9 +29,9 @@ wikify --help                     # verify the CLI is on PATH
 That's the whole install. **All three steps matter:** the CLI does the deterministic stages, but
 the page-writing (synthesis) stage is **LLM-in-the-loop**, so an agent must run the
 `wikify-ingest-repo` skill. The skill is one self-contained, **tool-neutral** markdown procedure
-(`SKILL.md` + `prompts/`); `install-skill.sh` drops it under your project's `skills/`, soft-links it
-into `.claude/skills/` for **Claude Code**, and adds a reference to `SCHEMA.md` so **Codex** and
-**Antigravity** (which read `AGENTS.md` / `GEMINI.md` → `SCHEMA.md`) follow the same procedure.
+(`SKILL.md` + `prompts/`); `install-skill.sh` installs it into your project's `.agents/skills/` —
+the folder **Codex** and **Antigravity** read project skills from — and soft-links it into
+`.claude/skills/` for **Claude Code**. One install, all three agents.
 Use any Python ≥3.11 env (conda, venv, or pipx-managed). Every script is idempotent, so re-running
 is harmless.
 
@@ -54,10 +54,10 @@ drive `prepare → write pages → finalize`:
 ```bash
 scripts/install-skill.sh /path/to/your-project
 ```
-This works for all three agents from one install: Claude Code picks it up as a native skill (via the
-soft-link in `.claude/skills/`), and Codex / Antigravity follow the same `SKILL.md` because the
-script references it from your project's `SCHEMA.md` (their `AGENTS.md` / `GEMINI.md` point there).
-Then just ask any of them to “ingest `<repo>`”.
+This works for all three agents from one install: Codex and Antigravity read the skill natively from
+`.agents/skills/wikify-ingest-repo/` (project-scoped — [Codex](https://developers.openai.com/codex/skills),
+[Antigravity](https://antigravity.google/docs/skills)), and Claude Code picks it up via the soft-link
+in `.claude/skills/`. Then just ask any of them to “ingest `<repo>`”.
 
 **To only answer questions from an existing wiki** (no install needed) — drop `wiki/<slug>/`
 into the project and add this to its `SCHEMA.md` (referenced by `CLAUDE.md` / `AGENTS.md` /
@@ -82,7 +82,7 @@ one (and any generated headers) with the project's own build — e.g. CMake with
 | 2 reconcile diff | `diff.py`, `state.py`, `source.py` | Python |
 | 4 evidence (tests) | `evidence.py` | Python |
 | — packet build | `packet.py`, `slug.py`, `config.py` | Python |
-| 5 concern synthesis | `skills/…/SKILL.md` + `prompts/synthesis.md` | **LLM agent** |
+| 5 concern synthesis | `.agents/skills/…/SKILL.md` + `prompts/synthesis.md` | **LLM agent** |
 | 6 citation lint + assemble | `lint.py`, `assemble.py` | Python |
 
 The risky foundation is the **SCIP-occurrence → callers/callees** heuristic (SCIP

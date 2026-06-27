@@ -20,13 +20,17 @@ The C++ indexer (`scip-clang`) is downloaded automatically, and only if you inge
 ```bash
 git clone https://github.com/vlasenkoalexey/wikify-repo
 cd wikify-repo
-pip install -e .            # the `wikify` CLI (deps: protobuf, pyyaml, typer, gitpython)
-scripts/setup-vendor.sh     # one-time: install scip-python + generate wikify/scip_pb2.py
-wikify --help               # verify it's on PATH
+pip install -e .            # 1. the `wikify` CLI (deps: protobuf, pyyaml, typer, gitpython)
+scripts/setup-vendor.sh     # 2. install scip-python + generate wikify/scip_pb2.py (one-time)
+scripts/install-skill.sh    # 3. install the Claude Code skill (required for writing pages)
+wikify --help               # verify the CLI is on PATH
 ```
 
-That's the whole install — a clone and two commands. Use any Python ≥3.11 env (conda, venv,
-or pipx-managed). `setup-vendor.sh` is idempotent, so re-running is harmless.
+That's the whole install. **All three steps matter:** the CLI does the deterministic stages, but
+the page-writing (synthesis) stage is **LLM-in-the-loop**, so an agent must run the
+`wikify-ingest-repo` skill — `install-skill.sh` drops it into `~/.claude/skills/` (global; pass a
+`<project>/.claude/skills` path to scope it to one project). Use any Python ≥3.11 env (conda,
+venv, or pipx-managed). Both scripts are idempotent, so re-running is harmless.
 
 > **Why clone, not `pip install git+https://…`?** Two files can't ship in the wheel:
 > `scip_pb2.py` is generated from `vendor/scip.proto` **against your local protobuf**
@@ -58,16 +62,13 @@ or pipx-managed). `setup-vendor.sh` is idempotent, so re-running is harmless.
 
 ## Use it in your own project
 
-**To build / maintain a wiki** — the synthesis step is LLM-in-the-loop, so install the Claude
-Code skill once and let an agent drive `prepare → write pages → finalize`:
+**To build / maintain a wiki** — install the skill (step 3 above) so an agent can drive
+`prepare → write pages → finalize`. Global install is fine, or scope it to one project:
 ```bash
-DST=~/.claude/skills/wikify-ingest-repo            # global; or <project>/.claude/skills/...
-mkdir -p "$DST/prompts"
-cp skills/wikify-ingest-repo/SKILL.md "$DST/"
-cp skills/prompts/*.md "$DST/prompts/"             # prompts must live inside the skill dir
+scripts/install-skill.sh /path/to/your-project/.claude/skills
 ```
 Then in that project, just ask Claude Code to “ingest `<repo>`” / run the `wikify-ingest-repo`
-skill.
+skill. (The script bundles `SKILL.md` + its `prompts/` into one skill dir, as the skill requires.)
 
 **To only answer questions from an existing wiki** (no install needed) — drop `wiki/<slug>/`
 into the project and add this to its `CLAUDE.md` so agents retrieve from it cheaply:

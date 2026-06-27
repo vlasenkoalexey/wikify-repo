@@ -106,10 +106,13 @@ is harmless.
 
 ## Quick start
 
-wikify writes into a **Karpathy-style wiki repo** — a project that carries the `wikify-ingest-repo`
-skill and the agent conventions (`SCHEMA.md` + `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`), with the
-`wiki/` output committed alongside. Two ways to get one — both assume the [Install](#install) above
-(the `wikify` CLI + `scip-python`) is done:
+wikify has a **producer** side (build/maintain the wiki — needs the install) and a **consumer** side
+(answer from it — needs nothing). Both work in **Claude Code, Codex, and Antigravity**.
+
+### Build a wiki
+
+wikify writes into a **Karpathy-style wiki repo** — a project carrying the `wikify-ingest-repo` skill,
+the agent conventions, and the committed `wiki/`. Two ways to get one (after [Install](#install)):
 
 **A — Start from the template.** Clone the demo's empty
 [`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch; it ships the skill and
@@ -126,35 +129,38 @@ into `.claude/skills/` for Claude Code:
 scripts/install-skill.sh /path/to/your-project
 ```
 
-Then, in **Claude Code, Codex, or Antigravity** opened on that project, just say:
+Either way, open the project in your agent and say:
 
 > ingest https://github.com/owner/myrepo      (a local path works too)
 
 The agent runs the `wikify-ingest-repo` procedure — bootstrap config → index → symbol graph → write the
 concept pages → citation lint → assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is
-idempotent: only changed concepts rebuild.
+idempotent: only changed concepts rebuild. Because the skill lives in `.agents/skills/` and the output
+is plain markdown, this also slots into **any existing LLM-wiki project** as the *code* source type —
+alongside prose, sharing one `index.md` / `log.md` (exactly what the
+[demo](https://github.com/vlasenkoalexey/wikify-repo-demo) does, with `wiki/code/` next to hand-written
+`topics/` and `sources/`).
 
-## Use it in your own project
+### Answer from a wiki — no install needed
 
-wikify splits cleanly into a **producer** side (build/maintain the wiki — needs the install) and a
-**consumer** side (answer from it — needs nothing).
+To let an agent answer from a wiki — one you built, or one someone else committed — you need **nothing
+installed**: no `wikify` CLI, no skill, no `scip-python`. Commit the `wiki/code/<slug>/` folder and tell
+the agent to retrieve from it. Add a block like this to **`CLAUDE.md`** (Claude Code), **`AGENTS.md`**
+(Codex), and/or **`GEMINI.md`** (Antigravity) — or to a shared **`SCHEMA.md`** that all three point at:
 
-**Producing** is the [Quick start](#quick-start) above. The point worth adding: because the skill lives
-in `.agents/skills/` and the output is plain markdown, wikify slots into **any existing LLM-wiki
-project** as the *code* source type — sitting alongside prose pages in a
-[Karpathy-style](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) knowledge base and
-sharing one `index.md` / `log.md`. (That's exactly what
-[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo) does — code wikis under
-`wiki/code/` next to hand-written `topics/` and `sources/`.) So you don't need a dedicated repo: drop it
-into the wiki you already keep.
+```markdown
+## Codebase wiki — source of truth
+A grounded wiki for <repo> lives at `wiki/code/<slug>/`. To answer questions about its internals,
+**retrieve from the wiki instead of reading source**:
+- Read `wiki/code/<slug>/overview.md` first — it maps concepts to pages.
+- `grep` the wiki to find the relevant `concepts/` (mechanism) or `catalog/` (per-symbol) page; read
+  only that section.
+- Cite the catalog anchor `catalog/<module>.md#<Symbol>`; follow its source link only when you need
+  the exact line.
+- Don't bulk-read whole pages, and don't guess — every claim should trace to a cited symbol.
+```
 
-**Consuming needs no install at all.** To let an agent answer from a wiki someone else built, commit the
-`wiki/code/<slug>/` folder and point your agent config at it — no `wikify` CLI, no skill, no
-`scip-python`. The markdown *is* the interface. Add this to your `SCHEMA.md` (or `CLAUDE.md` /
-`AGENTS.md` / `GEMINI.md`):
-> Source of truth: the wiki at `wiki/code/<slug>/`. **Retrieve** from it — read `overview.md` as the
-> index, grep to locate the relevant concept/catalog page, read only that section and cite it; do not
-> bulk-read whole pages.
+The markdown *is* the interface — that's the whole integration.
 
 ## C++ ingestion (mixed repos only)
 

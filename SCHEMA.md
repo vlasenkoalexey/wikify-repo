@@ -5,7 +5,7 @@ A standalone Python CLI + a tool-neutral agent skill that ingest a code repo int
 a grounded, lint-clean **markdown** wiki an agent can answer internals questions
 from. v1 is standalone (NOT merged into the autoresearch repo) and Python-only.
 
-> **Ingesting a repo:** follow the procedure in `skills/wikify-ingest-repo/SKILL.md` — a
+> **Ingesting a repo:** follow the procedure in `.agents/skills/wikify-ingest-repo/SKILL.md` — a
 > tool-neutral markdown procedure (Claude Code runs it as a skill; Codex and Antigravity read
 > it via this file). Just ask your agent to: ingest <repo-url-or-local-path>.
 
@@ -51,11 +51,11 @@ ambiguous, ask — do not guess and invent.
    blurbs are LLM. *Implemented: coverage + catalogs + docstrings + `discover.py`
    (derived, centrality-ranked, auto-seeded agenda) + scaled synthesis. The
    mid-tier "purpose blurb" for undocumented modules is the one remaining band.*
-   **Concern synthesis is HEAVY processing** (`skills/wikify-ingest-repo/prompts/synthesis.md`): the
+   **Concern synthesis is HEAVY processing** (`.agents/skills/wikify-ingest-repo/prompts/synthesis.md`): the
    agent reads the real source (packets truncate) and writes Overview + a grounded
    **Mermaid diagram** + Design rationale + insight Mechanism with citations woven
    in — never a citation-per-clause trace. A per-repo **overview page**
-   (`skills/wikify-ingest-repo/prompts/overview.md`) is synthesized last: main concepts + core
+   (`.agents/skills/wikify-ingest-repo/prompts/overview.md`) is synthesized last: main concepts + core
    system diagrams + a map of the wiki.
 7. **Symbols live in their module catalog, not in per-symbol stubs.** A citation
    is a catalog anchor `../catalog/<module>.md#<QualifiedName>`; the catalog's

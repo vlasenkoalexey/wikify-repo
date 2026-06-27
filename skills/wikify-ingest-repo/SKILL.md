@@ -5,6 +5,8 @@ description: >
   answer internals questions from. Idempotent reconcile — first build, version
   bump (--ref), or an added concept are all the same operation. Trigger when the
   user asks to wikify/ingest a repo, build an internals wiki, or update one.
+  Accepts a repo URL or local path as the argument and bootstraps `config/<slug>.md`
+  itself — the user never hand-writes config.
 ---
 
 # wikify-ingest-repo
@@ -15,9 +17,23 @@ packets, lint, assemble). You write one mechanism page per packet. Never put
 synthesis in Python; never push linting into your prose.
 
 ## Preconditions
-- `wikify` is on PATH (`pipx install wikify-repo`) and `scip-python` is installed
-  (`npm i -g @sourcegraph/scip-python`; Node required). A `config/<slug>.md`
-  exists (frontmatter + a `## Concepts` list with optional seed symbols).
+- `wikify` is on PATH and `scip-python` is installed (see the repo's README install steps).
+
+## Input — invoke with the repo to ingest
+You are called with a repo **URL or local path** (e.g. `wikify-ingest-repo
+https://github.com/owner/myrepo`), or with an existing `<slug>` to update.
+
+**Step 0 — bootstrap the config yourself (never ask the user to write it).** Derive `<slug>`
+from the repo (basename, minus `.git`). If `config/<slug>.md` does not already exist, create it:
+```
+---
+slug: <slug>
+repo: <the URL or local path>
+---
+```
+No `## Concepts` list is needed — discovery auto-seeds the agenda from code centrality; add seed
+concepts later only to go deeper into a subsystem. If a config for that slug already exists,
+reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
 
 ## Procedure
 

@@ -35,19 +35,13 @@ venv, or pipx-managed). Both scripts are idempotent, so re-running is harmless.
 
 ## Quick start
 
-1. **Point at the repo** in `config/myrepo.md`:
-   ```markdown
-   ---
-   slug: myrepo
-   repo: https://github.com/owner/myrepo      # or a local path
-   ---
-   ```
-2. **Ask Claude Code to ingest it** — run the `wikify-ingest-repo` skill, e.g. just say:
-   > ingest myrepo
+In Claude Code, run the `wikify-ingest-repo` skill with the repo — just say:
 
-The skill drives the whole pipeline — index → symbol graph → write the concept pages →
-citation lint → assemble — and writes the wiki to `wiki/myrepo/`. Re-running is idempotent:
-only changed concepts rebuild.
+> ingest https://github.com/owner/myrepo      (a local path works too)
+
+That's it. The skill bootstraps the config itself, then drives the whole pipeline — index →
+symbol graph → write the concept pages → citation lint → assemble — and writes the wiki to
+`wiki/<slug>/`. Re-running is idempotent: only changed concepts rebuild.
 
 ## Use it in your own project
 

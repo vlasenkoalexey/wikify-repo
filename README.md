@@ -1,16 +1,39 @@
 # wikify-repo
 
-Ingest a code repo into a grounded, lint-clean **markdown** wiki an agent can
-answer internals questions from. Deterministic Python does the grounding (SCIP
-symbol graph, packets, citation lint); one LLM-in-the-loop step does concern
-synthesis. v1 is standalone and Python-only — see `docs/design.md` (what/why) and
-`docs/implementation.md` (how).
+> ### 🧠 Compile any codebase into a knowledge base your AI agent can actually *trust*. ✅
 
-## Status — Phase 1 (MVP) complete
+wikify-repo turns a repo into a grounded, lint-clean **markdown wiki** where **every claim is
+traced to a real, compiler-resolved symbol** — behind a citation linter that **fails the build** if
+one doesn't check out. 🔒 No graph database. No dashboard. No hosted service. The output is plain
+markdown your agent answers from with `grep` — and that **you own**, in your own git repo, forever. 📂
 
-One pure-Python repo, end to end: `scip-python → symbol graph → packets →
-[agent synthesis] → citation lint → markdown wiki`. Validated on `torchtitan`
-(see `tests/golden/torchtitan.md`).
+The others hand you a graph to click around 🕸️ or a hosted chatbot that politely warns it *"might be
+wrong"* ⚠️. wikify-repo is the **real product**: a *verifiable*, *complete*, *self-updating* knowledge
+base that needs **zero tooling to query**. 🚀
+
+## 🥊 wikify-repo vs. the toys
+
+| | 🟢 **wikify-repo** | graphify | understand-anything | Google Code Wiki |
+|---|:---:|:---:|:---:|:---:|
+| 🔒 **Grounded & verified** — every claim cites a resolved symbol, behind a hard build gate | ✅ | ⚠️ *labels guesses, no gate* | ❌ *unverified LLM prose* | ❌ *"can make mistakes"* |
+| 🎯 **Compiler-grade symbols** — SCIP resolution, not name-matching | ✅ | ❌ *tree-sitter names* | ❌ *file/import scan* | ❓ *closed* |
+| 🧩 **No silent gaps** — deterministic coverage, every module represented | ✅ | ⚠️ | ⚠️ | ❌ |
+| 🔧 **Zero tools to read it** — just markdown + `grep`, from any agent | ✅ | ❌ *needs the graph runtime* | ❌ *needs the dashboard app* | ❌ *needs Google's website* |
+| 📂 **You own the output** — plain markdown in your git repo | ✅ | ⚠️ *graph files* | ⚠️ *dashboard* | ❌ *hosted by Google* |
+| ♻️ **Incremental updates** — rebuild only what changed | ✅ | ❌ *full re-run* | ❌ *full snapshot* | ✅ *(but hosted)* |
+| 🔐 **Private / offline** — no SaaS, no upload | ✅ | ✅ | ✅ | ❌ *private repos waitlisted* |
+
+The others optimize for a **demo** — a graph to look at, a chatbot to ask. wikify-repo optimizes for
+**trust**: a knowledge base you can *cite*, that can't *silently miss* a subsystem, and that an agent
+reads with **nothing but `grep`** — no graph DB, no MCP server, no website. Deterministic Python does
+the grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the
+synthesis. See `docs/design.md` (what/why) and `docs/implementation.md` (how).
+
+## Status — battle-tested ⚙️
+
+End to end on real repos: `scip-python / scip-clang → symbol graph → packets →
+[agent synthesis] → citation lint → markdown wiki`. Validated on **pytorch**, **jax**,
+**torch_tpu** (mixed C++/Python), **torchtitan**, and **mini-pytorch-xla** — Python ✅ and C++ ✅.
 
 ## Install
 

@@ -1,4 +1,4 @@
-# wikify-repo
+# 🧠 wikify-repo
 
 **Compile any codebase into a knowledge base your AI agent can actually trust.**
 
@@ -13,14 +13,17 @@ See `docs/design.md` (what/why) and `docs/implementation.md` (how).
 
 | | **wikify-repo** | graphify | understand-anything | Google Code Wiki |
 |---|---|---|---|---|
-| **Output** | Markdown wiki — pages in your git repo | Knowledge graph (HTML + JSON) | React-Flow graph dashboard | Hosted web docs |
-| **Code structure from** | **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang) | tree-sitter AST, **name-based** (20 languages) | tree-sitter AST, **name-based** | Gemini (closed) |
-| **Faithfulness** | **Citation linter is a hard build gate**; uncited claims quarantined to `[!inferred]` | relationships labeled `EXTRACTED / INFERRED / AMBIGUOUS` — honest, but not gated | LLM per-node summaries, unverified | *"AI-generated map, not a source of truth"* |
-| **Coverage** | **Deterministic set-difference** — every module gets a page | Leiden community clustering | scanners enumerate all files | not specified |
-| **Inputs** | code + prose (docs / articles) | **widest** — code, SQL, shell, docs, papers, images, audio/video | code + docs / LLM-wikis | code repos |
-| **Retrieval** | `grep` + `index.md` — **no embeddings, no DB** | graph queries + clusters (no embeddings) | name + semantic search in the dashboard | hosted UI + Gemini chat |
-| **Updates** | **idempotent reconcile** — `--ref` rebuilds only changed symbols | re-run (caches transcripts) | full regenerate (snapshot) | auto-maintained (hosted) |
-| **Ownership** | plain markdown in your repo — offline, git-diffable | local graph files | local dashboard | **Google-hosted** (private repos waitlisted) |
+| **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Zero-setup hosted docs for public repos |
+| **Output** | ✅ Markdown wiki — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ❌ Hosted web docs only |
+| **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang) | ➖ tree-sitter AST, **name-based** (20 languages) | ➖ tree-sitter AST, **name-based** | ❓ Gemini (closed) |
+| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
+| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ scanners enumerate all files | ❓ not specified |
+| **Inputs** | ➖ code + prose (docs / articles) | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only |
+| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat |
+| **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed symbols | ➖ re-run (caches transcripts) | ❌ full regenerate (snapshot) | ✅ auto-maintained (hosted) |
+| **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ❌ **Google-hosted** (private repos waitlisted) |
+
+<sub>✅ strong · ➖ partial / trade-off · ❌ weak or absent · ❓ unknown / closed</sub>
 
 The other three optimize for navigation and reach — a graph to traverse ([graphify](https://github.com/safishamsi/graphify)),
 a visual dashboard to explore ([understand-anything](https://github.com/labolado/understand-anything)),

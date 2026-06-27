@@ -22,7 +22,8 @@ import yaml
 
 # Frontmatter keys the schema allows; anything else is a config error.
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
-                 "compile_commands", "index_shards", "bazel_targets", "source_url"}
+                 "compile_commands", "index_shards", "bazel_targets", "source_url",
+                 "acquire"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -69,6 +70,12 @@ class RepoConfig:
     build: str | None = None
     ref: str | None = None
     repo: str | None = None  # local path or git URL of the source (Stage 0)
+    # How Stage 0 brings a git-URL source into ``raw/code/<slug>``: "clone" (default —
+    # plain clone, ``raw/`` gitignored, pin recorded in state) or "submodule" (add it as
+    # a git submodule so the pin is the committed gitlink — reproducible via
+    # ``git submodule update --init``; requires the wiki to be a git repo). Local-path
+    # sources are always symlinked in place regardless.
+    acquire: str | None = None
     compile_commands: str | None = None  # path to a pre-existing compile_commands.json
     # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
     # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
@@ -209,6 +216,7 @@ def load_config(path: str | Path) -> RepoConfig:
     cc = fm.get("compile_commands")
     bt = fm.get("bazel_targets")
     su = fm.get("source_url")
+    acq = fm.get("acquire")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
@@ -218,6 +226,7 @@ def load_config(path: str | Path) -> RepoConfig:
         compile_commands=None if cc is None else str(cc),
         bazel_targets=None if bt is None else str(bt),
         source_url=None if su is None else str(su),
+        acquire=None if acq is None else str(acq),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

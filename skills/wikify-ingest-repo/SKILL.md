@@ -48,7 +48,7 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
 
 2. **Synthesize (this is your job — heavy processing, not annotation).** For EACH
    packet the plan built, read the packet and follow
-   `${CLAUDE_SKILL_DIR}/prompts/synthesis.md` exactly to write ONE file: the
+   `prompts/synthesis.md` exactly to write ONE file: the
    mechanism page `wiki/<slug>/concepts/<concept>.md`. The packet is your grounding
    index; **READ THE ACTUAL SOURCE** at the `file:line` it gives you (the snippets
    are truncated) so the page explains *how it really works and why*, not a cited
@@ -59,14 +59,14 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    `> [!inferred]` block.
 
 3. **Overview (after all concepts exist).** Follow
-   `${CLAUDE_SKILL_DIR}/prompts/overview.md` to write `wiki/<slug>/overview.md` —
+   `prompts/overview.md` to write `wiki/<slug>/overview.md` —
    the highest-level page: the main concepts, core system-level Mermaid diagrams,
    and a map of which concept answers which question. It is synthesis over the
    concept pages (no new grounding).
 
 4. **Doc concepts (LAST synthesis step).** `prepare` wrote a doc worklist at
    `.cache/docs/<slug>.txt` (the project's own README / `docs/`, globbed from
-   `config.docs`). For each doc, follow `${CLAUDE_SKILL_DIR}/prompts/ingest-docs.md`:
+   `config.docs`). For each doc, follow `prompts/ingest-docs.md`:
    read the doc, extract its concepts, and write **one grounded page per concept**
    into `wiki/<slug>/doc-concepts/<concept>.md` — each linking the symbols the doc
    names to their **catalog** entries and cross-linking sibling doc-concepts + code

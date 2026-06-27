@@ -529,14 +529,14 @@ instead of an alphabetical slice. Seeds are always kept.
   rules against the packet (wrong anchor → packet's link; out-of-subgraph →
   de-link; uncited Mechanism step → link a symbol it names). Only removes or swaps
   in the packet's own link — never manufactures grounding; residuals reported.
-- **Adversarial verify** (`verify.py`, `skills/prompts/verify.md`, `wikify
+- **Adversarial verify** (`verify.py`, `skills/wikify-ingest-repo/prompts/verify.md`, `wikify
   verify`): the correctness floor above the grounding floor. Extracts load-bearing
   claims; a skeptic agent tries to refute each against real source; verdicts fold
   to pass/fail. (On jax it caught 3 real errors in 323 claims.)
-- **Overview** (`skills/prompts/overview.md`, SKILL step 3): synthesized
+- **Overview** (`skills/wikify-ingest-repo/prompts/overview.md`, SKILL step 3): synthesized
   `wiki/<slug>/overview.md` AFTER concepts; `assemble` links it from `index.md`
   ("Start here → Overview").
-- **Doc-concept ingest** (the LAST synthesis step — `skills/prompts/ingest-docs.md`,
+- **Doc-concept ingest** (the LAST synthesis step — `skills/wikify-ingest-repo/prompts/ingest-docs.md`,
   SKILL step 4; adapts the autoresearch INGEST-SOURCE op to a silo). `prepare` globs
   `config.docs` → a worklist (`.cache/docs/<slug>.txt`); per doc, an agent extracts
   its concepts and writes **one grounded page per concept** into

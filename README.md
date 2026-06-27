@@ -20,41 +20,48 @@ The C++ indexer (`scip-clang`) is downloaded automatically, and only if you inge
 ```bash
 git clone https://github.com/vlasenkoalexey/wikify-repo
 cd wikify-repo
-pip install -e .            # 1. the `wikify` CLI (deps: protobuf, pyyaml, typer, gitpython)
-scripts/setup-vendor.sh     # 2. install scip-python + generate wikify/scip_pb2.py (one-time)
-scripts/install-skill.sh    # 3. install the Claude Code skill (required for writing pages)
-wikify --help               # verify the CLI is on PATH
+pip install -e .                  # 1. the `wikify` CLI (deps: protobuf, pyyaml, typer, gitpython)
+scripts/setup-vendor.sh           # 2. install scip-python + generate wikify/scip_pb2.py (one-time)
+scripts/install-skill.sh /proj    # 3. install the ingest skill into your wiki project
+wikify --help                     # verify the CLI is on PATH
 ```
 
 That's the whole install. **All three steps matter:** the CLI does the deterministic stages, but
 the page-writing (synthesis) stage is **LLM-in-the-loop**, so an agent must run the
-`wikify-ingest-repo` skill — `install-skill.sh` drops it into `~/.claude/skills/` (global; pass a
-`<project>/.claude/skills` path to scope it to one project). Use any Python ≥3.11 env (conda,
-venv, or pipx-managed). Both scripts are idempotent, so re-running is harmless.
+`wikify-ingest-repo` skill. The skill is one self-contained, **tool-neutral** markdown procedure
+(`SKILL.md` + `prompts/`); `install-skill.sh` drops it under your project's `skills/`, soft-links it
+into `.claude/skills/` for **Claude Code**, and adds a reference to `SCHEMA.md` so **Codex** and
+**Antigravity** (which read `AGENTS.md` / `GEMINI.md` → `SCHEMA.md`) follow the same procedure.
+Use any Python ≥3.11 env (conda, venv, or pipx-managed). Every script is idempotent, so re-running
+is harmless.
 
 
 ## Quick start
 
-In Claude Code, run the `wikify-ingest-repo` skill with the repo — just say:
+In any of the supported agents — **Claude Code, Codex, or Antigravity** — just say:
 
 > ingest https://github.com/owner/myrepo      (a local path works too)
 
-That's it. The skill bootstraps the config itself, then drives the whole pipeline — index →
-symbol graph → write the concept pages → citation lint → assemble — and writes the wiki to
-`wiki/<slug>/`. Re-running is idempotent: only changed concepts rebuild.
+That's it. The agent runs the `wikify-ingest-repo` procedure: it bootstraps the config itself,
+then drives the whole pipeline — index → symbol graph → write the concept pages → citation lint →
+assemble — and writes the wiki to `wiki/<slug>/`. Re-running is idempotent: only changed concepts
+rebuild.
 
 ## Use it in your own project
 
-**To build / maintain a wiki** — install the skill (step 3 above) so an agent can drive
-`prepare → write pages → finalize`. Global install is fine, or scope it to one project:
+**To build / maintain a wiki** — install the skill (step 3 above) into your project so an agent can
+drive `prepare → write pages → finalize`:
 ```bash
-scripts/install-skill.sh /path/to/your-project/.claude/skills
+scripts/install-skill.sh /path/to/your-project
 ```
-Then in that project, just ask Claude Code to “ingest `<repo>`” / run the `wikify-ingest-repo`
-skill. (The script bundles `SKILL.md` + its `prompts/` into one skill dir, as the skill requires.)
+This works for all three agents from one install: Claude Code picks it up as a native skill (via the
+soft-link in `.claude/skills/`), and Codex / Antigravity follow the same `SKILL.md` because the
+script references it from your project's `SCHEMA.md` (their `AGENTS.md` / `GEMINI.md` point there).
+Then just ask any of them to “ingest `<repo>`”.
 
 **To only answer questions from an existing wiki** (no install needed) — drop `wiki/<slug>/`
-into the project and add this to its `CLAUDE.md` so agents retrieve from it cheaply:
+into the project and add this to its `SCHEMA.md` (referenced by `CLAUDE.md` / `AGENTS.md` /
+`GEMINI.md`) so agents retrieve from it cheaply:
 > Source of truth: the wiki at `wiki/<slug>/`. **Retrieve** from it — use `overview.md` as the
 > index, grep to locate the relevant concept/catalog page, read only that section and cite it;
 > do not bulk-read whole pages.

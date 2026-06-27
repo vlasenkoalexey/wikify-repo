@@ -136,7 +136,7 @@ def prepare(
 ) -> None:
     """Stages 0-4: acquire, index, build graph, emit packets, print the plan."""
     p, cfg = _load(root, slug)
-    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref)
+    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
     typer.echo(f"acquired {slug} @ {acq.commit[:10]}  ({acq.repo_dir})")
 
     langs = cfg.languages or ["python"]
@@ -224,7 +224,7 @@ def finalize(
     if not p.scip.exists() and not p.scip_cpp.exists():
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
-    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref)
+    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref, mode=cfg.acquire)
     graph = _graph(p)
 
     # Stage 6b FIRST — emit module catalogs (the symbol homes). Citations resolve
@@ -351,7 +351,7 @@ def plan(
 ) -> None:
     """Dry-run: print the reconcile delta, emit nothing."""
     p, cfg = _load(root, slug)
-    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref)
+    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
     if not p.scip.exists():
         scip_index.run_indexer(acq.repo_dir, p.scip, project_name=slug)
     graph = _graph(p)

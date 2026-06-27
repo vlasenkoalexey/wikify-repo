@@ -34,7 +34,7 @@ markdown an agent reads with **nothing but `grep`** — no runtime, no database,
 ## SCIP vs AST parsing
 
 Most code-knowledge tools (graphify, understand-anything) parse with [**tree-sitter**](https://tree-sitter.github.io/tree-sitter/) — a fast,
-build-free [AST](https://en.wikipedia.org/wiki/Abstract_syntax_tree), one tree per file. Great for breadth (20+ languages, no toolchain), but it resolves
+build-free [**AST**](https://en.wikipedia.org/wiki/Abstract_syntax_tree) (abstract syntax tree), one tree per file. Great for breadth (20+ languages, no toolchain), but it resolves
 references syntactically **by name**: it sees a call to something *called* `forward`, not *which* `forward`.
 Cross-file bindings, import aliases, inheritance/overrides, and overloads are guesses.
 
@@ -63,7 +63,21 @@ a live graph you have to query.
 
 ## Demo and template
 
-TODO
+See the output before you install anything. **[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo)**
+is a live, populated wiki *produced by this tool* — two real codebases
+([`mini_pytorch_xla`](https://github.com/vlasenkoalexey/wikify-repo-demo/blob/main/wiki/code/mini_pytorch_xla/overview.md)
+and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
+
+[![The whole demo wiki as a force-directed graph: 92 pages, 384 links, two ingested codebases plus prose, colored by page type](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
+
+*The entire demo wiki at a glance — 92 pages, 384 links. Each node is a page, each edge a markdown link; the two dense clusters are the ingested codebases. [Click for the interactive viewer.](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)*
+
+It plays two roles:
+
+- **Showcase** — browse a finished wiki end to end (`overview.md` → `concepts/` → `catalog/` → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
+- **Template** — click **"Use this template"** (or start from the empty [`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch) to get a new repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then just `ingest <your-repo>`.
+
+## Install
 
 ## Install
 

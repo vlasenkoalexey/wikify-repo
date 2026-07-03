@@ -25,6 +25,7 @@ from . import (
     coverage as coverage_mod,
     diff,
     discover,
+    docs as docs_mod,
     fix as fix_mod,
     lint,
     packet,
@@ -132,6 +133,65 @@ def _graph(p: Paths):
 
 
 # --------------------------------------------------------------------------- #
+# Docs mode (source_type: docs) — the prose track (docs.py, design.md "Docs mode")
+# --------------------------------------------------------------------------- #
+def _prepare_docs(p: Paths, cfg: RepoConfig, acq) -> None:
+    """Docs-mode prepare: no SCIP — enumerate docs, build the anchor map, emit one packet
+    per doc. The agent then synthesizes topics/ + sources/ pages citing `src:` sections."""
+    docs = docs_mod.enumerate_docs(acq.repo_dir, cfg.doc_globs)
+    if not docs:
+        typer.echo("no docs matched (check `doc_globs`); nothing to ingest.")
+        return
+    doc_map = docs_mod.build_doc_map(acq.repo_dir, docs)
+    n_anchor = sum(len(i.anchors) for i in doc_map.values())
+    typer.echo(f"docs: {len(doc_map)} document(s), {n_anchor} resolvable section anchor(s)")
+    pkts = docs_mod.write_doc_packets(p.cache, p.slug, acq.repo_dir, doc_map, acq.commit, _today())
+    # Persist the doc map for finalize (lint + coverage resolve against it).
+    import json
+    dm_path = p.cache / "docs" / f"{p.slug}.docmap.json"
+    dm_path.parent.mkdir(parents=True, exist_ok=True)
+    dm_path.write_text(json.dumps(
+        {rel: sorted(info.anchors) for rel, info in doc_map.items()}), encoding="utf-8")
+    typer.echo(f"wrote {len(pkts)} doc packet(s) → {p.cache/'packets'/p.slug}/")
+    typer.echo(f"\nNow run agent synthesis (prompts/synthesis-docs.md), then "
+               f"`wikify finalize {p.slug}`.")
+
+
+def _finalize_docs(p: Paths, cfg: RepoConfig, repo: str | None) -> None:
+    """Docs-mode finalize: gate `src:` citations against the doc map + coverage floor +
+    assemble the docs index."""
+    acq = acquire.acquire(_source(cfg, repo), p.slug, p.raw, ref=cfg.ref, mode=cfg.acquire)
+    import json
+    dm_path = p.cache / "docs" / f"{p.slug}.docmap.json"
+    if dm_path.exists():
+        raw = json.loads(dm_path.read_text(encoding="utf-8"))
+        doc_map = {rel: docs_mod.DocInfo(relpath=rel, anchors=set(a)) for rel, a in raw.items()}
+    else:  # fall back to re-deriving from the repo
+        docs = docs_mod.enumerate_docs(acq.repo_dir, cfg.doc_globs)
+        doc_map = docs_mod.build_doc_map(acq.repo_dir, docs)
+
+    report = docs_mod.lint_docs(p.wiki_slug, doc_map)
+    if not report.ok:
+        typer.echo(f"\nLINT FAILED ({len(report.errors)} error(s)):", err=True)
+        for e in report.errors:
+            typer.echo(f"  {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo("lint: OK — every source citation resolves.")
+
+    cov = docs_mod.docs_coverage(doc_map, p.wiki_slug)
+    typer.echo(cov.render())
+
+    state = state_mod.load_state(p.state)
+    state_mod.set_ref(state, acq.commit)
+    state_mod.save_state(p.state, state)
+    docs_mod.assemble_docs_index(p.wiki_slug, p.slug, acq.commit, _today(), cov)
+    assemble.write_top_index(
+        p.wiki_base, [d.name for d in p.wiki_base.iterdir() if d.is_dir()], _today())
+    rel = f"{p.wiki_subdir}/{p.slug}" if p.wiki_subdir else p.slug
+    typer.echo(f"assembled wiki/{rel}/index.md  (docs mode, commit {acq.commit[:10]})")
+
+
+# --------------------------------------------------------------------------- #
 # Commands
 # --------------------------------------------------------------------------- #
 @app.command()
@@ -146,6 +206,10 @@ def prepare(
     p, cfg = _load(root, slug)
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
     typer.echo(f"acquired {slug} @ {acq.commit[:10]}  ({acq.repo_dir})")
+
+    if cfg.source_type == "docs":
+        _prepare_docs(p, cfg, acq)
+        return
 
     langs = cfg.languages or ["python"]
     if "python" in langs and (reindex or not p.scip.exists()):
@@ -229,6 +293,9 @@ def finalize(
 ) -> None:
     """Stage 6: lint the agent-written pages, assemble the index, update state."""
     p, cfg = _load(root, slug)
+    if cfg.source_type == "docs":
+        _finalize_docs(p, cfg, repo)
+        return
     if not p.scip.exists() and not p.scip_cpp.exists():
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)

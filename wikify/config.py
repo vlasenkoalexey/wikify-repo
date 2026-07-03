@@ -23,7 +23,7 @@ import yaml
 # Frontmatter keys the schema allows; anything else is a config error.
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
-                 "acquire", "wiki_subdir"}
+                 "acquire", "wiki_subdir", "source_type", "doc_globs"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -80,6 +80,13 @@ class RepoConfig:
     # Default "code" (so ``wiki/code/<slug>``, leaving ``wiki/`` for a curated index +
     # prose); set "" to put it directly at ``wiki/<slug>`` (the classic single-wiki layout).
     wiki_subdir: str = "code"
+    # "code" (default — SCIP symbol grounding, per-module catalogs) or "docs" (prose/doc
+    # ingestion — grounding anchored to a source document + section, coverage over files;
+    # see docs.py / design.md "Docs mode"). "auto" picks docs when SCIP finds no symbols.
+    source_type: str = "code"
+    # In docs mode, repo-relative globs selecting which docs to ingest. Empty →
+    # ``docs.DEFAULT_DOC_GLOBS`` (markdown/rst/html/txt).
+    doc_globs: list[str] = field(default_factory=list)
     compile_commands: str | None = None  # path to a pre-existing compile_commands.json
     # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
     # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
@@ -222,6 +229,7 @@ def load_config(path: str | Path) -> RepoConfig:
     su = fm.get("source_url")
     acq = fm.get("acquire")
     wsub = fm.get("wiki_subdir")
+    stype = fm.get("source_type")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
@@ -233,6 +241,8 @@ def load_config(path: str | Path) -> RepoConfig:
         source_url=None if su is None else str(su),
         acquire=None if acq is None else str(acq),
         wiki_subdir="code" if wsub is None else str(wsub),
+        source_type="code" if stype is None else str(stype),
+        doc_globs=_as_list(fm.get("doc_globs")),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

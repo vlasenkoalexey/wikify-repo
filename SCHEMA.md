@@ -104,6 +104,13 @@ the original plan — **read `design.md` "Decisions log" + `implementation.md` �
   RELATIVE source links, test-filtered/importance-ranked uses-by); `finalize --fix`;
   adversarial `verify`; synthesized `overview.md` linked from the index.
 - `symbols/` stubs are gone — folded into `catalog/` (see invariant 7).
+- **Docs mode** (`source_type: docs`, `wikify/docs.py`): the prose track. Same
+  Karpathy-synthesis-in-a-deterministic-shell, with the grounding anchor swapped from a SCIP
+  symbol to a **source document + `#section`** and coverage from modules to **doc files**. Only
+  the anchor resolver is format-specific (a per-format adapter: markdown/HTML headings → slugs,
+  else whole-file). `prepare`/`finalize` branch on `source_type`; citations are `src:` tokens the
+  doc packet hands over; the lint gate + coverage floor are unchanged in spirit. See `design.md`
+  "Docs mode" + `implementation.md` §10.7.
 
 The risky foundation remains the **SCIP-occurrence → callers/callees derivation**
 (`implementation.md` §5.1) — reference-scoping, since SCIP has no "call" role;

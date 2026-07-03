@@ -39,3 +39,6 @@ if [[ ! -f "$HERE/wikify/scip_pb2.py" ]]; then
 fi
 
 echo "vendor setup complete."
+echo "note: TS/JS, Go, Rust indexers are installed ON DEMAND — when 'wikify prepare' finds"
+echo "      one of those languages it prints the install command (scip-typescript / scip-go /"
+echo "      rust-analyzer) and asks; they are intentionally not fetched here."

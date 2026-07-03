@@ -551,7 +551,8 @@ instead of an alphabetical slice. Seeds are always kept.
 `bazel_targets` (auto-generate the C++ DB from bazel), `source_url` (catalog
 source-link base; default relative-local, `""` disables), `acquire`
 (`clone`|`submodule`), `wiki_subdir` (default `code` → `wiki/code/<slug>`; `""` = flat),
-`source_type` (`code`|`docs`), `doc_globs` (docs-mode file globs).
+`source_type` (`code`|`docs`), `doc_globs` (docs-mode file globs), `languages` (override
+detection; e.g. `[python, typescript]`).
 
 ### 10.7 Docs mode (`source_type: docs`) — `wikify/docs.py`
 The prose track (design.md "Docs mode"). Same Karpathy-synthesis-in-a-deterministic-shell as
@@ -569,6 +570,23 @@ code, with the anchor swapped from SCIP symbol → source document + `#section`.
   a doc is represented if it has a `sources/` page or an inbound citation) → `assemble_docs_index`.
 Pinning tests: `tests/test_docs.py` (adapters, enumerate, gate pass/fail, coverage set-difference).
 **Limit:** grounding resolution degrades for anchorless formats (PDF/images → whole-file).
+
+### 10.8 Multi-language SCIP — `wikify/languages.py`
+Grounding is SCIP, which is language-neutral, so the whole downstream (graph, monikers, catalogs,
+coverage, lint) is unchanged per language — adding one is a registry entry + a thin
+``scip_index.run_*``. `LANGS` maps `python`/`cpp` (bundled) + `typescript`/`go`/`rust` (on demand)
+to `(exts, markers, bin, install, scip_suffix, run)`. Indexers: `scip-typescript` (TS/JS, uses/infers
+tsconfig), `scip-go` (module root, needs go.mod), `rust-analyzer scip` (writes `index.scip`, relocated).
+- **Detection** — `detect_languages` from root marker files (`go.mod`, `Cargo.toml`,
+  `package.json`/`tsconfig.json`, `pyproject.toml`) or ≥3 source files, with a bounded
+  vendor-skipping walk (`_WALK_CAP`). `cfg.languages` overrides; empty → detect (default python).
+- **On demand, not by default** — the TS/Go/Rust indexers are NOT fetched by `setup-vendor.sh`.
+  When a language is present but its `bin` is missing, `ensure_indexer` prints the install command
+  and, only when interactive (tty), *asks* to install it; non-interactive → instruct + skip (that
+  language is dropped, the rest still index). Never installs silently.
+- **Merge** — each language writes `.cache/scip/<slug><suffix>.scip`; `cli._graph` globs and merges
+  them all (`<slug>.scip` + `<slug>.*.scip`), so a polyglot repo becomes one graph.
+Pinning tests: `tests/test_languages.py` (detection, registry, ask-don't-auto-install).
 
 ### 10.6 Vendored tools / setup
 `scripts/setup-vendor.sh` fetches scip-python (npm) + scip-clang (pinned binary,

@@ -50,6 +50,10 @@ Honest tradeoffs: SCIP needs a real indexer (`scip-python` over npm; a `compile_
 C++) — heavier than a zero-build parse, which is the price of precision. Tree-sitter trades that precision for breadth: the right
 call for navigation, the wrong one for *citeable* grounding.
 
+Because grounding is SCIP (language-neutral), **languages are pluggable**: Python + C++ are built in;
+**TS/JS, Go, and Rust** use their own SCIP indexers, installed *on demand* — `prepare` detects the
+language and asks you to install its indexer rather than bundling everything up front.
+
 ## Why use a wiki as the storage format
 
 The consumer is an **AI agent**, and agents already read markdown and retrieve with `grep` / `ripgrep`

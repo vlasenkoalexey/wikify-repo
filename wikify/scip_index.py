@@ -324,6 +324,52 @@ def run_clang_indexer(
     return output_path
 
 
+# --------------------------------------------------------------------------- #
+# Additional-language SCIP indexers (installed on demand — see wikify/languages.py).
+# Each is thin: invoke the indexer, tolerate a nonzero exit if a non-empty index was
+# still emitted (like scip-python/scip-clang), fail only when nothing usable is produced.
+# --------------------------------------------------------------------------- #
+def _run_scip_tool(cmd: list[str], cwd: str | Path, output_path: str | Path,
+                   tool: str, produces: str | None = None) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    if produces is not None:                       # tool writes a fixed name in cwd; relocate it
+        src = Path(cwd) / produces
+        if src.exists():
+            src.replace(output_path)
+    if not _has_documents(output_path):
+        raise RuntimeError(
+            f"{tool} failed ({proc.returncode}), no index emitted:"
+            f"\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}"
+        )
+    return output_path
+
+
+def run_scip_typescript(project_dir: str | Path, output_path: str | Path,
+                        bin: str = "scip-typescript") -> Path:
+    """scip-typescript (TS/JS). Uses a root ``tsconfig.json`` if present, else infers one."""
+    project_dir = Path(project_dir)
+    cmd = [bin, "index", "--output", str(Path(output_path).resolve())]
+    if not (project_dir / "tsconfig.json").exists():
+        cmd.append("--infer-tsconfig")
+    return _run_scip_tool(cmd, project_dir, output_path, "scip-typescript")
+
+
+def run_scip_go(project_dir: str | Path, output_path: str | Path,
+                bin: str = "scip-go") -> Path:
+    """scip-go (Go). Run from the module root (needs ``go.mod`` + a Go toolchain)."""
+    cmd = [bin, "--output", str(Path(output_path).resolve())]
+    return _run_scip_tool(cmd, project_dir, output_path, "scip-go")
+
+
+def run_rust_analyzer(project_dir: str | Path, output_path: str | Path,
+                      bin: str = "rust-analyzer") -> Path:
+    """rust-analyzer scip (Rust). It writes ``index.scip`` into cwd; we relocate it out."""
+    cmd = [bin, "scip", "."]
+    return _run_scip_tool(cmd, project_dir, output_path, "rust-analyzer", produces="index.scip")
+
+
 def parse_index(scip_path: str | Path) -> "scip_pb2.Index":
     index = scip_pb2.Index()
     index.ParseFromString(Path(scip_path).read_bytes())

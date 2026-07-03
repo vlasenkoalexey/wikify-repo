@@ -291,9 +291,19 @@ page-/file-level.
 
 | Language | Tool | Notes |
 |---|---|---|
-| Python | `scip-python` | pyright-backed; type-resolved refs. Works build-free. |
-| C++ | `scip-clang` | needs `compile_commands.json`. Resolves macros/templates. |
-| Mixed (PyTorch) | both, merged | run per-language, union the SCIP indexes. |
+| Python | `scip-python` | pyright-backed; type-resolved refs. Works build-free. Bundled. |
+| C++ | `scip-clang` | needs `compile_commands.json`. Resolves macros/templates. Bundled. |
+| TS/JS | `scip-typescript` | uses/infers `tsconfig`. **On-demand indexer.** |
+| Go | `scip-go` | module root, needs `go.mod`. **On-demand indexer.** |
+| Rust | `rust-analyzer scip` | Cargo project. **On-demand indexer.** |
+| Mixed / polyglot | all, merged | run per-language, union the SCIP indexes into one graph. |
+
+**Because grounding is SCIP (language-neutral), a language is a pluggable indexer** — everything
+downstream reads the symbol table, not a per-language AST (`wikify/languages.py`). Python + C++ ship
+with `setup-vendor.sh`; TS/JS, Go, Rust are **installed on demand**: `prepare` detects the language
+(root marker or ≥3 source files) and, if the indexer is missing, *asks* the user to install it
+(never silently), skipping that language if declined so the rest still index (`implementation.md`
+§10.8).
 
 - **C++ compile database**: emit `compile_commands.json` into
   `.cache/build/<slug>/`. Build **out-of-tree** so `raw/code/<slug>/` (the pinned

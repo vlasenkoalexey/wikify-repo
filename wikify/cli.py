@@ -27,6 +27,7 @@ from . import (
     discover,
     docs as docs_mod,
     fix as fix_mod,
+    languages as lang_mod,
     lint,
     packet,
     scip_index,
@@ -124,11 +125,16 @@ def _expand_shards(repo_dir: Path, patterns: list[str]) -> list[str]:
     return out
 
 
+def _scip_indexes(p: Paths) -> list[Path]:
+    """Every ``.scip`` for this slug — ``<slug>.scip`` (python) + ``<slug>.<lang>.scip`` (cpp,
+    ts, go, rust). One graph is built from all of them, so languages merge automatically."""
+    d = p.cache / "scip"
+    return sorted(set(d.glob(f"{p.slug}.scip")) | set(d.glob(f"{p.slug}.*.scip")))
+
+
 def _graph(p: Paths):
-    """Build the graph, merging the C++ index (scip-clang) when present."""
-    indexes = [scip_index.parse_index(p.scip)] if p.scip.exists() else []
-    if p.scip_cpp.exists():
-        indexes.append(scip_index.parse_index(p.scip_cpp))
+    """Build the graph, merging every language's SCIP index present in the cache."""
+    indexes = [scip_index.parse_index(f) for f in _scip_indexes(p)]
     return scip_index.build_graph(*indexes)
 
 
@@ -211,7 +217,11 @@ def prepare(
         _prepare_docs(p, cfg, acq)
         return
 
-    langs = cfg.languages or ["python"]
+    # Languages: explicit config wins; else detect from the repo (markers + extensions),
+    # defaulting to python so existing python repos are unaffected.
+    langs = cfg.languages or (lang_mod.detect_languages(acq.repo_dir) or ["python"])
+    if langs != (cfg.languages or ["python"]):
+        typer.echo(f"detected languages: {', '.join(langs)}")
     if "python" in langs and (reindex or not p.scip.exists()):
         if cfg.index_shards:
             targets = _expand_shards(acq.repo_dir, cfg.index_shards)
@@ -238,6 +248,22 @@ def prepare(
         typer.echo(f"indexing C++ with scip-clang ({cc}) ...")
         scip_index.run_clang_indexer(acq.repo_dir, cc, p.scip_cpp,
                                      scip_clang_bin=_scip_clang_bin())
+    # TS/JS, Go, Rust — SCIP indexers installed ON DEMAND (not by setup-vendor). When one of
+    # these is present, ask the user to install its indexer, then run it; skip if declined.
+    for key in lang_mod.AUTO_RUN:
+        if key not in langs:
+            continue
+        lang = lang_mod.LANGS[key]
+        out = lang_mod.scip_path(p.cache, slug, key)
+        if not (reindex or not out.exists()):
+            continue
+        if not lang_mod.ensure_indexer(lang):
+            continue
+        typer.echo(f"indexing {lang.label} with {lang.bin} ...")
+        try:
+            lang.run(acq.repo_dir, out)
+        except Exception as e:  # one language failing shouldn't abort the others
+            typer.echo(f"  {lang.label} indexing failed: {e}", err=True)
     graph = _graph(p)
     typer.echo(f"graph: {len(graph)} symbols")
 
@@ -296,7 +322,7 @@ def finalize(
     if cfg.source_type == "docs":
         _finalize_docs(p, cfg, repo)
         return
-    if not p.scip.exists() and not p.scip_cpp.exists():
+    if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref, mode=cfg.acquire)

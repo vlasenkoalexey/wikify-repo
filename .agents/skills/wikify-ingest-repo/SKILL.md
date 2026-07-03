@@ -35,6 +35,14 @@ No `## Concepts` list is needed — discovery auto-seeds the agenda from code ce
 concepts later only to go deeper into a subsystem. If a config for that slug already exists,
 reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
 
+> **Docs mode (prose sources).** If the repo is documentation, not code — or you set
+> `source_type: docs` in the config — the pipeline is the same shape but prose-grounded:
+> `wikify prepare <slug>` emits one **doc packet** per document (no SCIP); you synthesize
+> `topics/` + `sources/` pages following **`prompts/synthesis-docs.md`**, citing sections with
+> `src:` tokens; `wikify finalize <slug>` gates those citations and runs the coverage floor. The
+> grounding anchor is a *source document + section* instead of a symbol; everything below about
+> catalogs/concepts is the code path. See design.md "Docs mode".
+
 ## Procedure
 
 1. **Prepare (deterministic, no model).** Run:

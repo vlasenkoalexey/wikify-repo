@@ -549,7 +549,26 @@ instead of an alphabetical slice. Seeds are always kept.
 ### 10.5 Config keys (frontmatter)
 `index_shards` (shard globs), `compile_commands` (pre-existing C++ DB),
 `bazel_targets` (auto-generate the C++ DB from bazel), `source_url` (catalog
-source-link base; default relative-local, `""` disables).
+source-link base; default relative-local, `""` disables), `acquire`
+(`clone`|`submodule`), `wiki_subdir` (default `code` → `wiki/code/<slug>`; `""` = flat),
+`source_type` (`code`|`docs`), `doc_globs` (docs-mode file globs).
+
+### 10.7 Docs mode (`source_type: docs`) — `wikify/docs.py`
+The prose track (design.md "Docs mode"). Same Karpathy-synthesis-in-a-deterministic-shell as
+code, with the anchor swapped from SCIP symbol → source document + `#section`. `cli.py` branches
+`prepare`/`finalize` on `cfg.source_type`:
+- **`_prepare_docs`** — no SCIP. `docs.enumerate_docs` (vendor-skipped globs) → `build_doc_map`
+  (per-format anchor adapters: `_markdown_anchors` ATX/setext, `_html_anchors` via `HTMLParser`
+  headings+`id`; `.txt`/unknown → whole-file) → `write_doc_packets` (one packet/doc: source path,
+  truncated text, the exact `src:` tokens, sibling links). The doc map is persisted to
+  `.cache/docs/<slug>.docmap.json` for finalize.
+- **synthesis** (LLM) — `prompts/synthesis-docs.md`: `topics/` (cross-source, reconciled) +
+  `sources/` (per-doc), citing `[label](src:<doc>#<anchor>)`.
+- **`_finalize_docs`** — `docs.lint_docs` (the gate: every `src:` citation resolves to a real
+  doc + section, else exit 1) → `docs.docs_coverage` (set-difference over the doc file set;
+  a doc is represented if it has a `sources/` page or an inbound citation) → `assemble_docs_index`.
+Pinning tests: `tests/test_docs.py` (adapters, enumerate, gate pass/fail, coverage set-difference).
+**Limit:** grounding resolution degrades for anchorless formats (PDF/images → whole-file).
 
 ### 10.6 Vendored tools / setup
 `scripts/setup-vendor.sh` fetches scip-python (npm) + scip-clang (pinned binary,

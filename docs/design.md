@@ -211,6 +211,38 @@ The *how* lives in `implementation.md` §10.
   by` (a vendored caller is a real relationship); only test/example paths are
   filtered there.
 
+### Docs mode — prose as a first-class source type (`source_type: docs`)
+
+wikify's identity is *Karpathy synthesis wrapped in a deterministic shell*: a **grounding
+gate** + a **coverage floor**, with the LLM doing only the synthesis. The default (code) mode
+anchors that shell to **SCIP symbols**. A repo that is documentation, not code, has no symbols —
+so the LLM synthesis has nothing to cite and coverage has nothing to enumerate (see "How this
+minimizes hallucination"). Rather than degrade, docs mode **swaps the anchor**, keeping the shell
+identical:
+
+| | code mode | docs mode |
+|---|---|---|
+| grounding anchor | SCIP symbol (moniker) | **source document + `#section`** |
+| coverage domain | set-difference over **modules** | set-difference over **doc files** |
+| the gate | citation resolves to a real symbol | citation resolves to a real doc + section |
+| Python↔LLM split | unchanged | unchanged |
+
+The synthesis step is Karpathy's Ingest verbatim (read a doc → topic + source pages → cite →
+cross-link → *reconcile into existing topics*); docs mode adds the two things a manual
+knowledge-base lacks: a citation that **fails the build** if it points at a section that doesn't
+exist, and a coverage floor so **no doc is silently dropped**.
+
+Only the *anchor resolver* is format-sensitive, so it is a per-format **adapter**
+(`anchors(text)`): markdown/rst → heading slugs, HTML → `id`/heading slugs, notebooks → cell
+index, plain text/PDF/images → whole-file (coarse). Enumeration, coverage, and the gate are
+format-agnostic; the framework is **one polymorphic grounding target + one coverage domain**,
+instantiated for code (symbol/module) or docs (section/file) — not a forked pipeline. A prose
+citation is a `[label](src:<repo-rel-doc>#<anchor>)` link the doc packet hands over verbatim
+(mirroring how a code packet hands over `cite:` catalog anchors). Realized in `wikify/docs.py`;
+`prompts/synthesis-docs.md` drives synthesis. **Honest limit:** grounding *strength* degrades
+with format fidelity — markdown/HTML get fine-grained section anchors; PDF/images fall back to
+page-/file-level.
+
 ---
 
 ## Architecture

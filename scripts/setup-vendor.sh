@@ -33,8 +33,12 @@ fi
 echo -n "scip-python: "; scip-python --version 2>/dev/null || echo "(installed)"
 
 # 3) scip_pb2.py — generated from the vendored proto (gitignored, regenerable).
+# Pin grpcio-tools 1.71 → protobuf-5.29 gencode: newer runtimes load old gencode
+# fine, but old runtimes (e.g. a conda env pinned by tensorflow) REJECT newer
+# gencode ("Detected incompatible Protobuf Gencode/Runtime versions").
 if [[ ! -f "$HERE/wikify/scip_pb2.py" ]]; then
   echo "generating wikify/scip_pb2.py from vendor/scip.proto ..."
+  python -m pip install -q "grpcio-tools==1.71.0"
   python -m grpc_tools.protoc -I "$HERE/vendor" --python_out="$HERE/wikify" "$HERE/vendor/scip.proto"
 fi
 

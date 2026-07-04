@@ -11,9 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      # wikify/scip_pb2.py is generated, not committed (see scripts/setup-vendor.sh)
+      # wikify/scip_pb2.py is generated, not committed (see scripts/setup-vendor.sh).
+      # grpcio-tools pinned to match setup-vendor.sh: 5.29 gencode loads on any
+      # runtime >= 5.29, including conda envs pinned older by tensorflow.
       - name: Generate SCIP protobuf bindings
-        run: uv run --with grpcio-tools python -m grpc_tools.protoc -I vendor --python_out=wikify vendor/scip.proto
+        run: uv run --with grpcio-tools==1.71.0 python -m grpc_tools.protoc -I vendor --python_out=wikify vendor/scip.proto
       # scip-python / scip-clang are absent here by design: the indexer-dependent
       # tests load the checked-in .scip fixtures instead of reindexing.
       - name: Run tests

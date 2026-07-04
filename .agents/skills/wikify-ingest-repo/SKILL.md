@@ -17,7 +17,10 @@ packets, lint, assemble). You write one mechanism page per packet. Never put
 synthesis in Python; never push linting into your prose.
 
 ## Preconditions
-- `wikify` is on PATH and `scip-python` is installed (see the repo's README install steps).
+- `wikify` is on PATH, plus the SCIP indexer for the repo's language(s): `scip-python`
+  and the vendored `scip-clang` come from `scripts/setup-vendor.sh` (see the repo's README);
+  TS/JS, Go, and Rust indexers are installed **on demand** — `prepare` detects the language
+  and asks before installing, and skips that language if declined.
 
 ## Input — invoke with the repo to ingest
 You are called with a repo **URL or local path** (e.g. `wikify-ingest-repo
@@ -114,28 +117,37 @@ never grounding.
    claim into an `[!inferred]` block) and run `wikify finalize <slug>` again.
    Repeat until it exits 0.
 
-7. **Register in the host wiki (self-connect — REQUIRED).** A grounded wiki nobody links to
-   is dead weight. So the ingest is not done until the repo is reachable from the host's
-   read-first index and recorded in its log, **following the host wiki's own conventions**
-   (read its `SCHEMA.md` / `index.md` for the exact format):
+7. **Adversarial verify (after the gate is green; skip only if the user declines).** The
+   linter proves every claim *cites* a real symbol — not that the claim is *true*. Run:
+   ```
+   wikify verify <slug>            # per-page count of load-bearing claims (no model)
+   wikify verify <slug> --page <concept>   # the claim worklist for one page
+   ```
+   For each concept page, follow `prompts/verify.md`: re-read the real source behind each
+   load-bearing claim and try to REFUTE it. Fix refuted claims in place (correct the prose,
+   or demote to `> [!inferred]` if the source can't support it), then re-run
+   `wikify finalize <slug>` so the gate re-checks the edited pages.
+
+8. **Register in the host wiki (REQUIRED).** The ingest is not done until the repo is
+   reachable from the host's read-first index and recorded in its log, **following the host
+   wiki's own conventions** (read its `SCHEMA.md` / `index.md` for the exact format):
    - **Index** — add/refresh the repo's entry in the host's top `index.md`, linking the
      **`overview.md`** front door (`wiki/<wiki_subdir>/<slug>/overview.md`), *not* the per-repo
      `index.md` (the overview routes on to it). One entry per repo. If the host already lists the
      repo (e.g. a curated page), add the overview as an "internals" link on that same row.
    - **Log** — append one line to the host's `log.md`, prefixed per its convention
      (e.g. `## [YYYY-MM-DD] ingest-code | <slug>`).
-   This is a rule of adopting this skill, not a per-wiki step — so a repo that's ingested is,
-   by construction, in the index and the log. (wikify's CLI never edits the curated `index.md` /
-   `log.md`; that's deliberate — this step does, per the host's format.)
+   (wikify's CLI never edits the curated `index.md` / `log.md`; that's deliberate — this
+   step does, per the host's format.)
 
-8. **Connect to the other repos (self-connect on the concept axis).** A silo is only half the
-   value; the rest is the *cross-repo* view (who else implements this kernel / technique). If the
-   host wiki has other ingested silos **and** a concept vocabulary (`wiki/concepts/*.md`), hand off
-   to the **`wikify-connect-repo`** skill. It runs `wikify connect` to propose candidate concepts,
-   then **asks the human which concepts to connect** (selective — not everything), and wires those
-   inline (concept page ↔ silo pages). Also run `wikify connect --refresh` so the concepts already
-   connected pick up this new repo's implementations. Skip only when this is the first/only repo, or
-   the wiki has no `wiki/concepts/` vocabulary.
+9. **Connect to the other repos (from the 2nd silo on).** If the host wiki has other
+   ingested silos **and** a concept vocabulary (`wiki/concepts/*.md`), hand off to the
+   **`wikify-connect-repo`** skill and let it drive: it proposes candidates (`wikify connect`),
+   **asks the human which concepts to connect** (selective — not everything), applies them, and
+   refreshes the already-connected concepts so they pick up this new repo's implementations.
+   Do not run `wikify connect` yourself here — the connect skill owns that procedure, including
+   `--refresh`. Skip only when this is the first/only repo, or the wiki has no `wiki/concepts/`
+   vocabulary.
 
 ## Notes
 - **Where pages go**: `wiki/<wiki_subdir>/<slug>/` — `wiki_subdir` defaults to `code`
@@ -145,4 +157,9 @@ never grounding.
   `prepare` builds only the new packet (same commit, nothing else marked stale).
 - **Version bump**: `wikify prepare <slug> --ref <newcommit>` — only changed
   symbols' pages rebuild.
-- `wikify plan <slug>` previews the delta without emitting anything.
+- `wikify plan <slug>` previews the delta without emitting anything (requires a cached
+  index from a prior `prepare`).
+- **Interrupted or failed run**: the reconcile is idempotent — re-run `wikify prepare <slug>`
+  and it rebuilds only what's missing/stale; already-written pages are never double-built.
+  If `scip-python` OOMs on a huge repo (exit 137/144), add `index_shards:` globs to
+  `config/<slug>.md` (see implementation.md §10) and re-run `prepare`.

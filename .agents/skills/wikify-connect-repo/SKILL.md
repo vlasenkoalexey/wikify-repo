@@ -57,6 +57,14 @@ stray name-match) — done at the ask below.
      implementation page, grouped by repo;
    - on each linked silo concept page — a one-line **up-link** back to the concept(s) it's part of.
 
+   **When this run follows a new ingest** (the usual trigger), also refresh the concepts that
+   were connected before, so they pick up the new repo's implementations:
+   ```
+   wikify connect --refresh
+   ```
+   This skill owns `--refresh` — the ingest skill only hands off here and never runs
+   `wikify connect` itself.
+
 4. **Deepen a hub (optional; LLM, only where asked).** For a concept worth a real cross-repo
    narrative, edit its `wiki/concepts/<key>.md` prose *outside* the `connect:auto` block: a tight
    lens-framed definition, a short *how the implementations differ* synthesis grounded in the linked

@@ -7,7 +7,7 @@ This module is the deterministic half of an adversarial-verify pass:
   - ``load_bearing_claims`` extracts the checkable assertions from a concept page
     (Overview/Design-rationale paragraphs + Entry-points/Mechanism items) with the
     symbols each one cites — the worklist a skeptic agent must try to *refute*
-    against the real source (see ``skills/prompts/verify.md``).
+    against the real source (see ``.agents/skills/wikify-ingest-repo/prompts/verify.md``).
   - ``aggregate`` folds the agents' per-claim verdicts into a page report: a page
     fails verification if any load-bearing claim is refuted.
 

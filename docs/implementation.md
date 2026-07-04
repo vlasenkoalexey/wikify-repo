@@ -271,14 +271,26 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
 - Acceptance: torch_tpu ingests; dispatch map rows all cite a registration site;
   C++ citations resolve.
 
-### Phase 3 — connect (multi-repo)
-- `connect.py` 7a (dependency links): re-resolve external citations against other
-  silos' `.cache/scip/*.scip`; upgrade dangling refs to cross-repo links;
-  `compat.md` version-coherence gate. Deterministic, no model.
-- 7b (concept links): LLM judgment keyed on shared concepts; `_connect/decisions.md`
-  cache; link-insertion only + re-lint.
-- Acceptance: torch_tpu → xla dependency links resolve; re-running connect is
-  idempotent; a concept link survives an update without churn.
+### Phase 3 — connect (multi-repo), graded & interactive
+Split by the Python/LLM line and by depth (design.md Stage 7). A new `wikify-connect-repo`
+skill drives the LLM half; `connect.py` is the deterministic half.
+- **Depth 0 — index (`connect.py`, deterministic, always on).** Invert the synthesis-emitted
+  `concepts:` tags → `concept → [silo pages]` (the concept-axis analog of coverage). No model.
+- **7a dependency links (`connect.py`, deterministic).** Re-resolve external citations against
+  other silos' `.cache/scip/*.scip`; upgrade dangling refs to cross-repo links; `compat.md`
+  version-coherence gate.
+- **7b concept correspondences (skill, candidate-gen + confirm).** Generate candidates
+  deterministically (shared moniker / vendored lineage / vocab tag), LLM confirms/rejects;
+  `_connect/decisions.md` keep/drop cache. **Depth 1:** append a grounded row to the shared
+  concept's implementation table + a silo up-link. **Depth 2:** synthesize/upgrade the
+  `wiki/concepts/<key>.md` **hub** — a new authored page whose rows cite silo anchors and pass
+  the citation gate; linted silo prose is never rewritten.
+- **Interactive gates (skill; batch reads config).** Ask `synthesis_focus` if absent; offer
+  `discover.py`'s centrality-ranked agenda for more concepts; ask `connect_depth` (default `0`).
+  Auto-invoked as the tail of ingest from the 2nd repo on; separately re-runnable.
+- Acceptance: dependency links resolve; re-running connect is idempotent; Depth-0 lists every
+  repo's splash pages with no LLM; a Depth-2 hub's rows all resolve; a concept link survives an
+  update without churn.
 
 ### Phase 4 — discovery, lanes, L4
 - Candidate-concept discovery → "Candidate concepts" in `index.md`.
@@ -556,6 +568,9 @@ detection; e.g. `[python, typescript]`), `synthesis_focus` (a domain **lens** fo
 overview/concept synthesis — e.g. "TPU performance — kernels, sharding, autotune, precision"),
 `coverage_collapse` (globs → catalog page kept citeable but member body dropped — model zoos),
 `coverage_exclude` (globs → no catalog page — uncited tests/vendored only).
+*Planned (Phase 3, connect):* `concepts` (host-owned controlled vocabulary — the shared concept
+keys; default = `wiki/concepts/` filenames), `connect_depth` (`0`=index only / `1`=link /
+`2`=synthesize hubs; default `0`, the non-interactive floor).
 
 ### 10.7 Docs mode (`source_type: docs`) — `wikify/docs.py`
 The prose track (design.md "Docs mode"). Same Karpathy-synthesis-in-a-deterministic-shell as
@@ -597,3 +612,16 @@ Pinning tests: `tests/test_languages.py` (detection, registry, ask-don't-auto-in
 `scripts/bazel_compile_commands.py` is a thin CLI over `wikify.bazel_cc`.
 `project_version` stays `"0.0.0"` (a placeholder; nothing depends on its value —
 monikers only need internal consistency).
+
+### 10.9 Synthesis lens + host-registration (realized)
+Two thin, high-leverage additions realized post-v1 (design.md Decisions log):
+- **`synthesis_focus` lens.** `packet.build_packet(..., focus=cfg.synthesis_focus)` emits a
+  "Synthesis focus (lens)" block into the packet; `prompts/{synthesis,overview,ingest-docs}.md`
+  each honor it — the overview leads with a focus-relevant *surfaces* section. Grounding is
+  unchanged: the lens shifts emphasis, not citations. When it's absent from context the ingest
+  skill asks (see §10.8's "ask, never silently" pattern) rather than guessing.
+- **Register step (skill-side, not CLI).** The CLI never edits curated files (invariant 2). The
+  `wikify-ingest-repo` SKILL's final step links the new `overview.md` into the host `index.md` and
+  appends `log.md`, per host conventions. The deterministic silo (CLI) and its curated placement
+  (skill) sit on opposite sides of the Python/LLM split — the CLI stays safe to re-run in batch,
+  the skill owns the one judgment-bearing edit to curated files.

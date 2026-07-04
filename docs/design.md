@@ -210,6 +210,19 @@ The *how* lives in `implementation.md` §10.
   discovery* (don't write a deep page about vendored fmt) but kept in `uses`/`used
   by` (a vendored caller is a real relationship); only test/example paths are
   filtered there.
+- **A synthesis lens is a first-class, optional input.** `synthesis_focus` — a
+  one-line domain framing (e.g. "TPU performance — kernels, sharding, autotune,
+  precision") — is injected into the packet and the overview/concept prompts so
+  synthesis *foregrounds* it: the overview leads with a focus-relevant surfaces
+  section, becoming the domain entry point (it can replace a hand-written perf page).
+  The lens moves emphasis, never grounding — every claim still cites a real symbol.
+  Host-wiki-owned; when absent from context, the ingest skill *asks* rather than guesses.
+- **The ingest skill self-connects into the host wiki (register step).** The CLI
+  never edits curated files (invariant 2), but a fresh silo that nothing links to is
+  invisible. So the *skill's* final step registers the new `overview.md` into the host
+  `index.md` and appends `log.md`, per the host's conventions. Ingest is "build the
+  silo" (CLI, deterministic) **plus** "wire it into the wiki" (skill, curated
+  placement) — the two stay on the correct sides of the Python/LLM split.
 
 ### Docs mode — prose as a first-class source type (`source_type: docs`)
 
@@ -717,11 +730,74 @@ across regeneration because everything is recomputed.
   consults it instead of re-litigating every correspondence. The cache is
   **metadata**; the visible link still renders inline.
 
+### The shared concept vocabulary is host-owned; candidates are generated, not invented
+
+The concept keys that drive (b) — `splash-attention`, `remat`, `sharding`, … — are
+**not** wikify's; they are the host wiki's vocabulary (its `wiki/concepts/` filenames, or
+a `concepts:` config list), passed to connect exactly as `synthesis_focus` is. wikify
+supplies the *mechanism*; the wiki supplies the *terms*, so a non-TPU wiki grows its own
+spine. Correspondence is never free-form LLM matching: connect **generates candidates
+deterministically** — a silo concept whose symbols share a name/moniker, a vendored-from
+lineage, or a synthesis-emitted `concepts:` tag matching a vocabulary entry — then the LLM
+only **confirms or rejects** each candidate (the analog of devirtualization's CHA
+candidates + judgment). Grounded proposal, judgment on top; the LLM never conjures a
+correspondence from nothing.
+
+### Graded connection depth
+
+Connection is a gradient the operator picks per run, and the floor is always free:
+
+- **Depth 0 — index (deterministic, no LLM, always on).** Synthesis stamps each silo
+  concept page with a controlled-vocab `concepts:` tag; connect inverts it into
+  `concept → [silo pages]`. This alone answers "who implements splash attention" for the
+  whole wiki, can't miss a repo, and auto-absorbs new ingests. It is the concept-axis
+  analog of the coverage catalog — enumeration, not synthesis.
+- **Depth 1 — link.** For each confirmed correspondence, append a grounded one-line row to
+  the shared concept's **implementation table** (repo → silo anchor → distinctive variant →
+  tuning surface) and add an up-link from the silo page. Cheap LLM.
+- **Depth 2 — synthesize hub.** Where a shared concept is worth depth, upgrade its page from
+  a stub into a full cross-repo **hub**: definition + the implementation table + inbound
+  experiment/observation backlinks. This is the Pallas-kernel-directory generalized and made
+  the front door.
+
+Depth 0 is unconditional (you are never worse than "everything is at least listed"); Depth
+1/2 are how far above the floor a given run goes. This carries the tool's two-tier
+philosophy — deterministic floor + selective deep synthesis — onto the concept axis.
+
+### Concept hubs are new authored pages, not rewrites
+
+A hub (`wiki/concepts/<key>.md`) is a **new** synthesized artifact whose implementation rows
+each cite a real silo `catalog`/`concepts` anchor — so it passes the same citation gate as a
+concern page. This does **not** violate "connect never rewrites silo prose": the linted silo
+pages are untouched; the hub is authored *above* them, grounded in their anchors. The hub is
+the single exception to "connect inserts links only."
+
+### Interactive & context-dependent
+
+Ingest and connect **ask when the answer isn't already in context, and proceed otherwise**
+(so batch ingests stay non-interactive):
+
+1. **Focus.** If `synthesis_focus` is set, or a host-wiki lens is detectable, use it; else
+   *ask* for the lens before synthesis.
+2. **Agenda.** After the first synthesis pass, present the *derived, centrality-ranked* agenda
+   from `discover.py` — "I deep-dove these; here are the next N I could" — and let the operator
+   add concepts. A grounded menu, never a free-form ask (an ungroundable concept has no packet
+   symbols to cite).
+3. **Register.** finalize + the skill's register step wire the silo into `index.md` / `log.md`.
+4. **Connect depth.** Offer Depth 0/1/2; Depth 0 always runs, the rest on request. Non-interactive
+   runs read `connect_depth` (config, default 0).
+
+This makes `wikify-connect-repo` the natural tail of `wikify-ingest-repo` — auto-invoked from the
+*second* repo onward (the first has nothing to connect to) — and separately re-runnable whenever a
+later repo must wire into the existing spine.
+
 ### Guardrails
 
-- **connect inserts links only; it never re-synthesizes prose.** It upgrades a
-  citation or appends a "see also / compare" reference, then **re-lints**.
-  Rewriting claims would re-open the hallucination surface on already-linted pages.
+- **connect inserts links only; it never re-synthesizes prose** — *except* the
+  cross-repo concept hub, a new authored page above the silos (see "Concept hubs are
+  new authored pages"). It upgrades a citation or appends a "see also / compare"
+  reference, then **re-lints**. Rewriting claims on already-linted *silo* pages would
+  re-open the hallucination surface, so that is never done.
 - **Version coherence.** A dependency edge is valid only for a *compatible pair
   of pinned commits* (torch_tpu@sha1 was built against xla@sha2). connect
   **refuses to link** silos whose commits weren't built compatibly, and marks

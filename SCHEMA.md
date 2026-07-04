@@ -119,5 +119,6 @@ the original plan — **read `design.md` "Decisions log" + `implementation.md` �
 
 The risky foundation remains the **SCIP-occurrence → callers/callees derivation**
 (`implementation.md` §5.1) — reference-scoping, since SCIP has no "call" role;
-keep its focused pytest green. New mechanisms each ship with a pinning test (now
-93 tests).
+keep its focused pytest green — it now runs offline against a checked-in
+`.scip` fixture, plus CI (`.github/workflows/tests.yml`). New mechanisms each
+ship with a pinning test (`uv run pytest`, 132 tests).

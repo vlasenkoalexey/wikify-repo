@@ -89,9 +89,9 @@ stays easy.
    an *ingestion-time* need (synthesis walks the graph once and writes the
    conclusion down); at query time the agent reads finished pages, so there is
    nothing for a query-time index to accelerate. The rare short-hop navigation a
-   consuming agent wants is served by markdown itself: cited symbol stubs list
-   callers/callees as relative links (an adjacency list, grep-able). **Consumers
-   need only grep + a text editor + their agent.**
+   consuming agent wants is served by markdown itself: each symbol's module
+   catalog lists its calls / `uses` / `used by` as relative links (an adjacency
+   list, grep-able). **Consumers need only grep + a text editor + their agent.**
 
 5. **Provenance and version pinning are mandatory** because the wiki is
    distributed. Every page is tagged `extracted` vs `inferred` and pinned to the
@@ -132,8 +132,11 @@ stays easy.
    unify the N independent `Attention` classes into one concept — those are
    separate, optional operations (static devirtualization via SCIP
    `is_implementation`; intra-repo concept-correspondence à la Stage 7b), never a
-   precondition for whole-repo coverage. Catalog entries are `extracted`
-   provenance; any future heuristic bridge carries `heuristic`/`inferred`.
+   precondition for whole-repo coverage. *(The first of those has since been
+   realized: `build_graph` devirtualizes via CHA — the Decisions log entry
+   "Devirtualization IS the connection op", implementation.md §10.2.)* Catalog
+   entries are `extracted` provenance; any future heuristic bridge carries
+   `heuristic`/`inferred`.
 
 8. **Comprehension is derived and graded — not authored and binary.** Coverage
    (decision 7) guarantees every symbol is *represented*; this decision governs
@@ -342,14 +345,16 @@ with `setup-vendor.sh`; TS/JS, Go, Rust are **installed on demand**: `prepare` d
   carries `behavioral_recheck: true`. The optional L4 enrichment (if/when run)
   diffs IR/HLO to confirm or update. AST-diff alone drives core re-ingestion.
 
-### Stage 3 — Dispatch / registration extractor (targeted, deterministic)
-Generic SCIP misses registration tables, which are central to a backend.
-- PyTorch / torch_tpu: parse `TORCH_LIBRARY`, `TORCH_LIBRARY_IMPL`, `m.impl(...)`,
-  and `native_functions.yaml` → deterministic **op → kernel → backend/dispatch-key**
-  map. For a backend (xla, torch_tpu) this *is* the spine of "what it does".
-- JAX-family (if ever ingested): primitive registration + lowering-rule tables.
-- Output: `wiki/maps/dispatch.md` — a generated table, every row cited to the
-  registration site moniker. Regenerated, never hand-edited.
+### Stage 3 — Dispatch / registration extractor *(descoped — never built)*
+The plan: parse `TORCH_LIBRARY[_IMPL]` / `native_functions.yaml` into an
+**op → kernel → backend/dispatch-key** map (`wiki/maps/dispatch.md`), since
+generic SCIP misses registration tables. It was never implemented — no
+`dispatch.py`, no `maps/` in any ingested silo — because **devirtualization**
+(CHA over SCIP `is_implementation`, implementation.md §10.2) crossed the
+dynamic-dispatch seam generically, which covered the questions the map was for.
+Revisit only if a real backend question needs the registration table itself;
+if built, every row cites its registration-site moniker, regenerated never
+hand-edited.
 
 ### Stage 4 — Static dynamics evidence (L2, no execution)
 "How does overlap / scheduling / async work" is invisible to bare structure but
@@ -434,8 +439,9 @@ a map of which concept answers which question — the god-node entry point.
 **Adding a concept later (same-commit reconcile).** Add it to `config/<slug>.md`
 (or accept a candidate) and re-run ingest. Reconcile builds **only** the new
 page from the existing SCIP index (no re-extraction, no commit bump, nothing
-marked stale), materializes newly-cited stubs, wires see-also/back-links
-(link-insertion only), re-lints, and — if the repo is connected — re-runs connect
+marked stale — newly-cited symbols already have their catalog home), wires
+see-also/back-links (link-insertion only), re-lints, and — if the repo is
+connected — re-runs connect
 for it + neighbors (a new concept can create cross-repo correspondences).
 
 ### Stage 6 — Assemble, lint, publish
@@ -484,7 +490,8 @@ in `.cache/`, **not** under `raw/`.
 ```
 wiki/                          the product (shipped)
   index.md                     top-level catalog: all repos + connection status
-  <slug>/                      one self-contained silo per repo
+  <wiki_subdir>/<slug>/        one self-contained silo per repo (default subdir
+                               "code" → wiki/code/<slug>; "" = flat wiki/<slug>)
     index.md                   per-repo catalog
     concepts/<concept>.md      L3 mechanism pages (the answer surface)
     catalog/<module-path>.md   Stage-6b generated structural index per module
@@ -493,9 +500,9 @@ wiki/                          the product (shipped)
                                `symbols:` map (anchor→moniker) is the citation
                                target + the linter's resolution table. Citations
                                are `../catalog/<module>.md#<QualifiedName>`.
-    maps/dispatch.md           generated op→kernel→backend table
-    tests/<area>.md            L2 test-spec pages
-    sources/<name>.md          L2 in-repo design docs / RFC notes
+    doc-concepts/<concept>.md  grounded pages extracted from the repo's own docs
+    (maps/dispatch.md — planned op→kernel table, descoped with Stage 3;
+     tests/<area>.md, sources/<name>.md — planned L2 pages, not yet emitted)
 
     (No `symbols/` directory: per-symbol stubs were folded into `catalog/` —
      one source-tree-organized home per symbol. A cross-repo connect link
@@ -578,9 +585,9 @@ status: fresh | stale     # currency vs the silo's commit; set by Stage 2 diff
 - **Upgrade**: `/wikify-ingest-repo <slug> --ref <new>` — reconcile re-runs only
   `changed` symbols and `stale` pages.
 - **Scale (PyTorch)**: the SCIP index holds *all* symbols (ingestion-side);
-  markdown materializes only concept pages, the dispatch map, and cited-symbol
-  stubs. The structural layer is exhaustive and cheap; the prose layer is
-  concept-scoped and curated. The shipped tree stays small.
+  markdown materializes concept pages plus one deterministic catalog page per
+  module. The structural layer is exhaustive and cheap; the prose layer is
+  concept-scoped and curated. The shipped tree stays proportionate.
 - **Multi-repo**: silos are ingested/updated independently; connect re-runs as a
   cheap deterministic post-pass (dependency links are free), so adding the Nth
   repo costs one ingest + one connect, not a re-build of the whole wiki.
@@ -704,8 +711,8 @@ literally use each other (torch_tpu → xla, maxtext → jax, torchax → jax). 
 silo, a symbol from another repo is just an *unresolved external citation*. Once
 that repo is in the wiki, connect **re-resolves the external citation against the
 other repo's SCIP index** and upgrades the dangling reference into a real
-cross-repo link. This touches citations/stubs only — **no mechanism prose is
-rewritten** — is deterministic, and has **zero churn**. Connect all of these.
+cross-repo link. This touches citation/catalog links only — **no mechanism prose
+is rewritten** — is deterministic, and has **zero churn**. Connect all of these.
 
 **(b) Concept correspondences — semantic, selective, judgment-cached.** Repos
 that independently implement the same idea (sharding, attention, remat) with no
@@ -811,8 +818,8 @@ later repo must wire into the existing spine.
   **refuses to link** silos whose commits weren't built compatibly, and marks
   such pairs `version-incompatible` rather than emitting links that lie.
 - **Direction is asymmetric.** "A uses `B::X`" is a useful per-page link; the
-  reverse (B → every consumer) is a large fan-in — aggregate it on B's stub as a
-  count/list, don't enumerate it inline on every page.
+  reverse (B → every consumer) is a large fan-in — aggregate it on B's catalog
+  entry as a count/list, don't enumerate it inline on every page.
 - **Staleness.** Re-ingesting repo A (`/wikify-ingest-repo A --ref ...`)
   re-triggers connect for A **and
   its cross-repo neighbors**: dependency edges are re-checked (does the SCIP
@@ -832,198 +839,64 @@ inline cross-repo links live — there is no `_connect/` directory), and SCIP in
 ## Worked examples
 
 > Symbol names below are **illustrative** for a hypothetical `torch_tpu` backend,
-> to show the schema — not claims about real code. The linter checks every
-> citation link resolves and that its moniker exists in the SCIP index.
->
-> ⚠️ **Superseded:** these examples predate two realized decisions (see the
-> Decisions log and `implementation.md` §10). The per-symbol `symbols/<…>.md` stub
-> files **no longer exist** — every symbol's home is its **module catalog**
-> (`catalog/<module>.md`), and a citation targets a catalog anchor
-> (`../catalog/<module>.md#Qualified.Name`) resolved via the catalog's
-> `symbol_base` + `symbols` frontmatter map. Read the `symbols/...md (stub)` pages
-> below as "the symbol's catalog entry." The catalog format also evolved
-> (per-member detail + docstrings + relative source links).
+> to show the schema — not claims about real code. For *real* examples, read an
+> ingested silo in this repo's `wiki/` (pytorch, jax, xla, torch_tpu, torchtitan)
+> or the public demo: <https://github.com/vlasenkoalexey/wikify-repo-demo>.
 
-### Layout (concrete)
+### Layout (concrete, current)
 
 ```
 wiki/
-  index.md                   top-level catalog (all repos)
-  torch_tpu/                 the silo
-    index.md
-    overview.md              synthesized top-level overview (front door)
-    concepts/
-      compilation-pipeline.md
-      dispatch-path.md
-      compute-comm-overlap.md
-      memory-management.md
-    catalog/                 one page per module — every symbol's home
-      torch_tpu/...md        (replaces the old symbols/ stub dir)
-    maps/
-      dispatch.md
-    tests/
-      compute-comm-overlap.md
-    sources/
-      torch_tpu-design-notes.md
-  concepts/                  shared vocabulary + hubs (inline cross-repo links; no _connect/ dir)
-.cache/
-  scip/torch_tpu.scip        # derived, ingestion-side, not shipped
-raw/
-  code/torch_tpu/            # submodule @ pinned sha (immutable input)
+  index.md                     top-level curated catalog (all repos)
+  concepts/                    host-owned cross-repo concept vocabulary (Stage 7)
+    splash-attention.md
+  code/                        wiki_subdir (default "code"; "" = flat)
+    torch_tpu/                 one silo per ingested repo
+      index.md                 per-repo catalog (generated by finalize)
+      overview.md              synthesized front door (concepts map + system diagrams)
+      concepts/
+        compilation-pipeline.md
+        compute-comm-overlap.md
+      doc-concepts/            grounded pages extracted from the repo's own docs
+        quantization.md
+      catalog/                 Stage 6b: one page per module — every symbol's home
+        torch_tpu/csrc/compiler.md
 ```
 
-### Example 1 — `wiki/torch_tpu/index.md` (per-repo catalog)
+### Example — citing a symbol from a mechanism page (current format)
+
+A concept page cites **catalog anchors** (invariant 7 — there are no per-symbol
+stub files). In `concepts/compilation-pipeline.md`:
 
 ```markdown
----
-title: torch_tpu — wiki index
-commit: a1b9f0c
-scip_tool: scip-clang@0.3.x, scip-python@0.6.x
-updated: 2026-06-19
----
-
-# torch_tpu internals wiki
-
-Generated, grounded wiki. Start from a concept; drill into cited symbols.
-
-## Concepts
-| Concept | Page | Status |
-|---|---|---|
-| Compilation pipeline | [compilation-pipeline](concepts/compilation-pipeline.md) | fresh |
-| Dispatch path | [dispatch-path](concepts/dispatch-path.md) | fresh |
-| Compute/comm overlap | [compute-comm-overlap](concepts/compute-comm-overlap.md) | behavioral_recheck |
-| Memory management | [memory-management](concepts/memory-management.md) | fresh |
-
-## Maps
-- [Dispatch map](maps/dispatch.md) — op → kernel → dispatch key (generated)
-
-## Provenance
-`extracted` = from SCIP / source. `inferred` = LLM judgment, treat as such.
-Design-intent dynamics are labeled; none are runtime-measured (no L4 pass run).
-```
-
-### Example 2 — `wiki/torch_tpu/concepts/compilation-pipeline.md` (mechanism page)
-
-```markdown
----
-title: Compilation pipeline
-type: concept
-provenance: mixed
-concept: compilation-pipeline
-updated: 2026-06-19
-status: fresh
----
-
-# Compilation pipeline
-
-How a traced graph becomes a cached TPU executable.
-
-## Entry points
-- [`LazyGraphExecutor::Compile`](../symbols/cxx-torch_tpu-LazyGraphExecutor-Compile.md)
-  — called when a pending trace is flushed (mark-step or a value is read).
-- [`Compiler::LowerToHlo`](../symbols/cxx-torch_tpu-Compiler-LowerToHlo.md)
-  — converts the device IR to HLO.
-
 ## Mechanism (step-by-step)
-1. Op execution is deferred; ops accumulate as device IR nodes until a barrier
-   forces a flush. [extracted →
-   `LazyGraphExecutor::Compile`](../symbols/cxx-torch_tpu-LazyGraphExecutor-Compile.md)
-2. The pending graph is hashed; a hit in the executable cache short-circuits
-   compilation. [extracted →
-   `LazyGraphExecutor::Compile`](../symbols/cxx-torch_tpu-LazyGraphExecutor-Compile.md)
-3. On a miss, the IR is lowered to HLO and handed to XLA for compilation.
-   [extracted →
-   `Compiler::LowerToHlo`](../symbols/cxx-torch_tpu-Compiler-LowerToHlo.md)
+1. [`Compiler.LowerToHlo`](../catalog/torch_tpu/csrc/compiler.md#Compiler.LowerToHlo)
+   folds the traced graph into HLO before partitioning.
 
 > [!inferred]
-> The cache key appears to include the device mesh shape, so re-sharding likely
-> forces recompilation. Not confirmed against a registration site — verify.
-
-## Key data structures
-- Executable cache (graph-hash → compiled executable). See the entry-point stub.
-
-## Dynamics (design intent)
-Compilation is synchronous on the calling thread; the cache is what keeps
-steady-state steps from recompiling. Grounded in tests, not a trace:
-[overlap test-spec](../tests/compute-comm-overlap.md).
-
-## Open questions
-- Is compilation ever moved off the calling thread? No async-compile symbol found.
-
-## See also
-- [Dispatch path](dispatch-path.md) · [Dispatch map](../maps/dispatch.md)
+> The retry loop probably exists to absorb transient TPU runtime resets — no
+> cited symbol states this.
 ```
 
-### Example 3 — `wiki/torch_tpu/symbols/cxx-torch_tpu-Compiler-LowerToHlo.md` (stub)
+The linter resolves the anchor via the catalog page's frontmatter (rule 1), and
+rules 2–3 gate uncited Mechanism items and out-of-subgraph symbols. In
+`catalog/torch_tpu/csrc/compiler.md`:
 
 ```markdown
 ---
-title: "Compiler::LowerToHlo"
-type: symbol
-provenance: extracted
-moniker: "scip-clang cxx torch_tpu a1b9f0c torch_tpu/compiler/`Compiler`#LowerToHlo()."
-updated: 2026-06-19
+type: catalog
+module: torch_tpu/csrc/compiler
+symbol_base: "scip-clang cxx torch_tpu . . `torch_tpu::"
+symbols:
+  Compiler.LowerToHlo: "Compiler#LowerToHlo(49f6a3c887f6a086)."
 ---
-
-# Compiler::LowerToHlo
-
-**Defined:** `torch_tpu/compiler/compiler.cc:212`
-**Signature:** `xla::XlaComputation Compiler::LowerToHlo(const IrGraph&)`
-
-## Called by
-- [`LazyGraphExecutor::Compile`](cxx-torch_tpu-LazyGraphExecutor-Compile.md)
-
-## Calls
-- `LoweringContext::Build` · `xla::XlaBuilder::Build`  *(uncited: not yet stubbed)*
-
-## Cited by
-- [Compilation pipeline](../concepts/compilation-pipeline.md)
 ```
 
-### Example 4 — `wiki/torch_tpu/maps/dispatch.md` (generated excerpt)
+`symbol_base + symbols[anchor]` reconstructs the full SCIP moniker, which must
+exist in the silo's graph — a citation cannot name a symbol the compiler
+frontend didn't resolve.
 
-```markdown
----
-title: Dispatch map
-type: map
-provenance: extracted
-updated: 2026-06-19
----
-
-# Dispatch map (op → kernel → key)
-
-Generated from `TORCH_LIBRARY_IMPL` sites. Do not hand-edit.
-
-| ATen op | Kernel symbol | Dispatch key | Registration |
-|---|---|---|---|
-| `aten::mm` | `torch_tpu::mm` | `TPU` | `ops/matmul.cc:48` |
-| `aten::add.Tensor` | `torch_tpu::add` | `TPU` | `ops/binary.cc:91` |
-| `c10d::allreduce_` | `torch_tpu::allreduce_` | `TPU` | `distributed/coll.cc:33` |
-```
-
-### Example 5 — `wiki/torch_tpu/tests/compute-comm-overlap.md` (test-spec)
-
-```markdown
----
-title: "Tests: compute/comm overlap"
-type: test-spec
-provenance: extracted
-concept: compute-comm-overlap
-updated: 2026-06-19
----
-
-# Tests exercising compute/comm overlap
-
-| Test | Asserts | Exercises (SCIP refs) |
-|---|---|---|
-| `test_allreduce_overlaps_matmul` | collective issued before dependent matmul completes | [`CollectiveScheduler::Schedule`](../symbols/cxx-torch_tpu-CollectiveScheduler-Schedule.md) |
-| `test_no_overlap_when_serialized` | `TORCH_TPU_DISABLE_OVERLAP=1` serializes the two | same |
-
-These pin **intended** overlap behavior. Whether the TPU runtime achieves it is
-a runtime question — answerable only by the optional L4 enrichment, not here.
-```
-
-### Example 6 — cross-repo connection (`/wikify-connect-repo`)
+### Example — cross-repo connection (`/wikify-connect-repo`)
 
 Connection is **inline**, through the host's concept page — no `_connect/` directory. The human
 picked `splash-attention` at the connect phase; `wikify connect --apply splash-attention` then wrote

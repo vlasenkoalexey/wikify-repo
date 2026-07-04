@@ -126,6 +126,30 @@ def test_finalize_emits_catalogs_before_lint(project):
     assert (concepts.parent / "index.md").exists()
 
 
+def test_top_index_reports_connection_status(project):
+    """The top catalog's Connection column is derived from the silo pages: a
+    concept page carrying a connect up-link block flips it from standalone."""
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    concepts = project / "wiki" / "code" / SLUG / "concepts"
+    concepts.mkdir(parents=True)
+    page = concepts / "compute-pipeline.md"
+    page.write_text("---\ntitle: t\n---\n\n# t\n", encoding="utf-8")
+
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    top = (project / "wiki" / "code" / "index.md").read_text()
+    assert f"| {SLUG} |" in top and "standalone" in top
+
+    page.write_text(
+        page.read_text() + "\n<!-- connect:up:begin -->\nup\n<!-- connect:up:end -->\n",
+        encoding="utf-8")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    top = (project / "wiki" / "code" / "index.md").read_text()
+    assert "connected (1 concept)" in top
+
+
 def test_finalize_lint_gate_fails_on_dead_citation(project):
     """The citation linter is a hard build gate: a citation whose anchor does not
     resolve in any catalog must fail finalize (exit 1)."""

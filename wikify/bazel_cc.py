@@ -101,12 +101,37 @@ def convert(aquery: dict, execroot: str, repo_root: str) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Orchestration (runs bazel)
 # --------------------------------------------------------------------------- #
-def _bazel(repo_dir: Path, args: list[str], bazel: str) -> str:
+def _bazel(repo_dir: Path, args: list[str], bazel: str, allow_partial: bool = False) -> str:
     proc = subprocess.run([bazel, *args], cwd=repo_dir, capture_output=True, text=True)
     if proc.returncode != 0:
+        # `--keep_going` still exits non-zero when SOME targets fail to analyze/build
+        # (e.g. a bzl_library-only target with an unreachable internal-only dep). That's
+        # fine for our purposes: we only need the CppCompile actions for targets that DID
+        # build/analyze. Two signals of "partially succeeded, not totally failed":
+        # `aquery --output=jsonproto` puts its actual action-list data on stdout (bazel's
+        # progress/error narration always goes to stderr), so non-empty stdout means usable
+        # data came back; a plain `build` writes nothing to stdout either way, so fall back
+        # to the "N of M top-level targets" summary line bazel prints to stderr on --keep_going.
+        if allow_partial and (proc.stdout.strip() or "Build succeeded for only" in proc.stderr):
+            return proc.stdout
         raise RuntimeError(f"`{bazel} {' '.join(args[:3])} …` failed "
                            f"({proc.returncode}):\n{proc.stderr[-2000:]}")
     return proc.stdout
+
+
+def _remove_convenience_symlinks(repo_dir: Path) -> None:
+    """Remove bazel's `bazel-<workspace>`/`bazel-bin`/`bazel-out`/`bazel-testlogs` convenience
+    symlinks from the repo root after a build.
+
+    These symlinks point at the (huge) output tree, and a subsequent scip-python run walks the
+    whole workspace for project discovery — pyright hits its ~10s enumeration timeout on that
+    tree and silently reports zero project files (every shard "succeeds" empty, so the sharded
+    indexer sees "all shards failed"). The symlinks are pure convenience: `aquery`'s output
+    already gets absolutized against `bazel info execution_root`, so removing them doesn't
+    affect this module's own output, and bazel recreates them on the next `bazel build`."""
+    for entry in repo_dir.iterdir():
+        if entry.is_symlink() and entry.name.startswith("bazel-"):
+            entry.unlink()
 
 
 def generate_compile_db(
@@ -123,13 +148,17 @@ def generate_compile_db(
     repo_dir = Path(repo_dir)
     output_path = Path(output_path)
     # 1) materialize all generated headers (a full build; cached after first run).
-    _bazel(repo_dir, ["build", targets], bazel)
+    #    --keep_going: don't let one broken target (e.g. an internal-only bzl_library dep)
+    #    abort header materialization for the rest of the tree.
+    _bazel(repo_dir, ["build", "--keep_going", targets], bazel, allow_partial=True)
     # 2) execroot (last non-empty stdout line; INFO goes to stderr).
     execroot = [ln for ln in _bazel(repo_dir, ["info", "execution_root"], bazel)
                 .splitlines() if ln.strip()][-1].strip()
-    # 3) compile actions.
-    aq = _bazel(repo_dir, ["aquery", f'mnemonic("CppCompile", {targets})',
-                           "--output=jsonproto"], bazel)
+    # 3) compile actions. --keep_going: same broken-target tolerance as the build step above;
+    #    aquery expands the same target pattern and hits the same analysis error otherwise.
+    aq = _bazel(repo_dir, ["aquery", "--keep_going", f'mnemonic("CppCompile", {targets})',
+                           "--output=jsonproto"], bazel, allow_partial=True)
+    _remove_convenience_symlinks(repo_dir)
     entries = convert(json.loads(aq), execroot, str(repo_dir))
     if not entries:
         raise RuntimeError(f"no CppCompile actions for {targets} (nothing to index)")

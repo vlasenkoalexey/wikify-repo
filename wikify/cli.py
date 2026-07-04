@@ -221,6 +221,9 @@ def prepare(
     repo: str = typer.Option(None, help="Source path or git URL (overrides config)."),
     root: Path = typer.Option(Path("."), help="Project root."),
     reindex: bool = typer.Option(True, help="(Re)run scip-python."),
+    install_indexers: bool = typer.Option(
+        True, help="Auto-install missing on-demand indexers (TS/Go/Rust), announced; "
+                   "--no-install-indexers prints guidance and skips the language instead."),
 ) -> None:
     """Stages 0-4: acquire, index, build graph, emit packets, print the plan."""
     p, cfg = _load(root, slug)
@@ -273,7 +276,7 @@ def prepare(
         out = lang_mod.scip_path(p.cache, slug, key)
         if not (reindex or not out.exists()):
             continue
-        if not lang_mod.ensure_indexer(lang):
+        if not lang_mod.ensure_indexer(lang, auto=install_indexers):
             continue
         typer.echo(f"indexing {lang.label} with {lang.bin} ...")
         try:

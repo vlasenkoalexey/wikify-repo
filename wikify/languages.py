@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -54,9 +53,20 @@ LANGS: dict[str, Lang] = {
     "rust": Lang(
         "rust", "Rust", (".rs",), ("Cargo.toml",),
         "rust-analyzer",
-        "rustup component add rust-analyzer  # or a release from github.com/rust-lang/rust-analyzer",
+        # rustup when available; else the standalone release binary → ~/.local/bin
+        # (arch/OS resolved by the shell, so this works on a box with no Rust toolchain).
+        'rustup component add rust-analyzer 2>/dev/null || '
+        '(mkdir -p ~/.local/bin && curl -fsSL "https://github.com/rust-lang/rust-analyzer'
+        '/releases/latest/download/rust-analyzer-$(uname -m)-$(case $(uname -s) in '
+        'Darwin) echo apple-darwin;; *) echo unknown-linux-gnu;; esac).gz" '
+        '| gunzip -c > ~/.local/bin/rust-analyzer && chmod +x ~/.local/bin/rust-analyzer)',
         ".rust.scip", lambda d, o: scip_index.run_rust_analyzer(d, o)),
 }
+
+# Where language installers drop binaries; prepended to PATH after an install so the
+# fresh binary resolves in this process (e.g. `go install` → ~/go/bin, the rust-analyzer
+# fallback → ~/.local/bin) without requiring a shell restart.
+_INSTALL_BIN_DIRS = ("~/.local/bin", "~/go/bin", "~/.cargo/bin")
 
 # Languages ``prepare`` auto-runs from detection. Python has its own sharding/AST-fallback path
 # and C++ needs a compile DB, so both are handled specially in cli.py; these three are uniform
@@ -99,19 +109,41 @@ def scip_path(cache_dir: str | Path, slug: str, key: str) -> Path:
     return Path(cache_dir) / "scip" / f"{slug}{LANGS[key].scip_suffix}"
 
 
-def ensure_indexer(lang: Lang) -> bool:
-    """True if ``lang.bin`` is available. Otherwise print install guidance and — only when
-    running interactively — *ask* whether to install it now. Never installs silently."""
+def _extend_path_with_install_dirs() -> None:
+    """Prepend the standard installer bin dirs to PATH (idempotent)."""
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    for d in _INSTALL_BIN_DIRS:
+        expanded = os.path.expanduser(d)
+        if expanded not in parts:
+            parts.insert(0, expanded)
+    os.environ["PATH"] = os.pathsep.join(parts)
+
+
+def ensure_indexer(lang: Lang, auto: bool = True) -> bool:
+    """True if ``lang.bin`` is available — installing it on demand when it isn't.
+
+    Missing + ``auto`` (the default; ``prepare --no-install-indexers`` disables):
+    run the registry's install command, ANNOUNCED, never silent — the command is
+    echoed before it runs and its outcome after. Missing + not ``auto``: print the
+    guidance and skip this language."""
+    if shutil.which(lang.bin):
+        return True
+    _extend_path_with_install_dirs()          # a previous run may have installed it
     if shutil.which(lang.bin):
         return True
     typer.echo(f"\n⚠  {lang.label} found in the repo, but `{lang.bin}` is not installed.", err=True)
-    typer.echo(f"   install:  {lang.install}", err=True)
-    if sys.stdin.isatty() and typer.confirm(f"   install `{lang.bin}` now?", default=False):
-        typer.echo(f"   running: {lang.install}")
-        rc = subprocess.run(lang.install, shell=True).returncode
-        if rc == 0 and shutil.which(lang.bin):
-            return True
-        typer.echo(f"   install failed (rc={rc}) — skipping {lang.label}.", err=True)
-    else:
-        typer.echo(f"   skipping {lang.label} — install it and re-run `wikify prepare`.", err=True)
+    if not auto:
+        typer.echo(f"   install:  {lang.install}", err=True)
+        typer.echo(f"   skipping {lang.label} (--no-install-indexers) — install it and "
+                   f"re-run `wikify prepare`.", err=True)
+        return False
+    typer.echo(f"   installing automatically (disable with --no-install-indexers):")
+    typer.echo(f"   $ {lang.install}")
+    rc = subprocess.run(lang.install, shell=True).returncode
+    _extend_path_with_install_dirs()
+    if rc == 0 and shutil.which(lang.bin):
+        typer.echo(f"   installed `{lang.bin}`.")
+        return True
+    typer.echo(f"   install failed (rc={rc}) — skipping {lang.label}; install manually:  "
+               f"{lang.install}", err=True)
     return False

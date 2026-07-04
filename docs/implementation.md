@@ -606,12 +606,18 @@ tsconfig), `scip-go` (module root, needs go.mod), `rust-analyzer scip` (writes `
   `package.json`/`tsconfig.json`, `pyproject.toml`) or ≥3 source files, with a bounded
   vendor-skipping walk (`_WALK_CAP`). `cfg.languages` overrides; empty → detect (default python).
 - **On demand, not by default** — the TS/Go/Rust indexers are NOT fetched by `setup-vendor.sh`.
-  When a language is present but its `bin` is missing, `ensure_indexer` prints the install command
-  and, only when interactive (tty), *asks* to install it; non-interactive → instruct + skip (that
-  language is dropped, the rest still index). Never installs silently.
+  When a language is present but its `bin` is missing, `ensure_indexer` **auto-installs** it:
+  echoes the registry's install command, runs it, extends PATH with the standard installer bin
+  dirs (`~/.local/bin`, `~/go/bin`, `~/.cargo/bin`) so the fresh binary resolves immediately,
+  and reports the outcome — announced, never silent. `prepare --no-install-indexers` opts out
+  (guidance printed, that language dropped, the rest still index). The rust-analyzer installer
+  works without rustup (falls back to the standalone release binary). *History:* the original
+  design *asked* before installing, but the ask required a tty — through agent shells it never
+  fired and languages were skipped every time, so ask-first was replaced by announce-and-install.
 - **Merge** — each language writes `.cache/scip/<slug><suffix>.scip`; `cli._graph` globs and merges
   them all (`<slug>.scip` + `<slug>.*.scip`), so a polyglot repo becomes one graph.
-Pinning tests: `tests/test_languages.py` (detection, registry, ask-don't-auto-install).
+Pinning tests: `tests/test_languages.py` (detection, registry, announced auto-install +
+opt-out + failure-skip).
 
 ### 10.9 Synthesis lens + host-registration (realized)
 Two thin, high-leverage additions realized post-v1 (design.md Decisions log):

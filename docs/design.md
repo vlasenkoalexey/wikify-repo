@@ -500,9 +500,10 @@ wiki/                          the product (shipped)
     (No `symbols/` directory: per-symbol stubs were folded into `catalog/` —
      one source-tree-organized home per symbol. A cross-repo connect link
      therefore targets a catalog anchor, not a stub file.)
-  _connect/                    cross-repo layer (present only when >1 repo)
-    decisions.md               concept-correspondence keep/drop cache
-    compat.md                  linkable (repo@sha, repo@sha) pairs
+  concepts/                    the host's curated concept vocabulary + connect hubs
+    <key>.md                   links DOWN to each repo's implementation (connect:auto block)
+  (No `_connect/` directory: cross-repo connection is inline links on the concept
+   pages above + an up-link on each silo page, not a side-table.)
 
 .cache/                        derived, regenerable, gitignored, NOT shipped
   scip/<slug>.scip             SCIP index per repo (read at ingest AND connect)
@@ -531,8 +532,8 @@ needs is *"am I valid for the silo's current commit?"*, which is answered by the
 per-page `status: fresh | stale` flag (maintained by Stage 2 diff) against the
 repo's single commit — not by a per-page SHA. After an incremental update,
 unchanged pages stay `fresh` (their symbols didn't move, so they're still valid
-at the new commit) without needing a SHA bump. Connect's `compat.md` and the
-consumer version check both read the *per-repo* commit. (Optional: a page may
+at the new commit) without needing a SHA bump. Connect (and the future dependency-link
+compat check) and the consumer version check both read the *per-repo* commit. (Optional: a page may
 carry `synthesized_at: <sha>` purely as an audit trail of when its prose was last
 written — separate from version-pinning, and never the currency source of truth.)
 
@@ -633,12 +634,12 @@ parse TOML would give, with tooling already in the build.
 
 - Ship the `wiki/` markdown tree + the `commit` pins. Nothing else.
 - **Two shippable forms**: a single **standalone silo** (pre-connect, link-free)
-  or the **connected wiki** (silos + inline cross-links + `_connect/`). Both are
-  pure markdown; the connected form just has links resolved.
+  or the **connected wiki** (silos + inline cross-links on the concept pages). Both
+  are pure markdown; the connected form just has links resolved.
 - On consume, verify each repo's installed version == `commit` pin; mismatch →
-  warn and mark affected concept pages `version-skew`. For the connected form,
-  also honor `_connect/compat.md` — cross-links are valid only for the pinned
-  pairs recorded there.
+  warn and mark affected concept pages `version-skew`. (If dependency-links — Stage 7
+  "(a)", not yet automated — are ever added, a compatible-commit-pair check gates
+  them; its record form is TBD but it is *not* a `_connect/` directory.)
 - `extracted` pages are safe to trust as facts. `inferred` pages are
   interpretations frozen at ingest — surfaced as such so no consumer mistakes a
   guess for ground truth.
@@ -716,25 +717,25 @@ a given correspondence is worth keeping.
 
 ### Links are inline; connect is a re-runnable transform
 
-Cross-links live **inline in the prose** (it's a wiki, not silos + a side-table).
-The regeneration problem is solved not by segregating links but by treating them
-as **derived, not authored**: connect is an **idempotent post-pass re-run after
-every update**. Pipeline is `ingest|update → connect`. Nothing is preserved
-across regeneration because everything is recomputed.
+Cross-links live **inline in the prose** (it's a wiki, not silos + a side-table —
+there is **no `_connect/` directory**). The regeneration problem is solved not by
+segregating links but by treating them as **derived, not authored**: connect is an
+**idempotent post-pass re-run after every update**. Pipeline is `ingest|update → connect`.
+Links sit in delimited `connect:auto` blocks that are recomputed wholesale.
 
 - **Dependency links** re-derive with zero churn (deterministic citation
   re-resolution).
-- **Concept links** would churn under naive re-derivation (LLM may decide
-  differently each run), so persist the *decision* — a small keep/drop cache
-  (`A:sharding ↔ B:sharding = keep`) under `wiki/_connect/decisions.md`. connect
-  consults it instead of re-litigating every correspondence. The cache is
-  **metadata**; the visible link still renders inline.
+- **Concept links** need no decision side-file: **connection state is the wiki itself** — a
+  concept page carrying a `connect:auto` block is connected. `wikify connect --refresh` regenerates
+  those blocks after any ingest; the human's original *which-concepts* choice is preserved because it
+  is exactly the set of pages that already carry a block. A stray name-match is dropped with
+  `--exclude` (or fixed at the source by an explicit `concepts:` tag).
 
 ### The shared concept vocabulary is host-owned; candidates are generated, not invented
 
 The concept keys that drive (b) — `splash-attention`, `remat`, `sharding`, … — are
-**not** wikify's; they are the host wiki's vocabulary (its `wiki/concepts/` filenames, or
-a `concepts:` config list), passed to connect exactly as `synthesis_focus` is. wikify
+**not** wikify's; they are the host wiki's vocabulary (its `wiki/concepts/` filenames;
+`--vocab <dir>` overrides), read by connect directly from the wiki — no per-repo config. wikify
 supplies the *mechanism*; the wiki supplies the *terms*, so a non-TPU wiki grows its own
 spine. Correspondence is never free-form LLM matching: connect **generates candidates
 deterministically** — a silo concept whose symbols share a name/moniker, a vendored-from
@@ -743,34 +744,39 @@ only **confirms or rejects** each candidate (the analog of devirtualization's CH
 candidates + judgment). Grounded proposal, judgment on top; the LLM never conjures a
 correspondence from nothing.
 
-### Graded connection depth
+### Links are inline through the concept page — no side-table, no new primitive
 
-Connection is a gradient the operator picks per run, and the floor is always free:
+Connection is **wiki-native**: the correspondence lives as ordinary links on pages that already
+exist. The host's shared concept page (`wiki/concepts/<key>.md` — already curated, not a new
+artifact) is the **hub**: it links *down* to every repo's implementation page, and each
+implementation links *up* to the concept. This is `wiki ↔ silo`, routed through the concept page —
+**not** `silo ↔ silo` (a full mesh is O(N²) and churns every page when a repo is added) and **not**
+a generated `_connect/` index (that would be the side-table this section's opening warns against).
+Adding a repo touches its own page + one line per hub: O(N).
 
-- **Depth 0 — index (deterministic, no LLM, always on).** Synthesis stamps each silo
-  concept page with a controlled-vocab `concepts:` tag; connect inverts it into
-  `concept → [silo pages]`. This alone answers "who implements splash attention" for the
-  whole wiki, can't miss a repo, and auto-absorbs new ingests. It is the concept-axis
-  analog of the coverage catalog — enumeration, not synthesis.
-- **Depth 1 — link.** For each confirmed correspondence, append a grounded one-line row to
-  the shared concept's **implementation table** (repo → silo anchor → distinctive variant →
-  tuning surface) and add an up-link from the silo page. Cheap LLM.
-- **Depth 2 — synthesize hub.** Where a shared concept is worth depth, upgrade its page from
-  a stub into a full cross-repo **hub**: definition + the implementation table + inbound
-  experiment/observation backlinks. This is the Pallas-kernel-directory generalized and made
-  the front door.
+The links sit in delimited `connect:auto` blocks — a `## In this wiki's repos` list on the concept
+page, a one-line up-link on each silo page — so connect regenerates them without touching
+hand-written prose (the same discipline as coverage catalogs). **Connection state is the wiki
+itself**: a concept page carrying a block is connected, so there is no decision side-file to keep in
+sync; `wikify connect --refresh` re-derives the blocks after any ingest.
 
-Depth 0 is unconditional (you are never worse than "everything is at least listed"); Depth
-1/2 are how far above the floor a given run goes. This carries the tool's two-tier
-philosophy — deterministic floor + selective deep synthesis — onto the concept axis.
+### Selective by design — the human picks which concepts to connect
 
-### Concept hubs are new authored pages, not rewrites
+Connecting *every* matched concept to *every* repo drowns the pages, so connect is deliberately
+selective, and the selection is the **interactive step**: `wikify connect` (deterministic, writes
+nothing) proposes the candidate concepts and their repos; the human chooses which to wire; `wikify
+connect --apply <keys>` inserts the links for exactly those. Candidates come from an explicit
+`concepts:` frontmatter tag (authoritative — synthesis stamps it from the vocabulary handed into the
+packet) or a name/token match; a stray name-collision is dropped with `--exclude`. The *proposal* and
+the *link insertion* are pure Python; the only judgment is which concepts belong in the spine.
 
-A hub (`wiki/concepts/<key>.md`) is a **new** synthesized artifact whose implementation rows
-each cite a real silo `catalog`/`concepts` anchor — so it passes the same citation gate as a
-concern page. This does **not** violate "connect never rewrites silo prose": the linted silo
-pages are untouched; the hub is authored *above* them, grounded in their anchors. The hub is
-the single exception to "connect inserts links only."
+### Optionally, a concept page becomes a real hub
+
+A connected concept page can grow beyond the auto link-list into a genuine cross-repo **hub** — a
+lens-framed definition and a short *how the implementations differ* synthesis, authored in the page's
+prose **above** the `connect:auto` block and grounded in the linked silo pages. This is optional LLM
+work (the `wikify-connect-repo` skill), never required, and it never rewrites the linted silo pages —
+only their one-line up-link block is machine-managed.
 
 ### Interactive & context-dependent
 
@@ -784,20 +790,22 @@ Ingest and connect **ask when the answer isn't already in context, and proceed o
    add concepts. A grounded menu, never a free-form ask (an ungroundable concept has no packet
    symbols to cite).
 3. **Register.** finalize + the skill's register step wire the silo into `index.md` / `log.md`.
-4. **Connect depth.** Offer Depth 0/1/2; Depth 0 always runs, the rest on request. Non-interactive
-   runs read `connect_depth` (config, default 0).
+4. **Connect.** `wikify connect` proposes; the human picks *which concepts* to wire; `--apply`
+   inserts the inline links; `--refresh` regenerates already-connected concepts. Non-interactive
+   runs do only `--refresh` (never auto-connect new concepts).
 
-This makes `wikify-connect-repo` the natural tail of `wikify-ingest-repo` — auto-invoked from the
+This makes `wikify-connect-repo` the natural tail of `wikify-ingest-repo` — invoked from the
 *second* repo onward (the first has nothing to connect to) — and separately re-runnable whenever a
 later repo must wire into the existing spine.
 
 ### Guardrails
 
-- **connect inserts links only; it never re-synthesizes prose** — *except* the
-  cross-repo concept hub, a new authored page above the silos (see "Concept hubs are
-  new authored pages"). It upgrades a citation or appends a "see also / compare"
-  reference, then **re-lints**. Rewriting claims on already-linted *silo* pages would
-  re-open the hallucination surface, so that is never done.
+- **connect inserts links only; it never re-synthesizes prose** — the sole optional
+  exception is *hub prose* a human adds to a **concept page** (`wiki/concepts/<key>.md`),
+  above its `connect:auto` block (see "Optionally, a concept page becomes a real hub"). It
+  writes the delimited link blocks and re-lints. Rewriting claims on already-linted *silo*
+  pages would re-open the hallucination surface, so that is never done — only a silo page's
+  one-line up-link block is machine-managed.
 - **Version coherence.** A dependency edge is valid only for a *compatible pair
   of pinned commits* (torch_tpu@sha1 was built against xla@sha2). connect
   **refuses to link** silos whose commits weren't built compatibly, and marks
@@ -814,10 +822,10 @@ later repo must wire into the existing spine.
 
 ### Layout
 
-See the canonical three-bucket layout under **Wiki output schema** above:
-per-repo silos at `wiki/code/<slug>/`, the cross-repo layer at `wiki/_connect/`
-(`decisions.md` + `compat.md`), and SCIP indexes at `.cache/scip/<slug>.scip`
-(derived — read by connect, never under `raw/`).
+See the canonical layout under **Wiki output schema** above: per-repo silos at
+`wiki/code/<slug>/`, the shared concept vocabulary + hubs at `wiki/concepts/<key>.md` (where the
+inline cross-repo links live — there is no `_connect/` directory), and SCIP indexes at
+`.cache/scip/<slug>.scip` (derived — read by connect, never under `raw/`).
 
 ---
 
@@ -857,7 +865,7 @@ wiki/
       compute-comm-overlap.md
     sources/
       torch_tpu-design-notes.md
-  _connect/                  present once a second repo is connected
+  concepts/                  shared vocabulary + hubs (inline cross-repo links; no _connect/ dir)
 .cache/
   scip/torch_tpu.scip        # derived, ingestion-side, not shipped
 raw/
@@ -1017,38 +1025,32 @@ a runtime question — answerable only by the optional L4 enrichment, not here.
 
 ### Example 6 — cross-repo connection (`/wikify-connect-repo`)
 
-**Before connect** — torch_tpu's stub has a dangling external reference
-(`cxx-torch_tpu-Compiler-LowerToHlo.md`):
+Connection is **inline**, through the host's concept page — no `_connect/` directory. The human
+picked `splash-attention` at the connect phase; `wikify connect --apply splash-attention` then wrote
+two delimited blocks.
+
+**On the concept page** `wiki/concepts/splash-attention.md` — a down-block linking every repo's
+implementation (regenerated on `--refresh`; hand prose above it is untouched):
 
 ```markdown
-## Calls
-- `LoweringContext::Build` · `xla::XlaBuilder::Build`  *(uncited: external)*
+<!-- connect:auto:begin -->
+## In this wiki's repos
+Grounded implementations of **splash-attention** across the ingested repos:
+- [maxtext](../code/maxtext/concepts/maxtext-kernels-attention-splash_attention_kernel.md) — SplashAttention backward
+- [tokamax](../code/tokamax/concepts/tokamax-...-splash_attention_kernel.md) — extended splash scheduler
+- [jax](../code/jax/concepts/jax-...-splash_attention.md) — the reference TPU kernel
+<!-- connect:auto:end -->
 ```
 
-**After connect** (xla silo is present, commits compatible) — the external ref
-is re-resolved against `.cache/scip/xla.scip` and upgraded to a real cross-repo
-link. Prose is untouched; only the citation changed:
+**On each silo page** — a one-line up-link back to the concept it's part of:
 
 ```markdown
-## Calls
-- [`LoweringContext::Build`](../../xla/symbols/cxx-xla-LoweringContext-Build.md)
-- [`xla::XlaBuilder::Build`](../../xla/symbols/cxx-xla-XlaBuilder-Build.md)
+<!-- connect:up:begin -->
+> **Cross-repo concept:** part of [splash-attention](../../../concepts/splash-attention.md) across this wiki's repos.
+<!-- connect:up:end -->
 ```
 
-**Concept-correspondence decision cache** — `wiki/_connect/decisions.md`:
-
-```markdown
-| Concept | repo A page | repo B page | decision |
-|---|---|---|---|
-| compute-comm-overlap | torch_tpu/concepts/compute-comm-overlap | maxtext/concepts/compute-comm-overlap | keep |
-| memory-management | torch_tpu/concepts/memory-management | jax/concepts/memory-management | drop (different abstraction) |
-```
-
-**Compatibility record** — `wiki/_connect/compat.md`:
-
-```markdown
-| repo A @ sha | repo B @ sha | linkable |
-|---|---|---|
-| torch_tpu@a1b9f0c | xla@7e3d12a | yes |
-| torch_tpu@a1b9f0c | jax@0.9.2 | yes |
-```
+A concept the human *didn't* pick stays unconnected. Connection state is these blocks themselves —
+no side-file. (The separate, not-yet-automated dependency-link op — Stage 7 "(a)" — would instead
+re-resolve a torch_tpu → xla external citation against `.cache/scip/xla.scip`; that touches a
+citation, not prose, and is gated on a compatible commit pair.)

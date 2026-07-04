@@ -12,6 +12,9 @@ dependencies = ["protobuf", "pyyaml", "typer", "gitpython"]
 [project.scripts]
 wikify = "wikify.cli:app"
 
+[dependency-groups]
+dev = ["pytest"]
+
 [tool.setuptools]
 packages = ["wikify"]
 

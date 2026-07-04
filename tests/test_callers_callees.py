@@ -5,6 +5,7 @@ role, so edges are a reference-scoping heuristic. We index a fixture with a know
 call structure and assert the derived edges match.
 """
 
+import os
 import shutil
 from pathlib import Path
 
@@ -13,16 +14,19 @@ import pytest
 from wikify import scip_index
 
 FIXTURE = Path(__file__).parent / "fixtures" / "callgraph"
-
-pytestmark = pytest.mark.skipif(
-    shutil.which("scip-python") is None, reason="scip-python not installed"
-)
+INDEX = FIXTURE / "callgraph.scip"  # checked in, so this test runs without scip-python
 
 
 @pytest.fixture(scope="module")
 def graph(tmp_path_factory):
-    out = tmp_path_factory.mktemp("scip") / "callgraph.scip"
-    return scip_index.index_repo(FIXTURE, out, project_name="callgraph")
+    # WIKIFY_REINDEX_FIXTURES=1 regenerates the checked-in index (needs scip-python) —
+    # use it after changing the fixture source or bumping the indexer.
+    if os.environ.get("WIKIFY_REINDEX_FIXTURES"):
+        if shutil.which("scip-python") is None:
+            pytest.skip("WIKIFY_REINDEX_FIXTURES set but scip-python not installed")
+        return scip_index.index_repo(FIXTURE, INDEX, project_name="callgraph")
+    assert INDEX.exists(), "tests/fixtures/callgraph/callgraph.scip missing from checkout"
+    return scip_index.build_graph(scip_index.parse_index(INDEX))
 
 
 def _one(graph, name):

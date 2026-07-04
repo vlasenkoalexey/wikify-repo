@@ -98,6 +98,20 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    claim into an `[!inferred]` block) and run `wikify finalize <slug>` again.
    Repeat until it exits 0.
 
+7. **Register in the host wiki (self-connect — REQUIRED).** A grounded wiki nobody links to
+   is dead weight. So the ingest is not done until the repo is reachable from the host's
+   read-first index and recorded in its log, **following the host wiki's own conventions**
+   (read its `SCHEMA.md` / `index.md` for the exact format):
+   - **Index** — add/refresh the repo's entry in the host's top `index.md`, linking the
+     **`overview.md`** front door (`wiki/<wiki_subdir>/<slug>/overview.md`), *not* the per-repo
+     `index.md` (the overview routes on to it). One entry per repo. If the host already lists the
+     repo (e.g. a curated page), add the overview as an "internals" link on that same row.
+   - **Log** — append one line to the host's `log.md`, prefixed per its convention
+     (e.g. `## [YYYY-MM-DD] ingest-code | <slug>`).
+   This is a rule of adopting this skill, not a per-wiki step — so a repo that's ingested is,
+   by construction, in the index and the log. (wikify's CLI never edits the curated `index.md` /
+   `log.md`; that's deliberate — this step does, per the host's format.)
+
 ## Notes
 - **Where pages go**: `wiki/<wiki_subdir>/<slug>/` — `wiki_subdir` defaults to `code`
   (so `wiki/code/<slug>/`, leaving `wiki/` for a curated index + prose). Set

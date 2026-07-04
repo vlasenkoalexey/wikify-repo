@@ -87,3 +87,35 @@ def test_clone_mode_is_default(tmp_path):
     acquire.acquire(url, "s", wiki / "raw")  # no mode -> clone
     assert not (wiki / ".gitmodules").exists()
     assert (wiki / "raw/code/s/mod.py").exists()
+
+
+def test_local_source_under_raw_code_makes_no_symlink(tmp_path):
+    # Source already lives under raw/code/ (e.g. an existing submodule EasyDeL) — acquire must
+    # use it in place, NOT create a redundant raw/code/<slug> (absolute) symlink.
+    raw = tmp_path / "raw"
+    (raw / "code" / "EasyDeL").mkdir(parents=True)
+    _git(["init", "-q"], raw / "code" / "EasyDeL")
+    (raw / "code" / "EasyDeL" / "f.txt").write_text("x")
+    _git(["add", "-A"], raw / "code" / "EasyDeL")
+    _git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"],
+         raw / "code" / "EasyDeL")
+
+    acq = acquire.acquire(str(raw / "code" / "EasyDeL"), "easydel", raw)  # local, lowercase slug
+    assert not (raw / "code" / "easydel").exists()             # no redundant symlink created
+    assert acq.repo_dir == (raw / "code" / "EasyDeL").resolve()
+
+
+def test_local_source_outside_raw_code_makes_relative_symlink(tmp_path):
+    ext = tmp_path / "elsewhere" / "myrepo"
+    ext.mkdir(parents=True)
+    _git(["init", "-q"], ext)
+    (ext / "f.txt").write_text("x")
+    _git(["add", "-A"], ext)
+    _git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], ext)
+
+    raw = tmp_path / "raw"
+    acquire.acquire(str(ext), "myrepo", raw)
+    link = raw / "code" / "myrepo"
+    assert link.is_symlink()
+    import os
+    assert not os.path.isabs(os.readlink(link))                # relative, portable

@@ -552,7 +552,10 @@ instead of an alphabetical slice. Seeds are always kept.
 source-link base; default relative-local, `""` disables), `acquire`
 (`clone`|`submodule`), `wiki_subdir` (default `code` → `wiki/code/<slug>`; `""` = flat),
 `source_type` (`code`|`docs`), `doc_globs` (docs-mode file globs), `languages` (override
-detection; e.g. `[python, typescript]`).
+detection; e.g. `[python, typescript]`), `synthesis_focus` (a domain **lens** foregrounded in
+overview/concept synthesis — e.g. "TPU performance — kernels, sharding, autotune, precision"),
+`coverage_collapse` (globs → catalog page kept citeable but member body dropped — model zoos),
+`coverage_exclude` (globs → no catalog page — uncited tests/vendored only).
 
 ### 10.7 Docs mode (`source_type: docs`) — `wikify/docs.py`
 The prose track (design.md "Docs mode"). Same Karpathy-synthesis-in-a-deterministic-shell as

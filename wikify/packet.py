@@ -152,6 +152,7 @@ def build_packet(
     test_globs: list[str],
     date: str,
     seed_monikers: list[str] | None = None,
+    focus: str = "",
 ) -> tuple[str, list[str]]:
     """Render the packet markdown and return (text, subgraph_monikers).
 
@@ -178,6 +179,11 @@ def build_packet(
     a = lines.append
     a(f"# Packet: {concept.slug}  (repo {slug} @ {ref})")
     a("")
+    if focus.strip():
+        a("## Synthesis focus (lens)")
+        a(f"Foreground this lens when you synthesize — organize the page around it, surface the "
+          f"symbols that matter for it, and lead with them:\n\n> {focus.strip()}")
+        a("")
     a("## Seeds")
     a(seed_note)
     a("")

@@ -7,6 +7,7 @@ as a symlink for traceability); a URL is cloned. ``raw/`` holds immutable inputs
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,8 +57,9 @@ def acquire(
     ``mode`` controls how a git-URL source lands in ``raw/code/<slug>``:
     ``"clone"`` (default) plain-clones it; ``"submodule"`` adds it as a git submodule
     of the surrounding wiki repo so the pin is the committed gitlink. Submodule mode
-    falls back to a clone when ``raw/`` is not inside a git repo. Local-path sources are
-    always symlinked in place.
+    falls back to a clone when ``raw/`` is not inside a git repo. A local-path source is used
+    in place — surfaced under ``raw/code/<slug>`` as a *relative* symlink only when it lives
+    outside ``raw/code/`` (a source already under ``raw/code/`` is used directly, no symlink).
     """
     raw_code = Path(raw_dir) / "code"
     raw_code.mkdir(parents=True, exist_ok=True)
@@ -67,10 +69,15 @@ def acquire(
     src_path = Path(source)
     if src_path.exists():
         repo_dir = src_path.resolve()
-        # Surface under raw/code/<slug> as a symlink for traceability.
-        if not dest.exists():
+        raw_code_abs = raw_code.resolve()
+        # If the source is already under raw/code/ (e.g. `repo: raw/code/EasyDeL`), use it in
+        # place — do NOT create a raw/code/<slug> symlink (it would be redundant and, if
+        # absolute, non-portable). Only surface a symlink when the source lives elsewhere, and
+        # make it RELATIVE so the wiki repo stays portable.
+        already_in_place = repo_dir == dest.resolve() or raw_code_abs in repo_dir.parents
+        if not already_in_place and not dest.exists():
             try:
-                dest.symlink_to(repo_dir, target_is_directory=True)
+                dest.symlink_to(os.path.relpath(repo_dir, raw_code), target_is_directory=True)
             except OSError:
                 pass
     elif mode == "submodule" and not dest.exists():

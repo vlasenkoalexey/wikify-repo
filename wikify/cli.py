@@ -22,6 +22,7 @@ from . import (
     acquire,
     assemble,
     bazel_cc,
+    connect as connect_mod,
     coverage as coverage_mod,
     diff,
     discover,
@@ -284,13 +285,16 @@ def prepare(
     typer.echo(plan.render())
 
     todo = set(plan.todo)
+    # The host wiki's shared concept vocabulary (wiki/concepts/) — handed to synthesis so
+    # pages self-tag with `concepts:`, which Stage 7 connect resolves as authoritative.
+    vocab = connect_mod.load_vocabulary(p.wiki, "concepts")
     built = 0
     for concept in agenda:
         if concept.slug not in todo:
             continue
         text, subgraph = packet.build_packet(
             graph, acq.repo_dir, slug, acq.commit, concept, cfg.tests, _today(),
-            seed_monikers=seedmap.get(concept.slug), focus=cfg.synthesis_focus,
+            seed_monikers=seedmap.get(concept.slug), focus=cfg.synthesis_focus, vocab=vocab,
         )
         pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
         typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")
@@ -448,6 +452,39 @@ def verify(
                 cites = f"  [{len(c.citations)} cite]" if c.citations else ""
                 typer.echo(f"  L{c.line} [{c.section}]{cites} {c.text[:88]}")
     typer.echo(f"\ntotal: {total} load-bearing claim(s) across {len(pages)} page(s)")
+
+
+@app.command()
+def connect(
+    apply: str = typer.Option("", help="Comma-separated concept keys to connect (wire inline)."),
+    refresh: bool = typer.Option(False, help="Re-apply all already-connected concepts."),
+    exclude: str = typer.Option("", help="Comma-separated 'repo/rel-path' matches to drop."),
+    root: Path = typer.Option(Path("."), help="Project root."),
+    vocab: str = typer.Option("concepts", help="Wiki subdir holding the concept vocabulary."),
+) -> None:
+    """Stage 7 — connect ingested silos on the concept axis, inline (no model, no side-table).
+
+    With no options it **proposes**: prints which vocabulary concepts (``wiki/<vocab>/*.md``)
+    have candidate implementations across the silos, and which are already connected — a human
+    then picks. ``--apply <keys>`` wires those concepts inline and bidirectionally: a
+    ``## In this wiki's repos`` block on each concept page linking down to every implementation,
+    and an up-link on each silo page. ``--refresh`` re-applies the already-connected set (after a
+    new ingest). Links live in regenerable ``connect:auto`` blocks; hand prose is never touched."""
+    wiki = root / "wiki"
+    if not wiki.is_dir():
+        typer.echo(f"error: no wiki/ at {wiki}", err=True)
+        raise typer.Exit(2)
+    keys = [k.strip() for k in apply.split(",") if k.strip()]
+    if refresh:
+        keys = sorted(set(keys) | set(connect_mod.connected_keys(wiki, vocab)))
+    if not keys:
+        typer.echo(connect_mod.compute_report(wiki, vocab))
+        return
+    exc = {e.strip() for e in exclude.split(",") if e.strip()}
+    counts = connect_mod.apply_connections(wiki, keys, vocab, exclude=exc)
+    for key in sorted(counts):
+        typer.echo(f"connected {key}: {counts[key]} implementation link(s)")
+    typer.echo(f"wired {len(counts)} concept(s) inline (concept pages ↔ silo pages).")
 
 
 @app.command()

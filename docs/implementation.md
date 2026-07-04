@@ -274,23 +274,22 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
 ### Phase 3 — connect (multi-repo), graded & interactive
 Split by the Python/LLM line and by depth (design.md Stage 7). A new `wikify-connect-repo`
 skill drives the LLM half; `connect.py` is the deterministic half.
-- **Depth 0 — index (`connect.py`, deterministic, always on).** Invert the synthesis-emitted
-  `concepts:` tags → `concept → [silo pages]` (the concept-axis analog of coverage). No model.
-- **7a dependency links (`connect.py`, deterministic).** Re-resolve external citations against
-  other silos' `.cache/scip/*.scip`; upgrade dangling refs to cross-repo links; `compat.md`
-  version-coherence gate.
-- **7b concept correspondences (skill, candidate-gen + confirm).** Generate candidates
-  deterministically (shared moniker / vendored lineage / vocab tag), LLM confirms/rejects;
-  `_connect/decisions.md` keep/drop cache. **Depth 1:** append a grounded row to the shared
-  concept's implementation table + a silo up-link. **Depth 2:** synthesize/upgrade the
-  `wiki/concepts/<key>.md` **hub** — a new authored page whose rows cite silo anchors and pass
-  the citation gate; linted silo prose is never rewritten.
-- **Interactive gates (skill; batch reads config).** Ask `synthesis_focus` if absent; offer
-  `discover.py`'s centrality-ranked agenda for more concepts; ask `connect_depth` (default `0`).
-  Auto-invoked as the tail of ingest from the 2nd repo on; separately re-runnable.
-- Acceptance: dependency links resolve; re-running connect is idempotent; Depth-0 lists every
-  repo's splash pages with no LLM; a Depth-2 hub's rows all resolve; a concept link survives an
-  update without churn.
+- **Concept correspondences (`connect.py` + `wikify-connect-repo` skill).** ✅ *Realized* (§10.10).
+  Inline, as a normal wiki — the host `wiki/concepts/<key>.md` links down to each repo's
+  implementation, each silo page links up. `wikify connect` proposes candidates (explicit `concepts:`
+  tags + name/token matches); the human picks **which** concepts to connect (selective — not
+  everything); `--apply` writes the bidirectional links in regenerable `connect:auto` blocks;
+  `--refresh` regenerates already-connected concepts after a new ingest. No side-table, no new page
+  type. Deepening a concept into a full hub is optional LLM prose outside the auto block.
+- **7a dependency links (`connect.py`, deterministic).** *Not yet automated.* Re-resolve external
+  citations against other silos' `.cache/scip/*.scip`; upgrade dangling refs to cross-repo links;
+  `compat.md` version-coherence gate.
+- **Interactive gates (skills).** Ingest asks `synthesis_focus` if absent and offers `discover.py`'s
+  ranked agenda for more concepts; connect asks **which concepts** to wire. Connect is invoked at the
+  tail of ingest from the 2nd repo on, and separately re-runnable.
+- Acceptance: re-running connect is idempotent (no churn); an applied concept links every matched
+  silo page bidirectionally; a new ingest + `--refresh` adds the new repo to existing hubs; the
+  human's concept selection is honored (unpicked concepts stay unconnected).
 
 ### Phase 4 — discovery, lanes, L4
 - Candidate-concept discovery → "Candidate concepts" in `index.md`.
@@ -457,10 +456,10 @@ Mechanics:
 
 - Distribute as a **git repo** the consumer clones or `git submodule`s into their
   project. **Tag releases by the source commits the wiki covers** so the
-  version-skew check and `_connect/compat.md` mean something.
+  version-skew check means something.
 - The unit is either a single **standalone silo** or the whole **connected
-  multi-repo wiki** (silos + `_connect/`) as one repo — e.g. "the TPU-ecosystem
-  wiki."
+  multi-repo wiki** (silos + inline cross-repo links on the concept pages) as one
+  repo — e.g. "the TPU-ecosystem wiki."
 - Consumers need **nothing**: no `wikify`, no Node, no Python — just the markdown
   and any agent. The optional `wikify-reader` plugin only sweetens retrieval in
   Claude Code.
@@ -568,9 +567,9 @@ detection; e.g. `[python, typescript]`), `synthesis_focus` (a domain **lens** fo
 overview/concept synthesis — e.g. "TPU performance — kernels, sharding, autotune, precision"),
 `coverage_collapse` (globs → catalog page kept citeable but member body dropped — model zoos),
 `coverage_exclude` (globs → no catalog page — uncited tests/vendored only).
-*Planned (Phase 3, connect):* `concepts` (host-owned controlled vocabulary — the shared concept
-keys; default = `wiki/concepts/` filenames), `connect_depth` (`0`=index only / `1`=link /
-`2`=synthesize hubs; default `0`, the non-interactive floor).
+*Connect (Stage 7) adds no per-repo config keys:* its vocabulary is the host wiki's
+`wiki/concepts/` filenames (CLI `--vocab <dir>` to override) and *which* concepts to wire is a
+skill-interactive choice (batch does only `--refresh`) — nothing to put in `config/<slug>.md`.
 
 ### 10.7 Docs mode (`source_type: docs`) — `wikify/docs.py`
 The prose track (design.md "Docs mode"). Same Karpathy-synthesis-in-a-deterministic-shell as
@@ -625,3 +624,25 @@ Two thin, high-leverage additions realized post-v1 (design.md Decisions log):
   appends `log.md`, per host conventions. The deterministic silo (CLI) and its curated placement
   (skill) sit on opposite sides of the Python/LLM split — the CLI stays safe to re-run in batch,
   the skill owns the one judgment-bearing edit to curated files.
+
+### 10.10 Connect — inline cross-repo concept links (realized)
+`wikify/connect.py` + `wikify connect [--apply k1,k2] [--refresh] [--exclude repo/path] [--vocab
+concepts]` (whole-wiki, no slug). Wires silos on the concept axis **inline, as a normal wiki** — no
+side-table, no new page type. `load_vocabulary` (host `wiki/concepts/` stems) × `discover_silos`
+(any dir with `overview.md` + `concepts/`, minus the vocab dir — layout-agnostic across
+`code`/`codebases`) → `build_index` → `concept → [Match]` candidates. A silo page matches a key by an
+explicit `concepts:` frontmatter tag (`"tag"`, authoritative — synthesis emits it when `prepare`
+hands the vocabulary into the packet) or a name/token heuristic (`"name"`; prefix-share ≥4 so
+`remat`↔`rematerialization`).
+- **Propose** (`wikify connect`, no args): print candidate concepts (most-implemented first) + which
+  are already connected. Writes nothing.
+- **Apply** (`--apply <keys>`): for the human-chosen keys, `apply_connections` writes, inside
+  regenerable `connect:auto` blocks (hand prose untouched), a `## In this wiki's repos` down-block on
+  each `wiki/concepts/<key>.md` linking every implementation, and a one-line up-link block on each
+  linked silo page. `--exclude` drops a stray `repo/rel-path` match.
+- **State is the wiki itself** — `connected_keys` = concept pages that carry a down-block (no
+  side-file); `--refresh` re-applies them after a new ingest. Idempotent (re-apply → no churn).
+Selection (which concepts) is a human decision at the connection phase — connecting everything drowns
+the pages. Deepening a concept into a real hub is optional LLM prose *outside* the auto block
+(`wikify-connect-repo` skill). Dependency links (Stage 7 "(a)") are not yet automated. Pinning tests:
+`tests/test_connect.py`.

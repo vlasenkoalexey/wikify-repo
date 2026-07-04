@@ -35,6 +35,14 @@ No `## Concepts` list is needed — discovery auto-seeds the agenda from code ce
 concepts later only to go deeper into a subsystem. If a config for that slug already exists,
 reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
 
+**Focus (lens) — settle it before synthesizing; ask only if it isn't already known.** If the
+config already has `synthesis_focus`, or the host wiki has an established lens (skim a couple of
+sibling `config/*.md`, or the host `SCHEMA.md`), use that — **do not re-ask a settled question**.
+Otherwise ASK the user for the domain angle in one line (e.g. *"TPU performance — kernels,
+sharding, autotune, precision"*) and write it into `config/<slug>.md` as `synthesis_focus:`. In a
+non-interactive/batch run with no signal, proceed neutrally (no lens). The lens shapes emphasis,
+never grounding.
+
 > **Docs mode (prose sources).** If the repo is documentation, not code — or you set
 > `source_type: docs` in the config — the pipeline is the same shape but prose-grounded:
 > `wikify prepare <slug>` emits one **doc packet** per document (no SCIP); you synthesize
@@ -65,6 +73,14 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    symbol stubs — paste each symbol's `cite:` link from the Subgraph verbatim (it
    resolves to the catalog anchor). Cite ONLY Subgraph symbols; ungrounded → a
    `> [!inferred]` block.
+
+   **Then offer to go deeper (interactive; skip in batch).** List the concept pages you just
+   wrote and — from the reconcile **plan** and the Stage-6b coverage (modules that got only a
+   catalog, not a deep page) — the highest-centrality subsystems *not yet* deep-dived. Ask the
+   user which, if any, to add. For each chosen one, add it as a seed to the `## Concepts` list in
+   `config/<slug>.md` and **re-run from step 1** (`prepare` builds only the new packet). This is
+   the derived, ranked agenda — offer real candidates, never free-form (a concept with no packet
+   symbols cannot be grounded). With no user present, proceed with the auto-seeded set.
 
 3. **Overview (after all concepts exist).** Follow
    `prompts/overview.md` to write `wiki/code/<slug>/overview.md` —
@@ -111,6 +127,15 @@ reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
    This is a rule of adopting this skill, not a per-wiki step — so a repo that's ingested is,
    by construction, in the index and the log. (wikify's CLI never edits the curated `index.md` /
    `log.md`; that's deliberate — this step does, per the host's format.)
+
+8. **Connect to the other repos (self-connect on the concept axis).** A silo is only half the
+   value; the rest is the *cross-repo* view (who else implements this kernel / technique). If the
+   host wiki has other ingested silos **and** a concept vocabulary (`wiki/concepts/*.md`), hand off
+   to the **`wikify-connect-repo`** skill. It runs `wikify connect` to propose candidate concepts,
+   then **asks the human which concepts to connect** (selective — not everything), and wires those
+   inline (concept page ↔ silo pages). Also run `wikify connect --refresh` so the concepts already
+   connected pick up this new repo's implementations. Skip only when this is the first/only repo, or
+   the wiki has no `wiki/concepts/` vocabulary.
 
 ## Notes
 - **Where pages go**: `wiki/<wiki_subdir>/<slug>/` — `wiki_subdir` defaults to `code`

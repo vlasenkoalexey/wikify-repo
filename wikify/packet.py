@@ -153,11 +153,15 @@ def build_packet(
     date: str,
     seed_monikers: list[str] | None = None,
     focus: str = "",
+    vocab: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     """Render the packet markdown and return (text, subgraph_monikers).
 
     ``seed_monikers`` (from discovery) are used directly; otherwise the concept's
-    seed tokens are resolved by name."""
+    seed tokens are resolved by name. ``vocab`` is the host wiki's shared concept
+    vocabulary (``wiki/concepts/`` stems) — surfaced so synthesis can stamp a
+    ``concepts:`` frontmatter tag, which Stage 7 connect resolves as an authoritative
+    (``tag``) cross-repo correspondence rather than a name-match candidate."""
     if seed_monikers:
         seeds = [m for m in seed_monikers if m in graph.symbols]
         unresolved = []
@@ -183,6 +187,15 @@ def build_packet(
         a("## Synthesis focus (lens)")
         a(f"Foreground this lens when you synthesize — organize the page around it, surface the "
           f"symbols that matter for it, and lead with them:\n\n> {focus.strip()}")
+        a("")
+    if vocab:
+        a("## Concept vocabulary (tag against these)")
+        a("If this page's mechanism is an instance of one or more shared concepts below, add a "
+          "`concepts:` list to the page frontmatter with the matching key(s) — this is how the "
+          "cross-repo index links your page to the same concept in other repos. Use ONLY keys "
+          "that genuinely apply; omit the field if none do.")
+        a("")
+        a(", ".join(f"`{k}`" for k in vocab))
         a("")
     a("## Seeds")
     a(seed_note)

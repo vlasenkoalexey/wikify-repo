@@ -84,16 +84,20 @@ def acquire(
         wiki_root = _toplevel(raw_code)
         if wiki_root is None:
             # Not a git repo — submodule is impossible; fall back to a plain clone.
-            _git(["clone", source, str(dest)], cwd=raw_code)
+            # Clone dest is the bare slug: git resolves it against cwd=raw_code, so
+            # passing str(dest) here would double the path when raw_dir is relative.
+            _git(["clone", source, slug], cwd=raw_code)
         else:
             rel = dest.resolve().relative_to(wiki_root.resolve())
             # --force: wikify owns raw/code/, so don't let a gitignore line block the add.
             _git(["submodule", "add", "--force", source, str(rel)], cwd=wiki_root)
         repo_dir = dest.resolve()
     else:
-        # Treat as a git URL; clone into raw/code/<slug>.
+        # Treat as a git URL; clone into raw/code/<slug>. Dest is the bare slug
+        # relative to cwd=raw_code — str(dest) would re-apply raw/code when the
+        # project root (and thus raw_dir) is a relative path like the CLI's default.
         if not dest.exists():
-            _git(["clone", source, str(dest)], cwd=raw_code)
+            _git(["clone", source, slug], cwd=raw_code)
         repo_dir = dest.resolve()
 
     if ref:

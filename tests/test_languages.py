@@ -1,5 +1,6 @@
 """Multi-language SCIP support — pinning tests for detection, the registry, and the
-on-demand (ask-don't-auto-install) indexer behavior. The indexers themselves aren't run."""
+on-demand indexer install behavior (auto by default, announced, --no-install-indexers
+opts out). The indexers themselves aren't run."""
 
 from __future__ import annotations
 
@@ -48,12 +49,46 @@ def test_ensure_indexer_present(monkeypatch):
     assert L.ensure_indexer(L.LANGS["go"]) is True
 
 
-def test_ensure_indexer_missing_noninteractive_skips(monkeypatch, capsys):
+def test_ensure_indexer_missing_auto_installs(monkeypatch, capsys):
+    """Default: a missing indexer is installed automatically — announced, then run."""
+    state = {"installed": False}
+
+    def fake_which(_b):
+        return "/home/u/.local/bin/" + _b if state["installed"] else None
+
+    class _Proc:
+        returncode = 0
+
+    def fake_run(cmd, **kw):
+        state["installed"] = True
+        state["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(L.shutil, "which", fake_which)
+    monkeypatch.setattr(L.subprocess, "run", fake_run)
+    assert L.ensure_indexer(L.LANGS["rust"]) is True
+    assert state["cmd"] == L.LANGS["rust"].install               # ran the registry command
+    out = capsys.readouterr().out
+    assert "installing automatically" in out                     # announced, not silent
+
+
+def test_ensure_indexer_missing_no_install_opt_out(monkeypatch, capsys):
+    """--no-install-indexers (auto=False): print guidance, skip, never run the installer."""
     monkeypatch.setattr(L.shutil, "which", lambda _b: None)
-    monkeypatch.setattr(L.sys.stdin, "isatty", lambda: False)   # non-tty → never prompts/installs
     called = {"install": False}
     monkeypatch.setattr(L.subprocess, "run", lambda *a, **k: called.__setitem__("install", True))
-    assert L.ensure_indexer(L.LANGS["rust"]) is False
-    assert called["install"] is False                            # did NOT auto-install
+    assert L.ensure_indexer(L.LANGS["rust"], auto=False) is False
+    assert called["install"] is False                            # did NOT install
     err = capsys.readouterr().err
     assert "rust-analyzer" in err and "install" in err.lower()   # instructed the user instead
+
+
+def test_ensure_indexer_install_failure_skips(monkeypatch, capsys):
+    """A failing installer must not be treated as success."""
+    class _Proc:
+        returncode = 1
+
+    monkeypatch.setattr(L.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(L.subprocess, "run", lambda *a, **k: _Proc())
+    assert L.ensure_indexer(L.LANGS["go"]) is False
+    assert "install failed" in capsys.readouterr().err

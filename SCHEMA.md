@@ -107,7 +107,8 @@ the original plan — **read `design.md` "Decisions log" + `implementation.md` �
 - **Multi-language** (`wikify/languages.py`): grounding is SCIP (language-neutral), so a language
   is a pluggable indexer — downstream reads the symbol table, not a per-language AST. Python +
   C++ are bundled; **TS/JS, Go, Rust ship as on-demand indexers** — `prepare` detects the language
-  and *asks* the user to install its indexer (never silently), skipping it if declined. Each writes
+  and **auto-installs** a missing indexer, announcing the command it runs (opt out with
+  `--no-install-indexers`, which prints the guidance and skips that language). Each writes
   `.cache/scip/<slug>.<lang>.scip`; `_graph` merges them all. See `implementation.md` §10.8.
 - **Docs mode** (`source_type: docs`, `wikify/docs.py`): the prose track. Same
   Karpathy-synthesis-in-a-deterministic-shell, with the grounding anchor swapped from a SCIP

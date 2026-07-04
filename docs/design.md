@@ -317,9 +317,11 @@ page-/file-level.
 **Because grounding is SCIP (language-neutral), a language is a pluggable indexer** — everything
 downstream reads the symbol table, not a per-language AST (`wikify/languages.py`). Python + C++ ship
 with `setup-vendor.sh`; TS/JS, Go, Rust are **installed on demand**: `prepare` detects the language
-(root marker or ≥3 source files) and, if the indexer is missing, *asks* the user to install it
-(never silently), skipping that language if declined so the rest still index (`implementation.md`
-§10.8).
+(root marker or ≥3 source files) and, if the indexer is missing, **installs it automatically** —
+always announcing the exact command it runs, never silent. `--no-install-indexers` opts out
+(guidance printed, that language skipped, the rest still index). Rationale: ingest usually runs
+through an agent's non-interactive shell, where the earlier ask-first design could never actually
+ask — languages were silently dropped in practice (`implementation.md` §10.8).
 
 - **C++ compile database**: emit `compile_commands.json` into
   `.cache/build/<slug>/`. Build **out-of-tree** so `raw/code/<slug>/` (the pinned

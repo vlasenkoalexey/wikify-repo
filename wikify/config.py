@@ -23,7 +23,8 @@ import yaml
 # Frontmatter keys the schema allows; anything else is a config error.
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
-                 "acquire", "wiki_subdir", "source_type", "doc_globs"}
+                 "acquire", "wiki_subdir", "source_type", "doc_globs",
+                 "coverage_collapse", "coverage_exclude"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -87,6 +88,13 @@ class RepoConfig:
     # In docs mode, repo-relative globs selecting which docs to ingest. Empty →
     # ``docs.DEFAULT_DOC_GLOBS`` (markdown/rst/html/txt).
     doc_globs: list[str] = field(default_factory=list)
+    # Coverage trimming (Stage 6b). ``coverage_collapse`` globs → the module still gets a
+    # catalog page with its citeable symbol map but the detailed member body is omitted
+    # (model zoos / boilerplate — keeps citations resolving, drops the bulk).
+    # ``coverage_exclude`` globs → no catalog page at all (ONLY for uncited noise:
+    # tests/vendored — a dropped symbol cannot be cited). ``*`` spans ``/``.
+    coverage_collapse: list[str] = field(default_factory=list)
+    coverage_exclude: list[str] = field(default_factory=list)
     compile_commands: str | None = None  # path to a pre-existing compile_commands.json
     # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
     # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
@@ -243,6 +251,8 @@ def load_config(path: str | Path) -> RepoConfig:
         wiki_subdir="code" if wsub is None else str(wsub),
         source_type="code" if stype is None else str(stype),
         doc_globs=_as_list(fm.get("doc_globs")),
+        coverage_collapse=_as_list(fm.get("coverage_collapse")),
+        coverage_exclude=_as_list(fm.get("coverage_exclude")),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

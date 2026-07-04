@@ -37,6 +37,7 @@ sidesteps dynamic dispatch precisely because it never asks about connectivity.
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import posixpath
 import re
@@ -346,6 +347,7 @@ def render_catalog(
     monikers: list[str],
     covered: dict[str, str],
     source_base: str | None = None,
+    collapse: bool = False,
 ) -> str:
     """Render one module's catalog page from the graph (no synthesis).
 
@@ -414,6 +416,15 @@ def render_catalog(
     header = f"[`{module_path}`]({src})" if src else f"`{module_path}`"
     a(f"# Module: {header}")
     a("")
+    if collapse:
+        # Pointer-only page: the frontmatter symbol map above still resolves every
+        # citation (linter rule 1), but the detailed member body is omitted. Used by
+        # `coverage_collapse` to keep model-zoo / boilerplate modules citeable without
+        # the per-member bulk. Follow the source link for full detail.
+        a(f"> **Collapsed catalog** ({len(monikers)} symbols) — anchors above resolve for "
+          "citations; detailed member listing omitted (`coverage_collapse`). See the source "
+          "link above, or the curated codebase page, for depth.")
+        return "\n".join(lines) + "\n"
 
     def _link_targets(targets: list[str], cap: int = 40) -> str:
         """Render in-repo edge targets, ranked by importance, linked to their catalog.
@@ -498,11 +509,19 @@ def render_catalog(
     return "\n".join(lines) + "\n"
 
 
+def _glob_any(path: str, patterns) -> bool:
+    """True if ``path`` matches any glob in ``patterns`` (``*`` spans ``/``, so
+    ``easydel/modules/*`` matches ``easydel/modules/gemma4/modeling_gemma4.py``)."""
+    return any(fnmatch.fnmatch(path, p) for p in (patterns or ()))
+
+
 def emit_catalogs(
     graph: SymbolGraph,
     wiki_slug_dir: str | Path,
     repo_dir: str | Path | None = None,
     source_url: str | None = None,
+    collapse: list[str] | None = None,
+    exclude: list[str] | None = None,
 ) -> tuple[set[str], list[Path]]:
     """Write one catalog page per in-repo module. Returns (catalogued monikers, paths).
 
@@ -524,6 +543,11 @@ def emit_catalogs(
     catalogued: set[str] = set()
     written: list[Path] = []
     for module_path, monikers in sorted(modules.items()):
+        # `exclude` drops a module entirely (no page) — use ONLY for uncited noise
+        # (tests/vendored) since a dropped symbol can't be cited. `collapse` keeps the
+        # citeable symbol map but omits the member body (model zoos / boilerplate).
+        if _glob_any(module_path, exclude):
+            continue
         out = catalog_dir / catalog_rel_path(module_path)
         if source_url == "":
             base = None
@@ -534,7 +558,8 @@ def emit_catalogs(
             base = os.path.relpath(repo_abs, out.parent.resolve())
         else:
             base = None
-        text = render_catalog(graph, module_path, monikers, covered, source_base=base)
+        text = render_catalog(graph, module_path, monikers, covered, source_base=base,
+                              collapse=_glob_any(module_path, collapse))
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")
         written.append(out)

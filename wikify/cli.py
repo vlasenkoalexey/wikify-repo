@@ -139,6 +139,19 @@ def _graph(p: Paths):
     return scip_index.build_graph(*indexes)
 
 
+def _derive_agenda(graph, cfg: RepoConfig):
+    """The DERIVED agenda (decision 8): discovery ranks modules by centrality and
+    auto-seeds concepts; config concepts override/extend on slug collision.
+
+    Shared by ``prepare`` and ``plan`` so the dry-run models the real run.
+    Returns (agenda_cfg, seedmap, n_discovered)."""
+    discovered = discover.discover_concepts(graph)
+    seedmap = {d.slug: d.seeds for d in discovered}
+    cfg_slugs = {c.slug for c in cfg.concepts}
+    agenda = [Concept(slug=d.slug) for d in discovered if d.slug not in cfg_slugs] + cfg.concepts
+    return replace(cfg, concepts=agenda), seedmap, len(discovered)
+
+
 # --------------------------------------------------------------------------- #
 # Docs mode (source_type: docs) — the prose track (docs.py, design.md "Docs mode")
 # --------------------------------------------------------------------------- #
@@ -270,14 +283,9 @@ def prepare(
     graph = _graph(p)
     typer.echo(f"graph: {len(graph)} symbols")
 
-    # Agenda is DERIVED (decision 8): discovery ranks modules by centrality and
-    # auto-seeds concepts; config concepts override/extend on slug collision.
-    discovered = discover.discover_concepts(graph)
-    seedmap = {d.slug: d.seeds for d in discovered}
-    cfg_slugs = {c.slug for c in cfg.concepts}
-    agenda = [Concept(slug=d.slug) for d in discovered if d.slug not in cfg_slugs] + cfg.concepts
-    agenda_cfg = replace(cfg, concepts=agenda)
-    typer.echo(f"agenda: {len(discovered)} discovered + {len(cfg.concepts)} config = {len(agenda)} concepts")
+    agenda_cfg, seedmap, n_discovered = _derive_agenda(graph, cfg)
+    agenda = agenda_cfg.concepts
+    typer.echo(f"agenda: {n_discovered} discovered + {len(cfg.concepts)} config = {len(agenda)} concepts")
 
     state = state_mod.load_state(p.state)
     hashes = diff.current_hashes(graph, acq.repo_dir)
@@ -437,7 +445,8 @@ def verify(
     root: Path = typer.Option(Path("."), help="Project root."),
 ) -> None:
     """List the load-bearing claims to adversarially verify (worklist for the
-    verifier agent in skills/prompts/verify.md). Deterministic; runs no model."""
+    verifier agent in .agents/skills/wikify-ingest-repo/prompts/verify.md).
+    Deterministic; runs no model."""
     p, _cfg = _load(root, slug)
     pages = sorted((p.wiki_slug / "concepts").glob("*.md"))
     if page:
@@ -494,14 +503,22 @@ def plan(
     repo: str = typer.Option(None, help="Source path or git URL."),
     root: Path = typer.Option(Path("."), help="Project root."),
 ) -> None:
-    """Dry-run: print the reconcile delta, emit nothing."""
+    """Dry-run: print the reconcile delta against the DERIVED agenda, emit nothing.
+
+    Reuses the cached SCIP index — a dry-run never triggers indexing (prepare owns
+    that, including the sharded path for large repos)."""
     p, cfg = _load(root, slug)
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
-    if not p.scip.exists():
-        scip_index.run_indexer(acq.repo_dir, p.scip, project_name=slug)
+    if not _scip_indexes(p):
+        typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
+        raise typer.Exit(2)
     graph = _graph(p)
+    agenda_cfg, _seedmap, n_discovered = _derive_agenda(graph, cfg)
+    typer.echo(f"agenda: {n_discovered} discovered + {len(cfg.concepts)} config "
+               f"= {len(agenda_cfg.concepts)} concepts")
     state = state_mod.load_state(p.state)
-    typer.echo(diff.compute_plan(graph, acq.repo_dir, state, cfg).render())
+    hashes = diff.current_hashes(graph, acq.repo_dir)
+    typer.echo(diff.compute_plan(graph, acq.repo_dir, state, agenda_cfg, hashes).render())
 
 
 if __name__ == "__main__":

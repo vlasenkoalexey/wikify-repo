@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # wikify/scip_pb2.py is generated, not committed (see scripts/setup-vendor.sh)
+      - name: Generate SCIP protobuf bindings
+        run: uv run --with grpcio-tools python -m grpc_tools.protoc -I vendor --python_out=wikify vendor/scip.proto
+      # scip-python / scip-clang are absent here by design: the indexer-dependent
+      # tests load the checked-in .scip fixtures instead of reindexing.
+      - name: Run tests
+        run: uv run pytest -q

@@ -3,10 +3,12 @@
 The same SCIP parser + graph builder + callers/callees derivation that handle
 scip-python also handle scip-clang output, and multiple indexes (C++ + Python)
 union into one graph. This is the Phase-2 C++ path's foundation (design §Stage 1,
-mixed-language). Skipped if no scip-clang binary is available.
+mixed-language). Runs offline against the checked-in ``cpp.scip``; set
+``WIKIFY_REINDEX_FIXTURES=1`` (needs scip-clang) to regenerate it.
 """
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -16,31 +18,35 @@ from wikify import scip_index
 
 FIXTURE = Path(__file__).parent / "fixtures" / "cpp_callgraph"
 PY_FIXTURE = Path(__file__).parent / "fixtures" / "callgraph"
+INDEX = FIXTURE / "cpp.scip"  # checked in, so these tests run without scip-clang
 
-# scip-clang binary: the pinned vendored one, or on PATH.
+# scip-clang binary (only needed to regenerate): the pinned vendored one, or on PATH.
 _VENDORED = Path(__file__).parents[1] / "vendor" / "bin" / "scip-clang-033"
 SCIP_CLANG = str(_VENDORED) if _VENDORED.exists() else shutil.which("scip-clang")
-
-pytestmark = pytest.mark.skipif(SCIP_CLANG is None, reason="scip-clang not available")
 
 
 @pytest.fixture(scope="module")
 def cpp_index(tmp_path_factory):
-    """Run scip-clang on the C++ fixture → parsed SCIP index."""
-    work = tmp_path_factory.mktemp("cpp")
-    # copy sources so the compile DB paths are stable + writable
-    for f in ("mathlib.h", "mathlib.cpp", "main.cpp"):
-        shutil.copy(FIXTURE / f, work / f)
-    compdb = [
-        {"directory": str(work), "file": str(work / src),
-         "command": f"clang++ -std=c++17 -I{work} -c {work / src}"}
-        for src in ("mathlib.cpp", "main.cpp")
-    ]
-    (work / "compile_commands.json").write_text(json.dumps(compdb))
-    out = work / "cpp.scip"
-    scip_index.run_clang_indexer(work, work / "compile_commands.json", out,
-                                 scip_clang_bin=SCIP_CLANG)
-    return scip_index.parse_index(out)
+    """The parsed C++ SCIP index (checked-in; regenerated on request)."""
+    if os.environ.get("WIKIFY_REINDEX_FIXTURES"):
+        if SCIP_CLANG is None:
+            pytest.skip("WIKIFY_REINDEX_FIXTURES set but scip-clang not available")
+        work = tmp_path_factory.mktemp("cpp")
+        # copy sources so the compile DB paths are stable + writable
+        for f in ("mathlib.h", "mathlib.cpp", "main.cpp"):
+            shutil.copy(FIXTURE / f, work / f)
+        compdb = [
+            {"directory": str(work), "file": str(work / src),
+             "command": f"clang++ -std=c++17 -I{work} -c {work / src}"}
+            for src in ("mathlib.cpp", "main.cpp")
+        ]
+        (work / "compile_commands.json").write_text(json.dumps(compdb))
+        out = work / "cpp.scip"
+        scip_index.run_clang_indexer(work, work / "compile_commands.json", out,
+                                     scip_clang_bin=SCIP_CLANG)
+        shutil.copy(out, INDEX)
+    assert INDEX.exists(), "tests/fixtures/cpp_callgraph/cpp.scip missing from checkout"
+    return scip_index.parse_index(INDEX)
 
 
 def test_cpp_symbols_and_kinds(cpp_index):
@@ -63,12 +69,9 @@ def test_cpp_call_structure(cpp_index):
     assert {"add_twice", "square"} <= callees("compute")  # compute() calls both
 
 
-@pytest.mark.skipif(shutil.which("scip-python") is None, reason="scip-python not available")
-def test_merge_cpp_and_python(cpp_index, tmp_path):
+def test_merge_cpp_and_python(cpp_index):
     """Two indexes (C++ + Python) union into ONE graph — the mixed-repo path."""
-    py_out = tmp_path / "py.scip"
-    scip_index.run_indexer(PY_FIXTURE, py_out, project_name="callgraph")
-    py_index = scip_index.parse_index(py_out)
+    py_index = scip_index.parse_index(PY_FIXTURE / "callgraph.scip")
 
     g = scip_index.build_graph(py_index, cpp_index)  # union
     names = {s.name for s in g.symbols.values()}

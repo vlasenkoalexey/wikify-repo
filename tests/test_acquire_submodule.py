@@ -119,3 +119,23 @@ def test_local_source_outside_raw_code_makes_relative_symlink(tmp_path):
     assert link.is_symlink()
     import os
     assert not os.path.isabs(os.readlink(link))                # relative, portable
+
+
+def test_clone_with_relative_raw_dir_no_nesting(tmp_path, monkeypatch):
+    """Regression: with a RELATIVE raw_dir (the CLI's default `--root .`), the clone
+    dest used to be resolved against cwd=raw/code twice → raw/code/raw/code/<slug>."""
+    src = tmp_path / "srcrepo"
+    src.mkdir()
+    _git(["init", "-q"], src)
+    (src / "f.txt").write_text("x")
+    _git(["add", "-A"], src)
+    _git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], src)
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    monkeypatch.chdir(proj)
+    acq = acquire.acquire(f"file://{src}", "myrepo", "raw", mode="clone")
+
+    assert (proj / "raw" / "code" / "myrepo" / ".git").exists()
+    assert not (proj / "raw" / "code" / "raw").exists()        # the old nested clone
+    assert acq.repo_dir == (proj / "raw" / "code" / "myrepo").resolve()

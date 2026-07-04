@@ -1,9 +1,15 @@
 # wikify-repo — Implementation Plan (v1, standalone Python)
 
-This is the **build spec**. The design doc (`ingestion-pipeline-design.md`) is the
+This is the **build spec**. The design doc (`docs/design.md`) is the
 *what/why*; this is the *how*. Build **Phase 1 first** and make it pass its
 acceptance test before anything else. v1 is a standalone Python repo — no
 dependency on, and no file sharing with, the autoresearch repo.
+
+> **Currency note.** §1–§9 were the original plan; where reality diverged, the
+> affected sections have been **edited in place** (marked *realized* /
+> *descoped*), and §10 records the mechanisms that went beyond the plan.
+> There is no "later section silently overrides an earlier one" — if you find a
+> contradiction, that's a bug in this doc; fix it here.
 
 ---
 
@@ -32,8 +38,8 @@ steps**. Keeping this boundary clean is the most important implementation rule.
 |---|---|---|
 | acquire/pin, run indexers, parse `.scip`, build symbol graph | **Python** | 0,1 |
 | symbol diff (reconcile) | **Python** | 2 |
-| dispatch extractor | **Python** | 3 |
-| evidence collection (tests/docs/dynamics-source) | **Python** | 4 |
+| ~~dispatch extractor~~ *(descoped — devirtualization in `build_graph` crosses the dynamic-dispatch seam instead; §10.2)* | **Python** | 3 |
+| evidence collection (tests-as-spec; docs/dynamics-source not realized) | **Python** | 4 |
 | **concept synthesis → mechanism pages** | **LLM agent** | 5 |
 | citation linter, assemble, index | **Python** | 6 |
 | coverage set-difference → module catalogs | **Python** | 6b |
@@ -65,28 +71,34 @@ wikify-repo/
   README.md
   wikify/
     __init__.py
-    cli.py            # typer app: prepare / finalize / connect / lint / plan
-    acquire.py        # Stage 0: submodule + pin
-    scip_index.py     # Stage 1: run indexer, parse .scip → SymbolGraph
-    graph.py          # SymbolGraph model: symbols, edges, callers/callees
+    cli.py            # typer app: prepare / finalize / lint / coverage / verify / connect / plan
+    acquire.py        # Stage 0: local symlink / clone / submodule + pin
+    scip_index.py     # Stage 1: run indexers (incl. sharded), parse .scip → SymbolGraph
+    ast_fallback.py   # Stage 1: AST recovery for files pyright crashes on (§10.1)
+    bazel_cc.py       # Stage 1: bazel build+aquery → compile_commands.json for scip-clang (§10.1)
+    languages.py      # Stage 1: language registry/detection; on-demand TS/Go/Rust indexers (§10.8)
+    graph.py          # SymbolGraph model: symbols, edges, callers/callees, devirtualize (§10.2)
     diff.py           # Stage 2: reconcile state vs new index
-    dispatch.py       # Stage 3: native_functions.yaml / registration → map (Phase 2)
-    evidence.py       # Stage 4: tests + dynamics-source + docs
+    evidence.py       # Stage 4: tests-as-spec
     packet.py         # build synthesis packets (Python → LLM interface)
-    lint.py           # Stage 6: citation linter
-    assemble.py       # Stage 6: write index.md, candidate concepts
+    lint.py           # Stage 6: citation linter (catalog-anchor resolution)
+    fix.py            # Stage 6: finalize --fix deterministic lint auto-repair
+    verify.py         # adversarial-verify worklist + verdict aggregation (deterministic half)
+    assemble.py       # Stage 6: write index.md (per-repo + top catalog)
     coverage.py       # Stage 6b: set-difference coverage + per-module catalog pages (+ docstrings, connections)
-    discover.py       # Stage 5 agenda: cluster + centrality-rank + tier + auto-seed concepts (planned)
+    discover.py       # Stage 5 agenda: centrality-rank + auto-seed concepts (realized)
+    docs.py           # Docs mode (source_type: docs): doc packets, src: lint, doc coverage (§10.7)
     source.py         # read def-body snippets + body hashes (shared by packet/diff)
     monikers.py       # parse SCIP symbol strings → descriptors (shared)
-    connect.py        # Stage 7 (Phase 3)
-    slug.py           # moniker ↔ filename
+    connect.py        # Stage 7: inline cross-repo concept links (§10.10)
+    slug.py           # (superseded by catalog anchors — invariant 7; symbols live in catalogs)
     state.py          # .cache/state/<slug>.json
     config.py         # parse config/<slug>.md (frontmatter + concept list)
-  skills/
-    wikify-ingest-repo/SKILL.md
+  .agents/skills/     # tool-neutral canonical home (.claude/skills/ symlinks here)
+    wikify-ingest-repo/
+      SKILL.md
+      prompts/{synthesis,overview,ingest-docs,synthesis-docs,verify}.md
     wikify-connect-repo/SKILL.md
-    prompts/synthesis.md      # the Stage-5 instruction (section 7)
   config/
     <slug>.md         # per-repo markdown config (authored)
     defaults.md       # shared default + type-aware concept sets
@@ -101,16 +113,18 @@ three-bucket schema, NOT committed here.
 ## 4. CLI surface
 
 ```
-wikify prepare  <slug> [--ref <commit>] [--repo <url|path>]
+wikify prepare  <slug> [--ref <commit>] [--repo <url|path>] [--no-reindex]
       # Stages 0–4. Idempotent. Emits .cache/packets/<slug>/<concept>.md and
-      # prints the plan (will build / rebuild / leave / candidate concepts).
-wikify finalize <slug>
-      # Stage 6. Lints the agent-written pages, assembles index.md, updates state.
-      # Non-zero exit + a report if any citation is unresolved.
-wikify lint     <slug>            # Stage 6 lint only (re-runnable)
+      # prints the plan (will build / rebuild / leave) over the DERIVED agenda.
+wikify finalize <slug> [--fix]
+      # Stage 6 + 6b. Emits catalogs, lints the agent-written pages, assembles
+      # index.md, updates state. Non-zero exit + a report on any unresolved citation.
+wikify lint     <slug> [--fix]    # Stage 6 lint only (re-runnable)
 wikify coverage <slug> [--emit]   # Stage 6b: report whole-repo coverage; --emit (re)writes catalogs
-wikify plan     <slug> [--ref]    # dry-run: print the delta, emit nothing
-wikify connect  [--repos a,b,...] # Phase 3
+wikify verify   <slug> [--page]   # adversarial-verify worklist (claims per page; no model)
+wikify plan     <slug> [--ref]    # dry-run: same derived agenda as prepare; needs a cached index
+wikify connect  [--apply k1,k2] [--refresh] [--exclude repo/path] [--vocab concepts]
+      # Stage 7: propose (no args) / wire cross-repo concept links inline (§10.10)
 ```
 
 `finalize` runs Stage 6b automatically (lint concepts → emit module catalogs →
@@ -122,7 +136,7 @@ synthesis. `ingest` is the conceptual reconcile = `prepare` + agent + `finalize`
 
 ---
 
-## 5. Data contracts (pin these — the linter and stubs depend on them)
+## 5. Data contracts (pin these — the linter and catalogs depend on them)
 
 ### 5.1 SymbolGraph from SCIP
 Parse `.scip` (protobuf `Index`) → `documents[] → {occurrences[], symbols[]}`.
@@ -139,29 +153,36 @@ Parse `.scip` (protobuf `Index`) → `documents[] → {occurrences[], symbols[]}
   consecutive definition occurrences in the document. **This is reference-based,
   not true call resolution** — but it is *symbol-accurate* (the name is bound to
   the right symbol by the compiler frontend), which is the whole gain over
-  tree-sitter. Document this approximation in the stub ("calls/refs", not "calls").
-- **Importance rank** (for which symbols get stubs / discovery): `outbound*5 +
-  ref_count*2` (context-sherpa formula). No clustering.
+  tree-sitter. Document this approximation where edges render ("calls/refs", not "calls").
+- **Importance rank** (drives discovery seeding + catalog `uses`/`used by` ranking):
+  `outbound*5 + ref_count*2` (context-sherpa formula). No clustering.
 
-### 5.2 moniker ↔ filename (`slug.py`)
-- Filename = readable slug: `<lang>-<package>-<descriptor-path>`, descriptor
-  suffixes (`#./()`) and unsafe chars → `-`, collapse repeats, lowercase-preserve.
-- On collision, append `-<first8 of sha256(moniker)>`.
-- The **authoritative** identifier is the full moniker in the stub's frontmatter,
-  NOT the filename. The linter resolves a citation by reading the *target stub's
-  frontmatter moniker* and checking it exists in the SCIP index — never by parsing
-  the filename. So the slug only needs to be deterministic + collision-free, not
-  invertible.
+### 5.2 moniker ↔ catalog anchor (invariant 7 — no per-symbol files)
+Symbols live in their **module catalog**, not per-symbol stubs (`slug.py`'s
+filename scheme is superseded; the module is dead weight kept only in history).
+- A symbol's home = `catalog/<module>.md` (one page per source file,
+  `coverage.catalog_rel_path(def_path)`), at anchor
+  `#<QualifiedName>` (`coverage.qualified_name(moniker)` — e.g. `#Buffer.shape`).
+- The **authoritative** identifier is still the full moniker: each catalog page's
+  frontmatter carries a `symbols:` map (anchor → moniker suffix under a factored
+  `symbol_base:` prefix — §10.4). The linter resolves a citation by looking the
+  anchor up in that map and checking the reconstructed moniker exists in the
+  silo's SCIP graph — never by parsing filenames.
+- `coverage.catalog_ref(module_path, moniker)` is the **single source of the
+  citation target format**, shared by the packet (what to cite) and the catalog
+  (what resolves).
 
 ### 5.3 Citation grammar (what `lint.py` parses)
-- **Symbol citation** = a markdown link whose target path ends in
-  `symbols/<slug>.md`. Optionally prefixed inline by a provenance tag:
-  `[extracted → `Sym`](...)` or `[inferred → ...]`.
+- **Symbol citation** = a markdown link whose target is a **catalog anchor**:
+  `../catalog/<module>.md#<QualifiedName>` (path contains `catalog/`, ends `.md`,
+  carries an anchor). No provenance tags in the link text — provenance lives in
+  page frontmatter and `[!inferred]` blocks.
 - **Inferred block** = content inside a `> [!inferred]` blockquote; no citation
   required there.
 - **Lint rules (hard gate, deterministic)**:
-  1. Every link to a `symbols/*.md` must point to an existing stub whose
-     frontmatter `moniker` resolves in the silo's SCIP index. Dead link = FAIL.
+  1. Every catalog citation must resolve — the target catalog page exists and its
+     frontmatter `symbols` map contains the anchor, reconstructing a moniker
+     present in the silo's SCIP graph. Dead/unresolvable citation = FAIL.
   2. In the `## Entry points` and `## Mechanism (step-by-step)` sections, **every
      list item must contain ≥1 symbol citation or an L2 evidence link**.
      Uncited assertion there = FAIL (move it into an `[!inferred]` block to pass).
@@ -169,26 +190,32 @@ Parse `.scip` (protobuf `Index`) → `documents[] → {occurrences[], symbols[]}
      invented symbols). = FAIL.
 - The linter is **checkable without NLP** because rules 2–3 are scoped to named
   sections and list items, not arbitrary prose.
+- `doc-concepts/` pages get rule 1 only (`lint.lint_doc_concepts`) — they come
+  from a project doc, not a packet, so there is no subgraph/uncited gate.
 
 ### 5.4 Synthesis packet (`packet.py`, Python → LLM)
-One markdown file per concept at `.cache/packets/<slug>/<concept>.md`:
+One markdown file per concept at `.cache/packets/<slug>/<concept>.md`
+(+ `<concept>.subgraph.txt`, the moniker set rule 3 gates against):
 ```markdown
-# Packet: <concept>  (repo <slug> @ <ref>)
+# Packet · <concept>  (repo <slug> @ <ref>)
+## Synthesis focus (lens)        ← only when config sets `synthesis_focus` (§10.9)
 ## Seeds
 <seed symbols, or "(discover: top-centrality in module X)">
 ## Subgraph
-<each symbol: moniker, signature, def file:line, docstring summary, callers[], callees[]>
+<each symbol: moniker, signature, def file:line, docstring summary, callers[],
+ callees[], and its `cite:` catalog-anchor link — copy VERBATIM when citing>
 ## Source
-<def-body snippets for the subgraph symbols>
+<def-body snippets for the subgraph symbols (truncated — read the real file)>
 ## Evidence
-<matching tests (assert → symbols), dynamics-source snippets, DOCSTRINGS (author
- intent, citable as L2 — prefer quoting these over guessing; decision 8)>
+<matching tests (assert → symbols), DOCSTRINGS (author intent, citable as L2 —
+ prefer quoting these over guessing; decision 8)>
 ## Template + rules
 <the page template; the citation rules; "cite only symbols above; mark
  uncited claims [!inferred]; keep design-intent dynamics separate">
 ```
-The agent reads only the packet, writes `wiki/code/<slug>/concepts/<concept>.md`, and
-creates any missing `symbols/<slug>.md` stubs for symbols it cites.
+The agent reads the packet (and the real source it points to), writes
+`wiki/code/<slug>/concepts/<concept>.md`, and creates **no stubs** — every
+citation is a catalog anchor pasted from the Subgraph's `cite:` links.
 
 ### 5.5 Reconcile state (`.cache/state/<slug>.json`)
 ```json
@@ -205,8 +232,9 @@ decision 7 for the why). Contracts:
 - `documentable_symbols(graph)` = in-repo symbols with a def whose terminal
   descriptor suffix ∈ {Type (class), Method (fn/method), Term (module value)}.
   Externals (no def) and locals/params are excluded.
-- `covered` = monikers cited by a concept page (resolved via each page's stub
-  frontmatter, same resolver the linter uses).
+- `covered` = monikers cited by a concept page (`covered_monikers` resolves the
+  catalog-anchor citations against the graph — module from the link path +
+  qualified-name match — so it works while catalogs are being regenerated).
 - A symbol is `covered` (deep, concept page), `catalog-only` (in a generated
   module catalog), or `unrepresented` (a coverage hole — should be empty after
   6b). `emit_catalogs` writes one `catalog/<def-file>.md` per module listing all
@@ -245,7 +273,7 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
 **Phase 1 acceptance (definition of done):**
 1. `wikify prepare torchtitan` runs scip-python, emits one packet per concept,
    prints a plan. No model calls.
-2. Agent synthesis produces one page per concept under `wiki/torchtitan/concepts/`.
+2. Agent synthesis produces one page per concept under `wiki/code/torchtitan/concepts/`.
 3. `wikify finalize torchtitan` → linter exits 0: **every citation resolves**,
    every config concept has a page, no invented symbols.
 4. Idempotency: re-running `prepare` with no source/config change ⇒ plan = no-op.
@@ -260,16 +288,20 @@ Scope: Stages 0,1,2,5,6,**6b** for a **pure-Python** repo. **Skip** dispatch
    wiki. (Coverage represents and internally connects modules; it does not bridge
    the dynamic trainer→model dispatch seam — that is explicitly out of Phase 1.)
 
-### Phase 2 — C++ + dispatch
-- `scip-clang` path: out-of-tree build → `.cache/build/<slug>/compile_commands.json`
-  → index. Mixed-language repos union the Python + C++ indexes.
-- `dispatch.py`: prefer parsing **`native_functions.yaml`** (structured) over
-  macro-parsing; fall back to `TORCH_LIBRARY_IMPL` sites only where the YAML is
-  absent. Output `wiki/code/<slug>/maps/dispatch.md`.
-- Add dynamics-source + in-repo-docs evidence (rest of Stage 4).
-- Target: `pytorch/xla`, then `torch_tpu`.
-- Acceptance: torch_tpu ingests; dispatch map rows all cite a registration site;
-  C++ citations resolve.
+### Phase 2 — C++  *(realized — dispatch extractor descoped)*
+- `scip-clang` path ✅: compile DB auto-generated from bazel (`bazel_targets:` →
+  `bazel_cc.py`, §10.1) or a pre-existing `compile_commands:` path. Mixed-language
+  repos union the Python + C++ indexes.
+- ~~`dispatch.py` (`native_functions.yaml` / `TORCH_LIBRARY_IMPL` → `maps/dispatch.md`)~~
+  **descoped**: never built, and no `wiki/maps/` exists in any ingested silo.
+  Devirtualization (CHA over `is_implementation`, §10.2) turned out to cross the
+  dynamic-dispatch seam generically — a registration-table extractor would add a
+  pytorch-specific map on top; revisit only if a real question needs it.
+- Dynamics-source + in-repo-docs evidence (rest of Stage 4): **not realized**;
+  evidence = tests-as-spec. Project docs are ingested separately as doc-concepts
+  (§10.4), which covers most of the original "docs evidence" intent.
+- Target: `pytorch/xla`, then `torch_tpu` — realized on pytorch, jax, xla, torch_tpu.
+- Acceptance (as realized): torch_tpu ingests; C++ citations resolve.
 
 ### Phase 3 — connect (multi-repo), graded & interactive
 Split by the Python/LLM line and by depth (design.md Stage 7). A new `wikify-connect-repo`
@@ -299,61 +331,28 @@ skill drives the LLM half; `connect.py` is the deterministic half.
 
 ---
 
-## 7. Stage-5 synthesis instruction (`skills/.../prompts/synthesis.md`)
+## 7. Stage-5 synthesis instruction
 
-This is the heart — its quality sets the wiki's quality. Drop it in verbatim and
-tune.
+This is the heart — its quality sets the wiki's quality. The **authoritative,
+shipped prompt is `.agents/skills/wikify-ingest-repo/prompts/synthesis.md`** —
+edit it there; this doc deliberately does not embed a copy (an embedded copy
+drifted badly once: stub-style citations, no Mermaid diagram, three iterations
+stale). What it enforces, in one breath:
 
-```markdown
-# Synthesis instruction — one mechanism page from one packet
+- **Grounding floor (non-negotiable):** cite ONLY Subgraph symbols, by pasting the
+  packet's `cite:` catalog-anchor links verbatim (no stubs are ever created);
+  ungrounded claims go in `> [!inferred]` blocks; Entry-points/Mechanism items
+  must each carry a citation (the linter's rule 2).
+- **Heavy processing, not annotation:** read the REAL source at the packet's
+  `file:line` (snippets are truncated); lead with Overview + a grounded **Mermaid
+  diagram** + Design rationale; weave citations into insight prose — never a
+  citation-per-clause trace.
+- **Lens-aware:** if the packet carries a "Synthesis focus" block, emphasis (not
+  grounding) follows it (§10.9).
 
-You are given ONE packet describing ONE concept of a codebase. Produce ONE
-markdown mechanism page. You are documenting how the code WORKS, grounded only in
-the packet. You are not summarizing files.
-
-## Hard rules
-- Use ONLY symbols present in the packet's Subgraph. Never name a symbol that is
-  not there. If you need one that's missing, say so in Open questions — do not
-  invent it.
-- In "Entry points" and "Mechanism", every bullet MUST cite a symbol with a
-  markdown link to its stub: [`Sym`](../symbols/<slug>.md). Create the stub if it
-  doesn't exist (frontmatter: moniker, def file:line, callers, callees, "Cited by").
-- Any claim you cannot ground in a cited symbol or an Evidence item goes in a
-  `> [!inferred]` block, flagged as your inference — never stated as fact.
-- "Dynamics" describes DESIGN INTENT from source + tests only. Never claim runtime
-  behavior you cannot see statically. Do not write an "Observed dynamics" section.
-
-## Page template
----
-title: <concept title>
-type: concept
-provenance: mixed
-concept: <concept-slug>
-updated: <date>
-status: fresh
----
-# <concept title>
-<one-line scope>
-## Entry points
-- [`Sym`](...) — what it is, when it's hit.
-## Mechanism (step-by-step)
-1. <step> [extracted → `Sym`](...)
-## Key data structures
-## Dynamics (design intent)
-<grounded in tests/scheduler source; link the test-spec page>
-## Edge cases
-## Open questions
-## See also
-```
-
-## Method
-1. Start from Seeds; walk the Subgraph (callers/callees already provided) to find
-   the spine of the mechanism.
-2. Read the provided Source snippets; do not ask for files outside the packet.
-3. Write the steps in execution order. Cite each.
-4. Pull dynamics from Evidence (tests + scheduler/stream/collective source).
-5. List honest Open questions where the packet was insufficient.
-```
+Sibling prompts in the same directory: `overview.md` (per-repo overview page),
+`ingest-docs.md` (doc-concept extraction), `synthesis-docs.md` (docs-mode track),
+`verify.md` (adversarial refutation pass).
 
 ---
 
@@ -395,11 +394,11 @@ wikify = "wikify.cli:app"
 - Install: `pipx install wikify-repo` or `uv tool install wikify-repo` → `wikify`
   on PATH.
 - **External prereqs are not pip-installable**: `scip-python` (npm → Node),
-  `scip-clang` (binary, Phase 2). Ship:
-  - `wikify doctor` — checks for node / scip-python / scip-clang, reports what's
-    missing.
-  - `wikify setup` — bootstraps them (`npm i -g @sourcegraph/scip-python`,
-    download scip-clang binary).
+  `scip-clang` (binary, Phase 2). Today `scripts/setup-vendor.sh` bootstraps both
+  (+ generates `scip_pb2.py`), and TS/Go/Rust indexers are installed on demand by
+  `prepare` (§10.8). *Planned for PyPI packaging:* fold that into
+  `wikify doctor` (report what's missing) / `wikify setup` (bootstrap) — these
+  commands do **not** exist yet.
 - **Docker** (Phase 2+): an image bundling Python + Node + scip tools (+ Bazel for
   the C++ build). For the C++ path this is close to required and makes CI
   cache-regeneration clean.
@@ -475,10 +474,12 @@ mechanics are unchanged.
 
 ## 10. Realized mechanisms (post-v1 iteration — authoritative)
 
-The §1–9 plan held, but three real ingests (torchtitan, **pytorch**, **jax**,
-**torch_tpu**) forced mechanisms beyond it. Where this section conflicts with an
-earlier one, **this section wins**. Phase status: Phase 1 (Python) ✅; Phase 2
-(C++) ✅ via bazel; discovery + scaled synthesis ✅.
+The §1–9 plan held, but four real ingests (torchtitan, **pytorch**, **jax**,
+**torch_tpu**) forced mechanisms beyond it. §1–9 have been edited in place where
+reality diverged (see the currency note at the top), so this section should no
+longer *contradict* anything above — it *extends* the plan with the realized
+mechanisms. Phase status: Phase 1 (Python) ✅; Phase 2 (C++) ✅ via bazel
+(dispatch extractor descoped — see Phase 2); discovery + scaled synthesis ✅.
 
 ### 10.1 Stage 1 — indexing at scale & C++ from bazel
 - **Sharded scip-python** (`run_indexer_sharded`, config `index_shards: ["pkg/*"]`).
@@ -571,6 +572,13 @@ overview/concept synthesis — e.g. "TPU performance — kernels, sharding, auto
 `wiki/concepts/` filenames (CLI `--vocab <dir>` to override) and *which* concepts to wire is a
 skill-interactive choice (batch does only `--refresh`) — nothing to put in `config/<slug>.md`.
 
+### 10.6 Vendored tools / setup
+`scripts/setup-vendor.sh` fetches scip-python (npm) + scip-clang (pinned binary,
+~130 MB — NOT committed, exceeds GitHub's limit) and generates `scip_pb2.py`.
+`scripts/bazel_compile_commands.py` is a thin CLI over `wikify.bazel_cc`.
+`project_version` stays `"0.0.0"` (a placeholder; nothing depends on its value —
+monikers only need internal consistency).
+
 ### 10.7 Docs mode (`source_type: docs`) — `wikify/docs.py`
 The prose track (design.md "Docs mode"). Same Karpathy-synthesis-in-a-deterministic-shell as
 code, with the anchor swapped from SCIP symbol → source document + `#section`. `cli.py` branches
@@ -604,13 +612,6 @@ tsconfig), `scip-go` (module root, needs go.mod), `rust-analyzer scip` (writes `
 - **Merge** — each language writes `.cache/scip/<slug><suffix>.scip`; `cli._graph` globs and merges
   them all (`<slug>.scip` + `<slug>.*.scip`), so a polyglot repo becomes one graph.
 Pinning tests: `tests/test_languages.py` (detection, registry, ask-don't-auto-install).
-
-### 10.6 Vendored tools / setup
-`scripts/setup-vendor.sh` fetches scip-python (npm) + scip-clang (pinned binary,
-~130 MB — NOT committed, exceeds GitHub's limit) and generates `scip_pb2.py`.
-`scripts/bazel_compile_commands.py` is a thin CLI over `wikify.bazel_cc`.
-`project_version` stays `"0.0.0"` (a placeholder; nothing depends on its value —
-monikers only need internal consistency).
 
 ### 10.9 Synthesis lens + host-registration (realized)
 Two thin, high-leverage additions realized post-v1 (design.md Decisions log):

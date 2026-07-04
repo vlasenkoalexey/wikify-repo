@@ -104,10 +104,29 @@ Callers/callees are reference-scoped (SCIP has no call role), labeled "calls/ref
     return out
 
 
+_CONNECT_UP_MARK = "<!-- connect:up:begin -->"
+
+
+def _connection_status(silo_dir: Path) -> str:
+    """Derived from the pages themselves (no side-file): a silo is connected iff
+    any of its concept pages carries a Stage-7 up-link block."""
+    cdir = silo_dir / "concepts"
+    if not cdir.is_dir():
+        return "standalone"
+    n = sum(
+        1 for p in sorted(cdir.glob("*.md"))
+        if _CONNECT_UP_MARK in p.read_text(encoding="utf-8", errors="replace")
+    )
+    return f"connected ({n} concept{'s' if n != 1 else ''})" if n else "standalone"
+
+
 def write_top_index(wiki_dir: str | Path, slugs: list[str], date: str) -> Path:
     wiki_dir = Path(wiki_dir)
     wiki_dir.mkdir(parents=True, exist_ok=True)
-    rows = "\n".join(f"| {s} | [{s}]({s}/index.md) | standalone |" for s in sorted(slugs))
+    rows = "\n".join(
+        f"| {s} | [{s}]({s}/index.md) | {_connection_status(wiki_dir / s)} |"
+        for s in sorted(slugs)
+    )
     text = f"""---
 title: wikify — top-level catalog
 updated: {date}

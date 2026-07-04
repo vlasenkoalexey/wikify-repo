@@ -212,6 +212,8 @@ def prepare(
     p, cfg = _load(root, slug)
     acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
     typer.echo(f"acquired {slug} @ {acq.commit[:10]}  ({acq.repo_dir})")
+    if cfg.synthesis_focus.strip():
+        typer.echo(f"synthesis focus (lens): {cfg.synthesis_focus.strip()}")
 
     if cfg.source_type == "docs":
         _prepare_docs(p, cfg, acq)
@@ -288,7 +290,7 @@ def prepare(
             continue
         text, subgraph = packet.build_packet(
             graph, acq.repo_dir, slug, acq.commit, concept, cfg.tests, _today(),
-            seed_monikers=seedmap.get(concept.slug),
+            seed_monikers=seedmap.get(concept.slug), focus=cfg.synthesis_focus,
         )
         pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
         typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")

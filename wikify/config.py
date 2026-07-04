@@ -24,7 +24,7 @@ import yaml
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
                  "acquire", "wiki_subdir", "source_type", "doc_globs",
-                 "coverage_collapse", "coverage_exclude"}
+                 "coverage_collapse", "coverage_exclude", "synthesis_focus"}
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -95,6 +95,11 @@ class RepoConfig:
     # tests/vendored — a dropped symbol cannot be cited). ``*`` spans ``/``.
     coverage_collapse: list[str] = field(default_factory=list)
     coverage_exclude: list[str] = field(default_factory=list)
+    # A domain **lens** foregrounded during synthesis: the overview + concept pages organize around
+    # it and lead with the symbols that matter for it (e.g. "TPU performance — kernels, sharding,
+    # attention, autotune knobs, precision, memory"). Surfaced in every packet + the doc worklist;
+    # honored by prompts/synthesis.md, overview.md, ingest-docs.md. Empty → neutral synthesis.
+    synthesis_focus: str = ""
     compile_commands: str | None = None  # path to a pre-existing compile_commands.json
     # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
     # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
@@ -253,6 +258,7 @@ def load_config(path: str | Path) -> RepoConfig:
         doc_globs=_as_list(fm.get("doc_globs")),
         coverage_collapse=_as_list(fm.get("coverage_collapse")),
         coverage_exclude=_as_list(fm.get("coverage_exclude")),
+        synthesis_focus="" if fm.get("synthesis_focus") is None else str(fm.get("synthesis_focus")),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

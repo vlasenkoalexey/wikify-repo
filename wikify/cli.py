@@ -333,7 +333,8 @@ def finalize(
     # Source links default to a path relative to each catalog page (local repo);
     # cfg.source_url overrides with a base URL, or "" disables them.
     catalogued, catalog_paths = coverage_mod.emit_catalogs(
-        graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url)
+        graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url,
+        collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude)
     typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
 
     if fix:

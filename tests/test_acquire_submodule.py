@@ -79,14 +79,60 @@ def test_submodule_mode_adds_gitlink(tmp_path, monkeypatch):
     assert acq.commit                                    # SHA recorded
 
 
-def test_clone_mode_is_default(tmp_path):
+def test_submodule_mode_is_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "protocol.file.allow")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "always")
+
     url = _make_source_repo(tmp_path / "src")
     wiki = tmp_path / "wiki"
     wiki.mkdir()
     _git(["init", "-q"], wiki)
-    acquire.acquire(url, "s", wiki / "raw")  # no mode -> clone
+    _git(["config", "user.email", "t@t"], wiki)
+    _git(["config", "user.name", "t"], wiki)
+    acquire.acquire(url, "s", wiki / "raw")  # no mode -> submodule
+    assert (wiki / ".gitmodules").exists()
+    assert (wiki / "raw/code/s/mod.py").exists()
+
+
+def test_clone_mode_still_available(tmp_path):
+    url = _make_source_repo(tmp_path / "src")
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    _git(["init", "-q"], wiki)
+    acquire.acquire(url, "s", wiki / "raw", mode="clone")
     assert not (wiki / ".gitmodules").exists()
     assert (wiki / "raw/code/s/mod.py").exists()
+    assert (wiki / "raw/code/s/.git").is_dir()  # plain clone, not a gitlink file
+
+
+def test_submodule_mode_converts_existing_plain_clone(tmp_path, monkeypatch):
+    # A repo acquired before `acquire: submodule` was set (or before it became the
+    # default) leaves a plain clone at raw/code/<slug>. Re-running acquire in
+    # submodule mode must convert it in place rather than silently no-op.
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "protocol.file.allow")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "always")
+
+    url = _make_source_repo(tmp_path / "src")
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    _git(["init", "-q"], wiki)
+    _git(["config", "user.email", "t@t"], wiki)
+    _git(["config", "user.name", "t"], wiki)
+
+    acquire.acquire(url, "s", wiki / "raw", mode="clone")
+    assert (wiki / "raw/code/s/.git").is_dir()          # plain clone first
+    assert not (wiki / ".gitmodules").exists()
+
+    acq = acquire.acquire(url, "s", wiki / "raw", mode="submodule")
+
+    assert (wiki / ".gitmodules").exists()              # now a submodule
+    assert (wiki / "raw/code/s/mod.py").exists()
+    ls = subprocess.run(["git", "ls-files", "--stage", "raw/code/s"],
+                        cwd=wiki, capture_output=True, text=True).stdout
+    assert ls.startswith("160000"), ls                   # 160000 == gitlink mode
+    assert acq.commit
 
 
 def test_local_source_under_raw_code_makes_no_symlink(tmp_path):

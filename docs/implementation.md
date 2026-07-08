@@ -562,7 +562,8 @@ instead of an alphabetical slice. Seeds are always kept.
 `index_shards` (shard globs), `compile_commands` (pre-existing C++ DB),
 `bazel_targets` (auto-generate the C++ DB from bazel), `source_url` (catalog
 source-link base; default relative-local, `""` disables), `acquire`
-(`clone`|`submodule`), `wiki_subdir` (default `code` → `wiki/code/<slug>`; `""` = flat),
+(`submodule` default | `clone`; submodule mode converts an existing plain clone at
+the same slug in place), `wiki_subdir` (default `code` → `wiki/code/<slug>`; `""` = flat),
 `source_type` (`code`|`docs`), `doc_globs` (docs-mode file globs), `languages` (override
 detection; e.g. `[python, typescript]`), `synthesis_focus` (a domain **lens** foregrounded in
 overview/concept synthesis — e.g. "TPU performance — kernels, sharding, autotune, precision"),

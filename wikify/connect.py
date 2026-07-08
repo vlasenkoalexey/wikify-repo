@@ -23,6 +23,7 @@ mechanical. The vocabulary is the host wiki's ``wiki/concepts/`` filenames, neve
 from __future__ import annotations
 
 import os
+from urllib.parse import quote
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -199,8 +200,12 @@ def _replace_block(text: str, begin: str, end: str, block: str | None) -> str:
 
 
 def _relpath(from_wiki_rel: str, to_wiki_rel: str) -> str:
-    """A markdown link from the page at ``wiki/<from_wiki_rel>`` to ``wiki/<to_wiki_rel>``."""
-    return os.path.relpath(to_wiki_rel, str(Path(from_wiki_rel).parent))
+    """A markdown link from the page at ``wiki/<from_wiki_rel>`` to ``wiki/<to_wiki_rel>``.
+    Path segments are URL-encoded (spaces → %20, parens → %28/%29, …) so links render on
+    GitHub and Obsidian for vaults whose filenames contain spaces/parens; separators and
+    anchor fragments are preserved."""
+    rel = os.path.relpath(to_wiki_rel, str(Path(from_wiki_rel).parent))
+    return quote(rel, safe="/#")
 
 
 def _down_block(key: str, hits: list[Match], concept_rel: str) -> str:

@@ -8,6 +8,7 @@ as a symlink for traceability); a URL is cloned. ``raw/`` holds immutable inputs
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,16 +56,19 @@ def acquire(
     """Resolve ``source`` (local path or git URL) to a pinned source tree.
 
     ``mode`` controls how a git-URL source lands in ``raw/code/<slug>``:
-    ``"clone"`` (default) plain-clones it; ``"submodule"`` adds it as a git submodule
-    of the surrounding wiki repo so the pin is the committed gitlink. Submodule mode
-    falls back to a clone when ``raw/`` is not inside a git repo. A local-path source is used
+    ``"submodule"`` (default) adds it as a git submodule of the surrounding wiki repo so
+    the pin is the committed gitlink; ``"clone"`` plain-clones it instead. Submodule mode
+    falls back to a clone when ``raw/`` is not inside a git repo. If ``dest`` already
+    exists as a plain clone (e.g. it was acquired before ``acquire: submodule`` was set,
+    or the default changed), submodule mode converts it in place: the plain clone is
+    removed and re-added as a submodule at the same path. A local-path source is used
     in place — surfaced under ``raw/code/<slug>`` as a *relative* symlink only when it lives
     outside ``raw/code/`` (a source already under ``raw/code/`` is used directly, no symlink).
     """
     raw_code = Path(raw_dir) / "code"
     raw_code.mkdir(parents=True, exist_ok=True)
     dest = raw_code / slug
-    mode = (mode or "clone").lower()
+    mode = (mode or "submodule").lower()
 
     src_path = Path(source)
     if src_path.exists():
@@ -80,17 +84,23 @@ def acquire(
                 dest.symlink_to(os.path.relpath(repo_dir, raw_code), target_is_directory=True)
             except OSError:
                 pass
-    elif mode == "submodule" and not dest.exists():
+    elif mode == "submodule":
         wiki_root = _toplevel(raw_code)
         if wiki_root is None:
             # Not a git repo — submodule is impossible; fall back to a plain clone.
             # Clone dest is the bare slug: git resolves it against cwd=raw_code, so
             # passing str(dest) here would double the path when raw_dir is relative.
-            _git(["clone", source, slug], cwd=raw_code)
+            if not dest.exists():
+                _git(["clone", source, slug], cwd=raw_code)
         else:
-            rel = dest.resolve().relative_to(wiki_root.resolve())
-            # --force: wikify owns raw/code/, so don't let a gitignore line block the add.
-            _git(["submodule", "add", "--force", source, str(rel)], cwd=wiki_root)
+            if dest.exists() and (dest / ".git").is_dir():
+                # A plain clone already sits at this slug (acquired before submodule mode
+                # was requested) — remove it and re-add as a submodule at the same path.
+                shutil.rmtree(dest)
+            if not dest.exists():
+                rel = dest.resolve().relative_to(wiki_root.resolve())
+                # --force: wikify owns raw/code/, so don't let a gitignore line block the add.
+                _git(["submodule", "add", "--force", source, str(rel)], cwd=wiki_root)
         repo_dir = dest.resolve()
     else:
         # Treat as a git URL; clone into raw/code/<slug>. Dest is the bare slug

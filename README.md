@@ -19,6 +19,9 @@ the code that explains ~80% of it, and give the rest a deterministic catalog pag
 **For:** teams running coding agents on a codebase too large to read; knowledge bases that span many
 repositories; onboarding without a tour guide.
 
+[![Force-directed graph of a wiki produced by wikify-repo: two ingested codebases plus prose pages, colored by page type — click for the interactive view](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
+<sub>A wiki produced by this tool — two ingested codebases plus prose pages, every link a citation. Click for the [interactive view](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/).</sub>
+
 ## 30 seconds
 
 ```bash
@@ -252,12 +255,10 @@ idempotently); paste it by hand when you are consuming a committed wiki without 
 ## Demo and template
 
 **[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo)**
-is a live, populated wiki *produced by this tool* — two real codebases
+is a live, populated wiki *produced by this tool* (the graph at the top of this page) — two real codebases
 ([`mini_pytorch_xla`](https://github.com/vlasenkoalexey/wikify-repo-demo/blob/main/wiki/code/mini_pytorch_xla/overview.md)
 and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
 
-[![Force-directed graph of the wiki: two ingested codebases (mini_pytorch_xla and wikify-repo) plus the prose pages, colored by page type](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
-(click image for interactive view)
 
 It plays two roles:
 

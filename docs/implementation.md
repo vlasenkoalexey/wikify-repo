@@ -229,10 +229,13 @@ citation is a catalog anchor pasted from the Subgraph's `cite:` links.
 ```json
 { "ref": "<sha>",
   "symbols": { "<moniker>": "<body-sha>" },
-  "pages": { "<concept>": { "cited": ["<moniker>", ...], "built_ref": "<sha>" } } }
+  "paths":   { "<moniker>": "<def file>" },
+  "pages": { "<concept>": { "cited": ["<moniker>", ...], "built_ref": "<sha>", "body_sha": "<sha>" } } }
 ```
 Reconcile: new symbol body-hashes vs `state.symbols` → changed monikers → any page
 whose `cited` ∩ changed ≠ ∅ is `stale`. Concepts in config with no page = `build`.
+`paths` feeds move detection (§10.13): a symbol with an unchanged body in a new file, or a
+one-to-one rename with the same qualified name and body, is `relink`ed, not rebuilt.
 
 ### 5.6 Coverage / catalog (`coverage.py`, Stage 6b)
 A **set-difference over the SCIP symbol table — NOT a graph walk** (see design
@@ -812,3 +815,28 @@ a second run is a no-op.
   `status` ∈ {draft, stable, deprecated}, `stale_after` datetime.
 - Prompts no longer write `status: fresh`; synthesis.md tells the agent the tool owns
   `generated`/`verified`/`sources`/`status`. Tests: `tests/test_okf.py`, `tests/test_cli.py`.
+
+### 10.13 Relocation on file moves — `wikify/relink.py` (realized 2026-09-05)
+Design.md decisions log "Moves are relinked, not rebuilt". Before: a Python file move
+renamed every moniker in it (the module is part of the moniker), so pages citing them were
+*removed*-invalidated and rebuilt by the LLM although nothing changed; a C++ move kept the
+monikers, so the page was left alone with catalog links pointing at the old path — and
+because `finalize` never deleted the old catalog page, lint stayed green over a stale link.
+- **Detection** (`diff.detect_moves`, needs `state.paths`): *path move* = same moniker, same
+  body hash, different `def_path` → `old → old`; *rename* = removed + added moniker with the
+  same `qualified_name` and body hash, accepted only one-to-one → `old → new`. Anything
+  ambiguous stays on the changed/removed path (a rebuild). Moved monikers leave the
+  invalidating set; the plan gains a `relink` bucket and reports `N moved`.
+- **Relink** (`prepare`, when the plan has moves): `relink.link_map` turns each move into
+  `(old catalog rel path, old anchor) → (new, new)`; `relink_text` rewrites only matching
+  citation targets, preserving the page's own `../` prefix and label; `relink_silo` applies
+  it to `concepts/` and `doc-concepts/`, remaps renamed monikers in each packet
+  `.subgraph.txt` (lint rule 3) and in the verify cache evidence keys (holds carry over);
+  `state.apply_moves` moves hashes, paths and page citations to the new monikers, so the
+  next `prepare` is a no-op. Idempotent; the linter at finalize remains the gate.
+- **Catalog pruning** (`finalize`): `relink.prune_catalogs` deletes catalog pages for modules
+  no longer in the graph (and empty dirs), so an unrelinked stale link becomes a visible
+  lint failure instead of silent staleness.
+- `finalize` now records `state.paths`; silos finalized before this have none and get
+  ordinary changed/removed treatment on their first `--ref` bump, moves from then on.
+  Tests: `tests/test_relink.py`, `tests/test_cli.py` (simulated move end to end).

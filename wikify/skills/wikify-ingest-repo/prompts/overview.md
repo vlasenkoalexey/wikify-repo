@@ -38,7 +38,10 @@ their relationships (e.g. config → trainer → {model, dataloader, optimizer,
 checkpoint, metrics} over a parallelism substrate). Nodes link-labeled with the
 concept they map to. Add a second diagram for a cross-cutting flow (e.g. one
 training step end-to-end, or the model-registration/dispatch path) when it earns
-its place. Fence as ```mermaid.
+its place. Fence as ```mermaid. Under each diagram, a `Legend:` list mapping every
+node id to the concept page that owns it (`- \`TRAIN\` — [training loop](concepts/…)`),
+so the picture routes like the map does. Keep a diagram under 20 nodes; two readable
+diagrams beat one complete one.
 
 ## Main concepts
 A short subsection per concept (5–10 total): one tight paragraph each, each ending

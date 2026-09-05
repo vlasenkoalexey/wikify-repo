@@ -83,13 +83,34 @@ updated: <date>
 and how the pieces relate. This is the mental model. Light citations only.
 
 ## Diagram
-At least ONE Mermaid diagram that captures the mechanism visually — pick the kind
-that fits: a `flowchart` for a data/control path, a `sequenceDiagram` for an
-ordered interaction, a `classDiagram` for a type/containment structure. Label
-nodes with the real symbol names you cite (so the diagram is grounded, not
-decorative). Keep it to the load-bearing ~5–12 nodes; the diagram should make the
-mechanism *clickable in the head*, not reproduce every edge. Add a second diagram
-only if a distinct view genuinely adds understanding. Fence as ```mermaid.
+At least ONE Mermaid diagram that captures the mechanism visually. A diagram here is a
+**claim about the code** that an agent will read as a summary of the call/data structure and a
+human will read instead of the prose, so it must be grounded and readable:
+
+- **Pick the kind by the question the page answers**: a `flowchart` for a data/control path
+  or a structure; a `sequenceDiagram` for an ordered interaction between components; a
+  `stateDiagram-v2` for a lifecycle; a `classDiagram` for a type/containment structure. Never
+  a diagram for decoration.
+- **Nodes are symbols.** Use short, stable node ids (`OP`, `CACHE`) and label each node with
+  the real symbol name it stands for. Every node that stands for a symbol must be in the
+  packet Subgraph; an abstraction (`TPU`, `user code`) is allowed but is marked as such in
+  the legend.
+- **Edges are relationships that exist**: a call, a data flow, or a state transition you can
+  also state in the Mechanism section. Label an edge when the action or the data it carries
+  matters (`-->|"builds"|`).
+- **Readable**: the load-bearing 5–12 nodes, never more than 20; split into two diagrams
+  before that. No `classDef`/`style` noise; ASCII labels.
+- **Legend (required for flowcharts).** Directly under the fence, a `Legend:` list mapping
+  every node id to its symbol as an ordinary catalog citation, or to `(concept)`:
+  ```
+  Legend:
+  - `OP` — [`DispatchOp`](../catalog/torch_tpu/eager/op_dispatcher.h.md#DispatchOp)
+  - `TPU` — (concept)
+  ```
+  The legend is what lets an agent follow the picture into the source; its links go through
+  the same citation gate as prose, and `finalize` warns when a node has no legend entry.
+- Add a second diagram only if a distinct view genuinely adds understanding (a structure
+  view plus one flow is the usual pair). Fence as ```mermaid.
 
 ## Design rationale (why it's built this way)
 The non-obvious decisions and their reasons — grounded in docstrings/comments/tests

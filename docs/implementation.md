@@ -914,3 +914,23 @@ scip-python / scip-clang **on demand** when missing (announced; `--no-install-in
 into an error with the fix), matching the TS/Go/Rust path; `_scip_clang_bin` prefers the user
 prefix, then a repo-local `vendor/bin`, then PATH. `scripts/setup-vendor.sh` and
 `scripts/install-skill.sh` remain as one-line wrappers for one release. Tests: `tests/test_setup.py`.
+
+### 10.17 Diagrams: Mermaid floor + lint-checked legend — `wikify/diagrams.py` (realized 2026-09-05)
+No Python package parses Mermaid (its grammar exists only in JavaScript), so this is a
+**heuristic floor** — the four general rules of oh-my-mermaid's validator, ported — plus the one
+thing that makes a diagram usable by a reader, a legend. All warnings, never a gate.
+- `diagrams.fences` extracts ```mermaid fences (YAML front matter and `%%` lines skipped);
+  `check_page` warns on an empty fence, an unknown first-line diagram type, unbalanced brackets
+  per line (quoted label text excluded), a flowchart with no recognizable nodes, and more than
+  `MAX_NODES` (20) nodes. `flowchart_nodes` is a regex heuristic over node definitions and bare
+  ids around edge operators — a miss is a missed warning, never a false error.
+- **Legend**: `legend_after` parses the `Legend:` list under a fence (`- \`ID\` — [\`Sym\`](…)` or
+  `(concept)`). Coverage warnings: nodes with no entry, entries naming no node (ids or labels,
+  normalized). The links themselves are ordinary catalog citations, already gated by lint rules
+  1 and 3 — a legend cannot cite what the prose could not. Flowcharts without a legend are
+  *counted* (one summary line), not listed, so pre-legend silos stay quiet.
+- Printed by `finalize` and `lint` as `warning: diagram: <page>:L<n>: …` plus one `diagrams:`
+  summary line. Prompts: synthesis.md's Diagram section (type by question, nodes are symbols,
+  edges are real relationships, ≤ 20 nodes, required legend); overview.md (legend to concept
+  pages). Optional accelerator, not built: Mermaid's own `mermaid.parse` via Node when present —
+  wikify never requires npm. Tests: `tests/test_diagrams.py`.

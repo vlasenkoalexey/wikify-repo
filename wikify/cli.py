@@ -33,6 +33,7 @@ from . import (
     packet,
     scip_index,
     state as state_mod,
+    subsystems as subsystems_mod,
     verify as verify_mod,
 )
 from .config import Concept, RepoConfig, load_config
@@ -139,17 +140,95 @@ def _graph(p: Paths):
     return scip_index.build_graph(*indexes)
 
 
-def _derive_agenda(graph, cfg: RepoConfig):
-    """The DERIVED agenda (decision 8): discovery ranks modules by centrality and
-    auto-seeds concepts; config concepts override/extend on slug collision.
+class Agenda:
+    """The DERIVED agenda for one run: concepts + how each is seeded and scoped."""
 
-    Shared by ``prepare`` and ``plan`` so the dry-run models the real run.
-    Returns (agenda_cfg, seedmap, n_discovered)."""
-    discovered = discover.discover_concepts(graph)
-    seedmap = {d.slug: d.seeds for d in discovered}
+    def __init__(self, cfg: RepoConfig, seedmap: dict, scopes: dict, n_discovered: int,
+                 mode: str, subsystems: list, defaulted: bool) -> None:
+        self.cfg = cfg                  # RepoConfig with ``concepts`` = the full agenda
+        self.seedmap = seedmap          # concept slug → seed monikers (discovered/subsystem)
+        self.scopes = scopes            # concept slug → rendered ``## Scope`` block
+        self.n_discovered = n_discovered
+        self.mode = mode                # "subsystems" | "modules"
+        self.subsystems = subsystems    # planned Subsystem objects (subsystems mode)
+        self.defaulted = defaulted      # mode came from the fresh/existing rule, not config
+
+    @property
+    def concepts(self):
+        return self.cfg.concepts
+
+    def summary(self) -> str:
+        return (f"agenda: {self.n_discovered} discovered + "
+                f"{len(self.cfg.concepts) - self.n_discovered} config = "
+                f"{len(self.cfg.concepts)} concepts ({self.mode})")
+
+
+def _agenda_mode(cfg: RepoConfig, state: dict | None, override: str | None = None) -> tuple[str, bool]:
+    """Resolve the planner mode: explicit (CLI/config) wins; else a fresh silo plans by
+    subsystems and an existing silo keeps module discovery (no surprise rebuilds)."""
+    if override:
+        return override, False
+    if cfg.agenda:
+        return cfg.agenda, False
+    fresh = not state or not state.get("pages")
+    return ("subsystems" if fresh else "modules"), True
+
+
+def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
+                   agenda_override: str | None = None) -> Agenda:
+    """The DERIVED agenda (decision 8): a planner proposes units and auto-seeds concepts;
+    config concepts override/extend on slug collision.
+
+    ``subsystems`` (§10.11): directory-shaped units ranked by external fan-in, seeded from
+    entry points + hubs, each packet carrying a ``## Scope`` block. ``modules`` (legacy):
+    single modules ranked by centrality (``discover.discover_concepts``). Config entries
+    with ``seeds: (subsystem: <prefix>)`` are seeded from that directory in either mode.
+
+    Shared by ``prepare`` and ``plan`` so the dry-run models the real run."""
+    mode, defaulted = _agenda_mode(cfg, state, agenda_override)
+    seedmap: dict[str, list[str]] = {}
+    scopes: dict[str, str] = {}
+    subs: list = []
     cfg_slugs = {c.slug for c in cfg.concepts}
-    agenda = [Concept(slug=d.slug) for d in discovered if d.slug not in cfg_slugs] + cfg.concepts
-    return replace(cfg, concepts=agenda), seedmap, len(discovered)
+    if mode == "subsystems":
+        subs = subsystems_mod.discover_subsystems(
+            graph,
+            max_subsystems=cfg.agenda_max or subsystems_mod.DEFAULT_MAX_SUBSYSTEMS,
+            exclude_globs=cfg.agenda_exclude,
+        )
+        discovered_slugs = []
+        for sub in subs:
+            seedmap[sub.slug] = sub.seeds
+            scopes[sub.slug] = subsystems_mod.render_scope(sub, graph)
+            discovered_slugs.append(sub.slug)
+    else:
+        discovered = discover.discover_concepts(
+            graph, max_deep=cfg.agenda_max or 24)
+        discovered_slugs = [d.slug for d in discovered]
+        seedmap.update({d.slug: d.seeds for d in discovered})
+    # Config concepts seeded from a whole directory: re-derived every run.
+    for c in cfg.concepts:
+        if c.subsystem is not None:
+            sub = subsystems_mod.subsystem_for_prefix(graph, c.subsystem, slug=c.slug)
+            if sub is None:
+                typer.echo(f"warning: concept {c.slug}: no library module under "
+                           f"'{c.subsystem}' (seeds: (subsystem: ...))", err=True)
+                continue
+            seedmap[c.slug] = sub.seeds
+            scopes[c.slug] = subsystems_mod.render_scope(sub, graph)
+    agenda = [Concept(slug=s) for s in discovered_slugs if s not in cfg_slugs] + cfg.concepts
+    return Agenda(replace(cfg, concepts=agenda), seedmap, scopes, len(discovered_slugs),
+                  mode, subs, defaulted)
+
+
+def _write_agenda_file(p: Paths, agenda: Agenda, graph) -> Path | None:
+    """Persist the planner's proposal (subsystems mode) for the skill to show the user."""
+    if agenda.mode != "subsystems":
+        return None
+    out = p.cache / "plan" / f"{p.slug}.agenda.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(subsystems_mod.render_agenda(agenda.subsystems, graph, p.slug), encoding="utf-8")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +303,9 @@ def prepare(
     install_indexers: bool = typer.Option(
         True, help="Auto-install missing on-demand indexers (TS/Go/Rust), announced; "
                    "--no-install-indexers prints guidance and skips the language instead."),
+    agenda_mode: str = typer.Option(
+        None, "--agenda", help="Planner: 'subsystems' (directory-shaped units, default for a "
+                               "fresh silo) or 'modules' (legacy centrality). Overrides config."),
 ) -> None:
     """Stages 0-4: acquire, index, build graph, emit packets, print the plan."""
     p, cfg = _load(root, slug)
@@ -286,11 +368,20 @@ def prepare(
     graph = _graph(p)
     typer.echo(f"graph: {len(graph)} symbols")
 
-    agenda_cfg, seedmap, n_discovered = _derive_agenda(graph, cfg)
-    agenda = agenda_cfg.concepts
-    typer.echo(f"agenda: {n_discovered} discovered + {len(cfg.concepts)} config = {len(agenda)} concepts")
-
     state = state_mod.load_state(p.state)
+    ag = _derive_agenda(graph, cfg, state, agenda_override=agenda_mode)
+    agenda_cfg, seedmap, agenda = ag.cfg, ag.seedmap, ag.concepts
+    typer.echo(ag.summary())
+    if ag.mode == "modules" and ag.defaulted:
+        typer.echo("  (existing silo keeps module discovery; set `agenda: subsystems` in "
+                   "config to plan by subsystem)")
+    agenda_file = _write_agenda_file(p, ag, graph)
+    if agenda_file:
+        typer.echo(subsystems_mod.render_agenda(ag.subsystems, graph, slug))
+        typer.echo(f"proposed agenda written → {agenda_file}. Review it before synthesizing: "
+                   f"drop entries with `agenda_exclude:`, add/rename with "
+                   f"`- **<slug>** — seeds: (subsystem: <prefix>)`, then re-run prepare.")
+
     hashes = diff.current_hashes(graph, acq.repo_dir)
     plan = diff.compute_plan(graph, acq.repo_dir, state, agenda_cfg, hashes)
     typer.echo(plan.render())
@@ -306,6 +397,7 @@ def prepare(
         text, subgraph = packet.build_packet(
             graph, acq.repo_dir, slug, acq.commit, concept, cfg.tests, _today(),
             seed_monikers=seedmap.get(concept.slug), focus=cfg.synthesis_focus, vocab=vocab,
+            scope=ag.scopes.get(concept.slug, ""),
         )
         pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
         typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")
@@ -395,6 +487,13 @@ def finalize(
         p.wiki_base, [d.name for d in p.wiki_base.iterdir() if d.is_dir()], _today())
     rel = f"{p.wiki_subdir}/{slug}" if p.wiki_subdir else slug
     typer.echo(f"assembled wiki/{rel}/index.md  (commit {acq.commit[:10]})")
+    # The overview is the silo's front door: the host index links it (skill register
+    # step) and `connect` discovers silos by its presence. It is written last (skill
+    # step 3), so a partial run must still finalize — warn, never fail.
+    if not (p.wiki_slug / "overview.md").exists():
+        typer.echo(f"warning: no overview.md at wiki/{rel}/ — the silo is unreachable from "
+                   f"the host index and invisible to `wikify connect` until it exists; write "
+                   f"it (skill step 3, prompts/overview.md) and re-run finalize.", err=True)
 
 
 @app.command(name="lint")
@@ -516,12 +615,42 @@ def plan(
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
     graph = _graph(p)
-    agenda_cfg, _seedmap, n_discovered = _derive_agenda(graph, cfg)
-    typer.echo(f"agenda: {n_discovered} discovered + {len(cfg.concepts)} config "
-               f"= {len(agenda_cfg.concepts)} concepts")
     state = state_mod.load_state(p.state)
+    ag = _derive_agenda(graph, cfg, state)
+    typer.echo(ag.summary())
     hashes = diff.current_hashes(graph, acq.repo_dir)
-    typer.echo(diff.compute_plan(graph, acq.repo_dir, state, agenda_cfg, hashes).render())
+    typer.echo(diff.compute_plan(graph, acq.repo_dir, state, ag.cfg, hashes).render())
+
+
+@app.command()
+def agenda(
+    slug: str,
+    root: Path = typer.Option(Path("."), help="Project root."),
+    max_subsystems: int = typer.Option(0, "--max", help="Cap the proposal (0 = config/default)."),
+    write: bool = typer.Option(True, help="Write .cache/plan/<slug>.agenda.md."),
+) -> None:
+    """Propose the subsystem agenda (table of contents) from the cached index; no packets.
+
+    The planner's proposal — directory-shaped subsystems ranked by external fan-in,
+    each with its entry points — for the user to confirm, trim (`agenda_exclude:`) or
+    extend (`seeds: (subsystem: <prefix>)`) before `prepare` builds packets."""
+    p, cfg = _load(root, slug)
+    if not _scip_indexes(p):
+        typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
+        raise typer.Exit(2)
+    graph = _graph(p)
+    subs = subsystems_mod.discover_subsystems(
+        graph,
+        max_subsystems=max_subsystems or cfg.agenda_max or subsystems_mod.DEFAULT_MAX_SUBSYSTEMS,
+        exclude_globs=cfg.agenda_exclude,
+    )
+    text = subsystems_mod.render_agenda(subs, graph, slug)
+    typer.echo(text)
+    if write:
+        out = p.cache / "plan" / f"{slug}.agenda.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        typer.echo(f"written → {out}")
 
 
 if __name__ == "__main__":

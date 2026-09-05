@@ -154,8 +154,13 @@ def build_packet(
     seed_monikers: list[str] | None = None,
     focus: str = "",
     vocab: list[str] | None = None,
+    scope: str = "",
 ) -> tuple[str, list[str]]:
     """Render the packet markdown and return (text, subgraph_monikers).
+
+    ``scope`` (subsystem planner, §10.11) is a rendered block naming the unit the page
+    is about — its modules and entry points — emitted as ``## Scope`` after the seeds
+    so synthesis writes about the subsystem, not the first hub symbol it sees.
 
     ``seed_monikers`` (from discovery) are used directly; otherwise the concept's
     seed tokens are resolved by name. ``vocab`` is the host wiki's shared concept
@@ -200,6 +205,10 @@ def build_packet(
     a("## Seeds")
     a(seed_note)
     a("")
+    if scope.strip():
+        a("## Scope")
+        a(scope.strip())
+        a("")
     a("## Subgraph")
     a("Cite ONLY these symbols. Each: moniker · signature · def · calls/refs.")
     a("A `(virtual)` edge is a dynamic dispatch (base→override / class→subclass) "

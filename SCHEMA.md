@@ -48,8 +48,10 @@ ambiguous, ask — do not guess and invent.
    docstrings over synthesis**: they are ground-truth comprehension at zero model
    cost, so spend the LLM only where the author was silent or the truth is
    cross-symbol. Discovery/ranking/tiering are deterministic; only synthesis and
-   blurbs are LLM. *Implemented: coverage + catalogs + docstrings + `discover.py`
-   (derived, centrality-ranked, auto-seeded agenda) + scaled synthesis. The
+   blurbs are LLM. *Implemented: coverage + catalogs + docstrings + the **subsystem
+   planner** (`subsystems.py`, `wikify agenda`: directory/community units ranked by
+   external fan-in, seeded from entry points, proposal confirmed before synthesis;
+   module centrality remains as `agenda: modules`) + scaled synthesis. The
    mid-tier "purpose blurb" for undocumented modules is the one remaining band.*
    **Concern synthesis is HEAVY processing** (`.agents/skills/wikify-ingest-repo/prompts/synthesis.md`): the
    agent reads the real source (packets truncate) and writes Overview + a grounded

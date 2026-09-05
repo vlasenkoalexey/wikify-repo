@@ -34,9 +34,7 @@ def _git(repo: Path, *args: str) -> None:
     )
 
 
-@pytest.fixture()
-def project(tmp_path):
-    """A project root + a committed source repo, index pre-seeded (no scip-python)."""
+def _make_project(tmp_path, agenda_line: str):
     src = tmp_path / "src"
     src.mkdir()
     shutil.copy(FIXTURE / "mathlib.py", src / "mathlib.py")
@@ -47,7 +45,7 @@ def project(tmp_path):
     root = tmp_path / "proj"
     (root / "config").mkdir(parents=True)
     (root / "config" / f"{SLUG}.md").write_text(
-        f"---\nslug: {SLUG}\nrepo: {src}\n---\n\n# mathlib\n\n## Concepts\n"
+        f"---\nslug: {SLUG}\nrepo: {src}\n{agenda_line}---\n\n# mathlib\n\n## Concepts\n"
         "- **compute-pipeline** — seeds: `compute`\n",
         encoding="utf-8",
     )
@@ -55,6 +53,25 @@ def project(tmp_path):
     scip.parent.mkdir(parents=True)
     shutil.copy(FIXTURE / "callgraph.scip", scip)
     return root
+
+
+@pytest.fixture()
+def project(tmp_path):
+    """A project root + a committed source repo, index pre-seeded (no scip-python).
+    Pinned to the legacy module-centrality agenda so the packet set stays exact."""
+    return _make_project(tmp_path, "agenda: modules\n")
+
+
+@pytest.fixture()
+def project_planned(tmp_path):
+    """Same project, opted into the subsystem planner (§10.11)."""
+    return _make_project(tmp_path, "agenda: subsystems\n")
+
+
+@pytest.fixture()
+def project_unset(tmp_path):
+    """Same project with no ``agenda:`` key — exercises the fresh/existing default rule."""
+    return _make_project(tmp_path, "")
 
 
 def _prepare(root: Path):
@@ -166,3 +183,77 @@ def test_finalize_lint_gate_fails_on_dead_citation(project):
     res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
     assert res.exit_code == 1
     assert "LINT FAILED" in res.output
+
+
+def test_prepare_subsystems_mode_plans_scopes_and_writes_agenda(project_planned):
+    """Planner mode: the agenda is the subsystem table of contents; every planned packet
+    carries a ``## Scope`` block; the proposal is persisted for the skill to show."""
+    res = _prepare(project_planned)
+    assert res.exit_code == 0, res.output
+    assert "concepts (subsystems)" in res.output
+    assert "Proposed agenda" in res.output
+    pkts = sorted((project_planned / ".cache" / "packets" / SLUG).glob("*.md"))
+    assert [p.stem for p in pkts] == ["compute-pipeline", "core"]   # planned unit + config concept
+    core = (project_planned / ".cache" / "packets" / SLUG / "core.md").read_text()
+    assert "## Scope" in core and "Subsystem `(repo root)`" in core
+    assert "## Scope" not in (project_planned / ".cache" / "packets" / SLUG / "compute-pipeline.md").read_text()
+    assert (project_planned / ".cache" / "plan" / f"{SLUG}.agenda.md").exists()
+
+
+def test_agenda_command_proposes_without_building(project_planned):
+    res = runner.invoke(app, ["agenda", SLUG, "--root", str(project_planned)])
+    assert res.exit_code == 0, res.output
+    assert "| 1 | core |" in res.output
+    assert (project_planned / ".cache" / "plan" / f"{SLUG}.agenda.md").exists()
+    assert not (project_planned / ".cache" / "packets").exists()
+
+
+def test_agenda_default_fresh_is_subsystems_existing_is_modules(project_unset):
+    """No ``agenda:`` key: a fresh silo plans by subsystem; once state records pages, the
+    same config keeps module discovery (no surprise rebuilds) until told otherwise."""
+    from wikify import state as state_mod
+    res = runner.invoke(app, ["plan", SLUG, "--root", str(project_unset)])
+    assert res.exit_code == 0, res.output
+    assert "concepts (subsystems)" in res.output
+    st = state_mod.state_path(project_unset / ".cache", SLUG)
+    st.parent.mkdir(parents=True, exist_ok=True)
+    st.write_text('{"ref": "x", "symbols": {}, "pages": {"old": {"cited": [], "built_ref": "x"}}}')
+    res = runner.invoke(app, ["plan", SLUG, "--root", str(project_unset)])
+    assert res.exit_code == 0, res.output
+    assert "concepts (modules)" in res.output
+    # explicit CLI override wins over the default rule
+    res = runner.invoke(app, ["prepare", SLUG, "--root", str(project_unset), "--no-reindex",
+                              "--agenda", "subsystems"])
+    assert res.exit_code == 0, res.output
+    assert "concepts (subsystems)" in res.output
+
+
+def test_config_subsystem_seed_is_rederived_each_run(project):
+    """``seeds: (subsystem: <prefix>)`` seeds a config concept from a directory (any mode)."""
+    cfg = project / "config" / f"{SLUG}.md"
+    cfg.write_text(cfg.read_text() + "- **whole-lib** — seeds: (subsystem: .)\n", encoding="utf-8")
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    pkt = project / ".cache" / "packets" / SLUG / "whole-lib.md"
+    assert pkt.exists()
+    assert "## Scope" in pkt.read_text()
+
+
+def test_finalize_warns_without_overview_but_still_succeeds(project):
+    """overview.md is the front door (host index + connect discovery). Missing → a warning
+    on stderr, exit 0 (it is written last, so partial runs must finalize); present → silent."""
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    (silo / "concepts" / "compute-pipeline.md").write_text("---\ntitle: t\n---\n\n# t\n", encoding="utf-8")
+
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "warning: no overview.md" in res.output
+    assert (silo / "index.md").exists()
+
+    (silo / "overview.md").write_text("---\ntitle: o\n---\n\n# overview\n", encoding="utf-8")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "warning: no overview.md" not in res.output

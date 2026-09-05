@@ -107,6 +107,9 @@ wikify-repo/
   tests/
 ```
 
+In-repo layout (§10.15) — the same modules, different roots: `<repo>/wikify.md` (config),
+`<repo>/<wiki_dir>/` (the silo, flat), `<repo>/.wikify/` (cache), no `raw/`.
+
 Outputs (`wiki/`, `.cache/`, `raw/`) are created at runtime per the design doc's
 three-bucket schema, NOT committed here.
 
@@ -126,6 +129,9 @@ wikify coverage <slug> [--emit]   # Stage 6b: report whole-repo coverage; --emit
 wikify verify   <slug> [--page]   # adversarial-verify worklist (claims per page; no model)
 wikify plan     <slug> [--ref]    # dry-run: same derived agenda as prepare; needs a cached index
 wikify agenda   <slug> [--max N]  # propose the subsystem table of contents from the cached index (§10.11)
+wikify init     [--wiki-dir wiki] [--instructions CLAUDE.md,AGENTS.md]
+      # in-repo layout (§10.15): wikify.md + .gitignore + instruction blocks; after it,
+      # every command above runs from the repo root with NO <slug>
       # prepare --agenda subsystems|modules overrides the config/default planner for one run
 wikify connect  [--apply k1,k2] [--refresh] [--exclude repo/path] [--vocab concepts]
       # Stage 7: propose (no args) / wire cross-repo concept links inline (§10.10)
@@ -866,3 +872,22 @@ Design.md decisions log "History is routing, not content". Handoff is a file, li
   the overview's task table gets the "what changed" row when `changes/` exists.
   Tests: `tests/test_changes.py`; `tests/test_cli.py` (a real second commit in the fixture
   repo drives rebuild → since block → change page → log → index).
+
+### 10.15 In-repo layout — `wikify init` (realized 2026-09-05)
+Design.md decisions log "Two layouts, one pipeline". `cli.Paths(root, slug, in_repo, wiki_dir)`
+resolves every path for either layout; `cli._load` picks in-repo when `<root>/wikify.md`
+exists (a given slug must match its `slug:`), else host mode (slug required). All commands take
+the slug as an *optional* argument. `cli._acquire` is Stage 0 for both: in-repo it returns
+`acquire.in_place(root, slug)` (repo_dir = root, commit = `git rev-parse HEAD` or `"workdir"`)
+and warns when `acquire.is_dirty` (uncommitted tracked changes: the pin is HEAD, the hashes are
+from disk). `wikify init [--slug] [--wiki-dir] [--instructions ...] [--force]` refuses inside a
+host project (`config/*.md`), writes `wikify.md` (slug from the git top level, `in_repo: true`,
+sensible docs/tests globs, `coverage_collapse` for tests and vendored code — a committed wiki
+should not carry test catalogs), adds `.wikify/` to `.gitignore`, and injects
+`cli._instruction_block` between `<!-- wikify:begin -->` / `<!-- wikify:end -->` into each
+instruction file (`inject_instructions`: create, replace in place, or leave unchanged).
+Config keys `in_repo`, `wiki_dir`. In-repo `finalize` skips the multi-silo top index (the silo
+index *is* `<wiki_dir>/index.md`) and messages use the wiki path; `prepare` keeps `<wiki_dir>/`
+and `.wikify/` out of the docs worklist. Everything else (packets, planner, lint, catalogs with
+relative source links, OKF stamps, verify cache, relink, change pages) is unchanged because it
+was already path-relative. Tests: `tests/test_inrepo.py`; host-mode tests untouched.

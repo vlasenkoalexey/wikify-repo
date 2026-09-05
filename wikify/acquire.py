@@ -34,6 +34,26 @@ def commit_of(repo_dir: str | Path) -> str:
     return _git(["rev-parse", "HEAD"], repo_dir)
 
 
+def in_place(root: str | Path, slug: str) -> Acquired:
+    """In-repo layout (§10.15): the project root IS the source. No symlink, no clone, no
+    ``raw/``; the pin is the repo's own HEAD (``"workdir"`` outside git)."""
+    repo_dir = Path(root).resolve()
+    try:
+        commit = commit_of(repo_dir)
+    except Exception:  # not a git repo
+        commit = "workdir"
+    return Acquired(slug=slug, repo_dir=repo_dir, commit=commit)
+
+
+def is_dirty(root: str | Path) -> bool:
+    """Uncommitted changes in the working tree (the recorded pin is HEAD, the hashes come
+    from the files on disk — worth a warning, not an error)."""
+    try:
+        return bool(_git(["status", "--porcelain", "--untracked-files=no"], root).strip())
+    except Exception:
+        return False
+
+
 def checkout(repo_dir: str | Path, ref: str) -> None:
     _git(["checkout", ref], repo_dir)
 

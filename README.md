@@ -152,21 +152,31 @@ A separate **Karpathy-style wiki repo** carrying the skill, the agent convention
 `wiki/`: one `config/<slug>.md` per ingested repo, sources under `raw/code/<slug>` (submodule or
 clone), silos under `wiki/code/<slug>/`, and cross-repo concept pages on top (`wikify connect`).
 
+**A — Start from the template.** The empty template ships the skill and the agent conventions:
+
 ```bash
-git clone https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki   # the empty template ships the skill
+git clone https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki
 ```
 
-Then, in your agent session (Claude Code, Codex, or Antigravity), type:
+**B — Add wikify to a wiki project you already have** (an existing Karpathy-style LLM wiki with its
+own `SCHEMA.md` and prose pages — a knowledge base, a survey, a team wiki). One command installs the
+skill into the project's `.agents/skills/` (what Codex and Antigravity read) with a `.claude/skills/`
+symlink for Claude Code; the code silos then land under `wiki/code/<slug>/` next to your existing pages,
+sharing the project's `index.md` / `log.md`:
+
+```bash
+wikify setup --project /path/to/your-wiki
+```
+
+Either way, in your agent session (Claude Code, Codex, or Antigravity), type:
 
 > wikify https://github.com/owner/myrepo      (a local path works too)
 
-To use a wiki project of your own instead, or to refresh the template's skill after upgrading wikify,
-run `wikify setup --project <dir>` once.
-
 The agent runs the `wikify-ingest-repo` procedure — bootstrap config → index → symbol graph → write the
 concept pages → citation lint → assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is
-idempotent: only changed concepts rebuild. This slots into **any existing LLM-wiki project** as the
-*code* source type, next to prose pages, sharing one `index.md` / `log.md` (what the
+idempotent: only changed concepts rebuild. The skill's final step registers the new silo in the host
+project's `index.md` and `log.md` following that project's own conventions, so wikify is the *code*
+source type of any LLM wiki, next to its prose pages (what the
 [demo](https://github.com/vlasenkoalexey/wikify-repo-demo) does).
 
 ### Answer from a wiki — no install needed

@@ -467,3 +467,53 @@ def test_prepare_relinks_moved_module_and_finalize_prunes_stale_catalog(project)
     res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
     assert res.exit_code == 0, res.output
     assert "removed 1 stale page(s)" in res.output and not old_cat.exists()
+
+
+def test_ref_bump_records_history_and_writes_change_page(project, tmp_path):
+    """A second commit in the fixture repo that edits compute's body: prepare must rebuild
+    the citing page with a 'Since last ingest' block naming that commit; finalize must
+    write changes/<ref>.md, append the silo log and list the page in the index."""
+    src = tmp_path / "src"
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(
+        scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    page = silo / "concepts" / "compute-pipeline.md"
+    page.write_text(f"---\ntitle: t\n---\n\n# t\n\n## Overview\nDriven by [`compute`]({ref}).\n")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert (silo / "log.md").exists() and "(from (first ingest))" in (silo / "log.md").read_text()
+    assert not (silo / "changes").exists()
+
+    # the repo moves on: compute's body changes in a real commit
+    mathlib = src / "mathlib.py"
+    mathlib.write_text(mathlib.read_text().replace("def compute(n):", "def compute(n):\n    n = n + 0  # bump"))
+    _git(src, "add", "-A")
+    _git(src, "commit", "-qm", "compute: add a no-op normalization step\n\nBecause reasons.")
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    assert "will rebuild : compute-pipeline" in res.output
+    assert "history: 1 commit(s) since" in res.output and "1 touch cited files" in res.output
+    pkt = (project / ".cache" / "packets" / SLUG / "compute-pipeline.md").read_text()
+    assert "## Since last ingest" in pkt and "compute: add a no-op normalization step" in pkt
+    assert "Because reasons." in pkt and "files: `mathlib.py`" in pkt
+
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "changes: wrote changes/" in res.output
+    cp = next((silo / "changes").glob("*.md"))
+    text = cp.read_text()
+    assert "type: changelog" in text and "| [compute-pipeline](../concepts/compute-pipeline.md) | rebuilt" in text
+    assert "compute: add a no-op normalization step" in text and "git -C raw/code/mathlib show <sha>" in text
+    log = (silo / "log.md").read_text()
+    assert log.count("## [") == 2 and f"[changes/{cp.stem}.md](changes/{cp.stem}.md)" in log
+    idx = (silo / "index.md").read_text()
+    assert "## Changes" in idx and f"[{cp.stem}](changes/{cp.name})" in idx
+    # re-running finalize is idempotent for the log and keeps the page
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert (silo / "log.md").read_text().count("## [") == 2

@@ -119,6 +119,14 @@ Honest gaps where even the source didn't settle it.
 ## See also
 Sibling concept pages.
 
+## Recent changes (only when the packet has a `## Since last ingest` block)
+This is a rebuild on a version bump. After `## See also`, add a short `## Recent changes`
+section (3–6 lines): what changed in this mechanism since the previous pin and *why*, in the
+authors' words, quoting commits by short hash from the block (e.g. "`9cad441` reproduces the
+concurrent-compilation RNG bug and …"). Link the silo's change page:
+`[all changes in <new ref>](../changes/<new ref>.md)`. It is not a claim section: no
+citations required, no invented history — only what the listed commits say.
+
 ## Front matter owned by the tool
 Do not write `generated`, `verified`, `sources` or `status`: `wikify finalize` stamps
 `generated` and file-level `sources` (OKF v0.2), `wikify verify --record` stamps

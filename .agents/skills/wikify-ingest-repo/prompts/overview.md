@@ -65,7 +65,10 @@ page(s) to continue to:
 | Add a new <unit of extension> | [<concept>](concepts/<slug>.md) | [<doc-concept>](doc-concepts/<slug>.md) |
 
 Every cell links a page that EXISTS in this silo (a concept, doc-concept, or catalog
-page); a task with no page behind it is not a row. Build/run/test rows point at the
+page); a task with no page behind it is not a row. If the silo has a `changes/` directory
+(it was re-ingested at a new pin), include the row
+`| What changed since the previous version | [changes/<ref>](changes/<ref>.md) | [log](log.md) |`
+pointing at the newest change page. Build/run/test rows point at the
 README-derived doc-concepts, never at prose you wrote here.
 
 ## Rules

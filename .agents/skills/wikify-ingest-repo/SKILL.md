@@ -213,7 +213,14 @@ never grounding.
 - **Version bump**: `wikify prepare <slug> --ref <newcommit>` — only changed
   symbols' pages rebuild. Symbols that merely **moved** (same body, new file or new
   module) are *relinked*: `prepare` rewrites their citations in place and reports
-  `will relink`; nothing to synthesize for those pages.
+  `will relink`; nothing to synthesize for those pages. Rebuilt pages' packets carry a
+  `## Since last ingest` block (the commits that touched their cited files): write the
+  page's `## Recent changes` from it (prompts/synthesis.md). `finalize` then writes
+  `changes/<newref>.md` (pages affected + commits by page, hashes linked to the forge
+  when `source_url` is set) and appends the silo `log.md`. Optionally add a 3–5 line
+  narrative at the top of the change page, above the `changes:auto` marker — it survives
+  regeneration; the block below it is rewritten every finalize. Refresh the overview's
+  task table row for "what changed".
 - `wikify plan <slug>` previews the delta without emitting anything (requires a cached
   index from a prior `prepare`). `wikify agenda <slug> [--max N]` prints the planner's
   proposed table of contents from the same cached index, no packets.

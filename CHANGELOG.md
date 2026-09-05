@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **Version-to-version changes** (`wikify/changes.py`): on a `--ref` bump, rebuilt pages'
+  packets carry the commits that touched their cited files (`## Since last ingest`, so the
+  page can say what changed and why in the authors' words); `finalize` writes
+  `changes/<ref>.md` (pages affected, commits by page, forge links or `git show` hints) and
+  one silo `log.md` line per ingest; the index gains a `## Changes` section.
 - **Moves are relinked, not rebuilt** (`wikify/relink.py`, `diff.detect_moves`): a symbol with
   an unchanged body in a new file, or a one-to-one rename with the same qualified name and
   body, no longer invalidates the pages citing it. `prepare` rewrites their citations, packet

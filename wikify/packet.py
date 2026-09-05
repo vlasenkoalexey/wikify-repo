@@ -216,6 +216,7 @@ def build_packet(
     vocab: list[str] | None = None,
     scope: str = "",
     scope_symbols: set[str] | None = None,
+    since: str = "",
 ) -> tuple[str, list[str]]:
     """Render the packet markdown and return (text, subgraph_monikers).
 
@@ -224,7 +225,9 @@ def build_packet(
     so synthesis writes about the subsystem, not the first hub symbol it sees.
     ``scope_symbols`` is the same unit as a moniker set: it switches
     ``gather_subgraph`` to the scope-aware budget and marks outside symbols in the
-    Subgraph listing as context.
+    Subgraph listing as context. ``since`` (a rebuild on a ``--ref`` bump, §10.14) is the
+    rendered ``## Since last ingest`` block: the commits that touched the page's cited
+    files, so synthesis can say what changed and why in the authors' words.
 
     ``seed_monikers`` (from discovery) are used directly; otherwise the concept's
     seed tokens are resolved by name. ``vocab`` is the host wiki's shared concept
@@ -269,6 +272,9 @@ def build_packet(
     a("## Seeds")
     a(seed_note)
     a("")
+    if since.strip():
+        a(since.strip())
+        a("")
     if scope.strip():
         a("## Scope")
         a(scope.strip())

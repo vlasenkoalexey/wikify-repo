@@ -34,8 +34,11 @@ Many repos in one wiki instead? See [Two ways to run it](#two-ways-to-run-it).
 
 ## What you get
 
-- **Mechanism pages** for each subsystem — overview, a Mermaid diagram with a legend that maps every
-  node to a symbol, design rationale, and a step-by-step mechanism with citations woven in.
+- **Mechanism pages** for each subsystem — overview, design rationale, and a step-by-step mechanism
+  with citations woven in.
+- **Diagrams that are claims, not decoration** — a system-level architecture diagram in the overview
+  and a Mermaid mechanism diagram on every page (flowchart, sequence, state or class, chosen by the
+  question), each with a legend mapping every node to a catalog symbol, checked at build time.
 - **A catalog page for every module** — signature, docstring, source line, ranked callers — so the whole
   repo is represented, by set-difference over the symbol table, not by what the model chose to visit.
 - **An overview** that maps questions and tasks to pages: the front door for agents and humans.

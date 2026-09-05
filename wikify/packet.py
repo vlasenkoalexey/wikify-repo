@@ -209,9 +209,12 @@ def build_packet(
         sym = graph.symbols[m]
         a(f"### `{sym.name}`  ({_kind(sym)})")
         a(f"- moniker: `{m}`")
-        if sym.def_path:
+        if sym.def_path and sym.suffix in coverage.DOCUMENTABLE_SUFFIXES:
             a(f"- cite: [`{sym.name}`]({coverage.catalog_ref(sym.def_path, m)})")
         else:
+            # Namespaces, macros, and other non-DOCUMENTABLE_SUFFIXES kinds never get a
+            # catalog heading (coverage.documentable_symbols filters to Type/Method/Term),
+            # so a citable-looking link here would always be a dead citation at finalize time.
             a("- cite: (external symbol — no catalog home; do not cite)")
         if sym.signature:
             a(f"- signature: `{sym.signature}`")

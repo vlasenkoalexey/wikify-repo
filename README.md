@@ -48,7 +48,8 @@ Many repos in one wiki instead? See [Two ways to run it](#two-ways-to-run-it).
 
 ## What a page looks like
 
-From a real page in the survey wiki (wikify documenting its own `acquire` stage):
+From a real page in the survey wiki (wikify documenting its own `acquire` stage; prose and diagram
+verbatim, trimmed — the legend line shows the form pages built with 0.2 carry under every diagram):
 
 ````markdown
 ## Overview

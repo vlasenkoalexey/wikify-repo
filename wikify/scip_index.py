@@ -228,8 +228,11 @@ def _path_from_moniker(doc, project_dir: Path) -> str | None:
     r"""Derive a repo-relative file path from a document's symbol monikers.
 
     Uses the module Namespace descriptor (``\`torch.fx.node\``) → ``torch/fx/node``
-    and probes ``.py`` / ``/__init__.py``. Authoritative when the emitted path is
-    ambiguous (``../`` spillover)."""
+    and probes ``.py`` / ``/__init__.py`` / ``.pyi`` / ``/__init__.pyi``. The ``.pyi``
+    candidates matter for compiled-extension submodules (e.g. ``torch._C._dynamo.guards``)
+    that ship only a type-stub file with no ``.py`` counterpart — without them this always
+    falls through to ``None`` for such symbols, leaving the unrepaired ``../``-corrupted
+    path in place. Authoritative when the emitted path is ambiguous (``../`` spillover)."""
     for si in doc.symbols:
         if si.symbol.startswith("local "):
             continue
@@ -238,7 +241,7 @@ def _path_from_moniker(doc, project_dir: Path) -> str | None:
         if not ns:
             continue
         rel = ns[0].replace(".", "/")
-        for cand in (f"{rel}.py", f"{rel}/__init__.py"):
+        for cand in (f"{rel}.py", f"{rel}/__init__.py", f"{rel}.pyi", f"{rel}/__init__.pyi"):
             if (project_dir / cand).exists():
                 return cand
     return None

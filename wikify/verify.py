@@ -17,11 +17,13 @@ here is pure Python so the worklist and the pass/fail tally are reproducible.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .lint import _LINK, _LIST_ITEM, _is_symbol_link
+from .lint import _LINK, _LIST_ITEM, _is_symbol_link, _resolve_citation
 
 # Sections whose content makes falsifiable claims about how the code works.
 _CLAIM_SECTIONS = ("Overview", "Design rationale", "Entry points", "Mechanism")
@@ -38,6 +40,13 @@ class Claim:
     @property
     def id(self) -> str:
         return f"{self.page}:{self.line}"
+
+    @property
+    def key(self) -> str:
+        """Content key (§10.4 verify cache): the claim's normalized prose, independent of
+        its line number — lines shift on every edit, prose changes only when the claim does."""
+        norm = " ".join(self.text.split())
+        return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
 
 
 def _citations(text: str) -> list[str]:
@@ -126,3 +135,148 @@ def aggregate(page: str, claims: list[Claim], verdicts: list[Verdict]) -> PageRe
     """Fold per-claim verdicts into a page report (refuted claims fail the page)."""
     refuted = [v for v in verdicts if v.refuted]
     return PageReport(page=page, total=len(claims), refuted=refuted)
+
+
+# --------------------------------------------------------------------------- #
+# Verdict cache — memoize what a reviewer already checked (§10.4)
+# --------------------------------------------------------------------------- #
+# A verdict is expensive (a skeptic agent reads source); the worklist is cheap. So
+# holds are persisted per page, keyed on the claim's content and the body hashes of
+# the symbols it cites, and dropped from the next worklist while both are unchanged.
+# Nothing can be marked as holding that a reviewer did not confirm: a miss costs a
+# re-verify, a hit reuses a real verdict. Two guards keep a weak first verdict from
+# becoming permanent: ``--all`` forces a full pass, and a deterministic RESAMPLE_PCT of
+# cached holds is re-verified on every run (rotating with the commit ref).
+CACHE_SCHEMA = 1
+RESAMPLE_PCT = 5
+
+
+def cache_path(cache_dir: str | Path, slug: str, page_stem: str) -> Path:
+    return Path(cache_dir) / "verify" / slug / f"{page_stem}.json"
+
+
+def load_cache(path: str | Path) -> dict:
+    path = Path(path)
+    if not path.exists():
+        return {"schema": CACHE_SCHEMA, "claims": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"schema": CACHE_SCHEMA, "claims": {}}
+    if data.get("schema") != CACHE_SCHEMA or not isinstance(data.get("claims"), dict):
+        return {"schema": CACHE_SCHEMA, "claims": {}}
+    return data
+
+
+def save_cache(path: str | Path, data: dict) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def claim_evidence(page_path: str | Path, claim: Claim, hashes: dict[str, str]) -> dict[str, str]:
+    """``{moniker: body_sha}`` for the symbols the claim cites. A cited symbol that no
+    longer has a hash (removed) maps to '' so the comparison fails and the claim is
+    re-verified. Unresolvable citations (no catalog yet) are simply absent."""
+    ev: dict[str, str] = {}
+    for target in claim.citations:
+        m = _resolve_citation(Path(page_path), target)
+        if m:
+            ev[m] = hashes.get(m, "")
+    return ev
+
+
+def _resampled(key: str, ref: str, pct: int = RESAMPLE_PCT) -> bool:
+    """Deterministic re-sample: the same claim is re-verified at the same ref, and the
+    sampled set rotates when the ref changes."""
+    h = int(hashlib.sha256(f"{key}:{ref}".encode("utf-8")).hexdigest()[:8], 16)
+    return h % 100 < pct
+
+
+@dataclass
+class Worklist:
+    to_verify: list[Claim] = field(default_factory=list)
+    cached: list[Claim] = field(default_factory=list)      # holds carried forward
+    invalid: list[Claim] = field(default_factory=list)     # evidence changed since the hold
+    resampled: list[Claim] = field(default_factory=list)   # cached hold, re-checked by design
+    refuted: list[Claim] = field(default_factory=list)     # recorded refuted, prose unchanged
+    reason: dict[str, str] = field(default_factory=dict)   # claim.id → why it is on the list
+
+
+def plan_worklist(
+    page_path: str | Path,
+    claims: list[Claim],
+    cache: dict,
+    hashes: dict[str, str],
+    ref: str,
+    force: bool = False,
+) -> Worklist:
+    """Split a page's claims into what a reviewer must check now and what carries over."""
+    wl = Worklist()
+    entries = cache.get("claims", {})
+    for c in claims:
+        ev = claim_evidence(page_path, c, hashes)
+        entry = entries.get(c.key)
+        cacheable = not c.citations or bool(ev)   # cited but unresolvable → never cache
+        if force or entry is None or not cacheable:
+            wl.to_verify.append(c)
+            wl.reason[c.id] = "forced" if force else ("new" if entry is None else "unresolved citations")
+            continue
+        if entry.get("refuted"):
+            wl.to_verify.append(c)
+            wl.refuted.append(c)
+            wl.reason[c.id] = "previously refuted, prose unchanged"
+            continue
+        if entry.get("evidence", {}) != ev:
+            wl.to_verify.append(c)
+            wl.invalid.append(c)
+            wl.reason[c.id] = "cited code changed"
+            continue
+        if _resampled(c.key, ref):
+            wl.to_verify.append(c)
+            wl.resampled.append(c)
+            wl.reason[c.id] = "re-sample"
+            continue
+        wl.cached.append(c)
+    return wl
+
+
+def record_verdicts(
+    cache: dict,
+    page_path: str | Path,
+    claims: list[Claim],
+    verdicts: list[dict],
+    hashes: dict[str, str],
+    ref: str,
+    date: str,
+) -> tuple[int, list[int]]:
+    """Store the reviewer's verdicts (the STRICT JSON of prompts/verify.md, matched by
+    ``claim_line``) under each claim's content key with its current evidence.
+    Returns ``(recorded, unmatched_lines)``."""
+    by_line = {c.line: c for c in claims}
+    entries = cache.setdefault("claims", {})
+    recorded = 0
+    unmatched: list[int] = []
+    for v in verdicts:
+        try:
+            line = int(v.get("claim_line"))
+        except (TypeError, ValueError):
+            continue
+        c = by_line.get(line)
+        if c is None:
+            unmatched.append(line)
+            continue
+        entries[c.key] = {
+            "line": c.line,
+            "section": c.section,
+            "text": " ".join(c.text.split())[:200],
+            "evidence": claim_evidence(page_path, c, hashes),
+            "refuted": bool(v.get("refuted")),
+            "note": str(v.get("note", ""))[:200],
+            "ref": ref,
+            "verified_at": date,
+        }
+        recorded += 1
+    cache["schema"] = CACHE_SCHEMA
+    cache["page"] = Path(page_path).name
+    return recorded, unmatched

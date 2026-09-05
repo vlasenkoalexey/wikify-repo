@@ -183,8 +183,11 @@ source type of any LLM wiki, next to its prose pages (what the
 
 To let an agent answer from a wiki — one you built, or one someone else committed — you need **nothing
 installed**: no `wikify` CLI, no skill, no indexer. Commit the `wiki/` folder and tell the agent to
-retrieve from it (`wikify init` writes this block for you; for a host wiki, add it to **`CLAUDE.md`**,
-**`AGENTS.md`**, and/or **`GEMINI.md`**, or to a shared **`SCHEMA.md`** they all point at):
+retrieve from it. wikify writes that instruction for you: `wikify init` puts it in `CLAUDE.md` /
+`AGENTS.md` for an in-repo wiki, and `wikify setup --project` puts the host-wiki version into the
+project's shared `SCHEMA.md` (or its `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`), between
+`<!-- wikify:begin/end -->` markers, idempotently. If you are consuming a committed wiki without
+wikify at all, paste this:
 
 ```markdown
 ## Codebase wiki — source of truth

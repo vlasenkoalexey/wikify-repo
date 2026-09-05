@@ -93,6 +93,10 @@ Measured on a 150k-line PyTorch TPU backend (C++ via Bazel plus Python) and in t
 
 ## How wikify-repo compares
 
+Five tools that turn a codebase into something an agent can read, scored on one yardstick: **can an
+agent trust what it retrieves?** Rows are the axes that decide it; every cell comes from the tool's own
+source, ingested and compared in the [survey](https://github.com/vlasenkoalexey/codebase-cartography-wiki).
+
 | | [**wikify-repo**](https://github.com/vlasenkoalexey/wikify-repo) | [openwiki](https://github.com/langchain-ai/openwiki) | [graphify](https://github.com/Graphify-Labs/graphify) | [understand-anything](https://github.com/Egonex-AI/Understand-Anything) | [Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/) |
 |---|---|---|---|---|---|
 | **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Agent-written docs — an LLM reads the repo and writes the pages | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Zero-setup hosted docs for public repos |
@@ -108,29 +112,33 @@ Measured on a 150k-line PyTorch TPU backend (C++ via Bazel plus Python) and in t
 <sub>✅ strong · ➖ partial / trade-off · ❌ weak or absent · ❔ unknown / closed</sub>
 
 The other four optimize for something else — a graph to traverse ([graphify](https://github.com/Graphify-Labs/graphify)),
-a visual dashboard to explore ([understand-anything](https://github.com/Egonex-AI/Understand-Anything)),
-a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)),
-and — closest of all — agent-written markdown you own ([openwiki](https://github.com/langchain-ai/openwiki)).
-openwiki is the sharpest comparison, because it shares the two things that matter most here: the output
-is markdown in your repo, and retrieval is nothing but `grep`. What it does not share is the gate — it
-has no parser, so its claims point at line ranges rather than symbols, and nothing fails the build when the
-prose disagrees with the code.
+a visual dashboard ([understand-anything](https://github.com/Egonex-AI/Understand-Anything)), a zero-setup
+hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)),
+and, closest of all, agent-written markdown you own ([openwiki](https://github.com/langchain-ai/openwiki)).
+openwiki shares the two things that matter most here, markdown in your repo and `grep` for retrieval,
+but not the gate: it has no parser, so its claims point at line ranges rather than symbols, and nothing
+fails the build when the prose disagrees with the code.
 
-**Why wikify-repo wins for its job — trusted retrieval of a codebase's internals by an agent.** It is the
-only tool in the table whose grounding is compiler-grade: a citation is *the* symbol SCIP resolved, not a
-name that happens to match, so a wrong reference cannot hide behind a string. It is the only one with a
-hard faithfulness gate — the build fails on a claim that does not resolve — and the only one with a
-second floor above it, adversarial verify, where a skeptic agent tries to refute every load-bearing
-claim against the source. Coverage is a guarantee, not an outcome: every module gets a page by
-set-difference over the symbol table, where the others cover what the model visited or a clustering kept.
-Versioning is built for repos that move: a commit pin, rebuilds at symbol granularity, moved symbols
-relinked instead of rewritten, verified claims carried forward, and a change page per bump — the others
-re-extract by file or track a live tree. It scales sideways too: the same concept page can link its
-implementations across every ingested repo. And the result asks nothing of the reader: plain markdown in
-your git repo, retrieved with `grep`, by any agent, offline; **you don't even need this repo** to answer
-from a wiki — a short block in `CLAUDE.md` / `AGENTS.md` is the whole integration. The others are better
-at what they chose instead — breadth of inputs and languages, visual exploration, zero-setup hosting —
-and worse at every axis that decides whether an agent can *trust* what it reads.
+**Why wikify-repo wins for its job** — trusted retrieval of a codebase's internals by an agent:
+
+- **Compiler-grade grounding.** A citation is *the* symbol SCIP resolved, not a name that happens to
+  match; a wrong reference cannot hide behind a string.
+- **Two floors of faithfulness, and the only gate in the table.** The build fails on a claim that does
+  not resolve; adversarial verify then has a skeptic agent try to refute every load-bearing claim
+  against the source.
+- **Coverage as a guarantee.** Every module gets a page by set-difference over the symbol table — not
+  whatever the model visited or a clustering kept.
+- **Built for repos that move.** A commit pin, rebuilds at symbol granularity, moved symbols relinked
+  instead of rewritten, verified claims carried forward, and a change page per bump. The others
+  re-extract by file or track a live tree.
+- **Scales across repos.** One concept page links its implementations in every ingested repo.
+- **Asks nothing of the reader.** Plain markdown in your git repo, retrieved with `grep`, by any agent,
+  offline. **You don't even need this repo** to answer from a wiki: a short block in `CLAUDE.md` /
+  `AGENTS.md` is the whole integration.
+
+The others are better at what they chose instead — breadth of inputs and languages, visual
+exploration, zero-setup hosting — and worse at every axis that decides whether an agent can *trust*
+what it reads.
 
 ## Why SCIP, not an AST
 

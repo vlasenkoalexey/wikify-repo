@@ -249,3 +249,19 @@ def test_docstring_strips_signature_fence():
     t = g.symbols[M_CLASS]
     assert t.doc_summary == "The core decoder stack."
     assert "class Transformer" not in t.docstring  # signature fence removed
+
+
+def test_catalog_cross_links_skip_namespace_targets():
+    """A namespace (or macro) moniker in `uses`/`used by` is not a documentable symbol:
+    it has no catalog anchor and its "home" file may have no catalog page, so it must
+    not be rendered as a link (it used to leave a dead link on every page using it)."""
+    g = _graph()
+    ns = f"{PKG} `demo.util`/helpers/"          # a namespace moniker, suffix "/"
+    g.add_symbol(Symbol(moniker=ns, kind="Namespace", suffix="Namespace", name="helpers",
+                        def_path="demo/util.py", def_line=1))
+    g.add_edge(M_METHOD, ns)                     # Transformer.forward "uses" the namespace
+    g.add_edge(M_METHOD, M_ATTN)
+    page = coverage.render_catalog(g, "demo/models.py",
+                                   [M_CLASS, M_METHOD, M_ATTN], covered={})
+    assert "helpers" not in page                 # no link, no plain mention either
+    assert "[`Attention`](models.md#Attention)" in page

@@ -433,7 +433,11 @@ def render_catalog(
         real users), and the rest are ranked by centrality so the cap keeps the
         load-bearing callers, not an alphabetical slice. Hidden counts are reported
         (no silent truncation)."""
-        items = [(graph.symbols[t], t) for t in targets if t in graph.symbols]
+        # Only documentable targets (classes / functions / terms): a namespace or
+        # macro moniker has no catalog anchor and its "home" file may have no page
+        # at all, so linking it would leave a dead link on every page that uses it.
+        items = [(graph.symbols[t], t) for t in targets
+                 if t in graph.symbols and graph.symbols[t].suffix in DOCUMENTABLE_SUFFIXES]
         kept = [it for it in items if not _is_noise_path(it[0].def_path)]
         hidden_tests = len(items) - len(kept)
         # importance first (central callers), classes before non-classes, then name.

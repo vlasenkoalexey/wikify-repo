@@ -284,6 +284,21 @@ The *how* lives in `implementation.md` §10.
   re-sampled deterministically each run, rotating with the ref. The cache lives under
   `.cache/` (gitignored) as a cache; if a shipped "verified at SHA" stamp is ever
   wanted that is OKF provenance and a separate decision. (§10.4)
+- **OKF: compatible by naming, minimal by design.** Google Cloud's Open Knowledge Format
+  (v0.2) is a convention, not a schema: names for who generated a page, who verified it,
+  what it derives from, and a reader-derived trust tier (none / tools only / any
+  `human:`). No validator exists and today's consumers are agents reading instruction
+  files, so compliance buys nothing by itself — but the trust tier is exactly the
+  "which pages did a human review" promise a shipped knowledge base makes, and a page
+  that is literally valid OKF is a true sentence in a launch review. So wikify emits the
+  useful subset and nothing more: `generated` (refreshed only when the body changes),
+  `verified` (stamped by the verify cache when every claim holds; `human:` entries
+  survive), file-level `sources` (the definition files the citations resolve to —
+  per-symbol grounding stays inline where the gate is; projecting it into front matter
+  would duplicate the body and cost hundreds of KB per silo), `okf_version` on the silo
+  index, and the old `status: fresh` dropped because OKF reserves `status`. Rejected: a
+  JSON Schema and validator (three shape checks in `okf.warnings` suffice), per-symbol
+  `sources`, the attested-computation family. (§10.12)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -32,6 +33,7 @@ from . import (
     fix as fix_mod,
     languages as lang_mod,
     lint,
+    okf as okf_mod,
     packet,
     scip_index,
     state as state_mod,
@@ -530,19 +532,57 @@ def finalize(
     state = state_mod.load_state(p.state)
     state_mod.set_ref(state, acq.commit)
     state_mod.set_symbols(state, diff.current_hashes(graph, acq.repo_dir))
+    # OKF stamps (wikify/okf.py): generated + file-level sources on concept pages,
+    # generated on doc-concepts and the overview, `status: fresh` dropped. Key-scoped
+    # textual edits; a second run with no body change writes nothing.
+    from . import __version__
+    gen_by = okf_mod.actor("wikify", __version__)
+    now = okf_mod.now_iso()
+    if cfg.source_url == "":
+        src_base_for = lambda page: None  # noqa: E731
+    elif cfg.source_url:
+        src_base_for = lambda page: cfg.source_url  # noqa: E731
+    else:
+        repo_abs = Path(acq.repo_dir).resolve()
+        src_base_for = lambda page: os.path.relpath(repo_abs, page.parent.resolve())  # noqa: E731
+    okf_warn: list[str] = []
     concept_status: list[tuple[str, str]] = []
     for page in sorted((p.wiki_slug / "concepts").glob("*.md")):
         cited = sorted(lint.page_citations(page))
-        state_mod.record_page(state, page.stem, cited, acq.commit)
+        text = page.read_text(encoding="utf-8")
+        sha = okf_mod.body_sha(text)
+        refresh = state_mod.page_body_sha(state, page.stem) != sha
+        new_text = okf_mod.stamp_generated(text, gen_by, now, refresh=refresh)
+        entries = okf_mod.source_entries(okf_mod.cited_files(page, graph), src_base_for(page))
+        new_text = okf_mod.set_keys(new_text, {"sources": okf_mod.render_sources(entries)})
+        new_text = okf_mod.strip_invalid_status(new_text)
+        if new_text != text:
+            page.write_text(new_text, encoding="utf-8")
+        okf_warn += okf_mod.warnings(page)
+        state_mod.record_page(state, page.stem, cited, acq.commit, body_sha=sha)
         concept_status.append((page.stem, "fresh"))
+    for page in list((p.wiki_slug / "doc-concepts").glob("*.md")) + [p.wiki_slug / "overview.md"]:
+        if not page.exists():
+            continue
+        text = page.read_text(encoding="utf-8")
+        new_text = okf_mod.strip_invalid_status(okf_mod.stamp_generated(text, gen_by, now, refresh=False))
+        if new_text != text:
+            page.write_text(new_text, encoding="utf-8")
+        okf_warn += okf_mod.warnings(page)
     state_mod.save_state(p.state, state)
+    for w in okf_warn:
+        typer.echo(f"warning: okf: {w}", err=True)
 
     report = coverage_mod.compute_report(graph, p.wiki_slug, catalogued=catalogued)
     typer.echo(report.render())
 
     scip_tool = "scip-python"
+    index_dir = p.wiki_slug.resolve()
+    snapshot = okf_mod.snapshot_resource(
+        cfg.source_url, os.path.relpath(Path(acq.repo_dir).resolve(), index_dir))
     assemble.write_repo_index(
-        p.wiki_slug, slug, acq.commit, scip_tool, concept_status, _today(), report=report
+        p.wiki_slug, slug, acq.commit, scip_tool, concept_status, _today(), report=report,
+        snapshot=snapshot,
     )
     # Top catalog of code wikis, written into the configured base (wiki/code/ by default,
     # or wiki/ when wiki_subdir=""). Leaves a curated wiki/index.md untouched when subdir'd.
@@ -658,6 +698,19 @@ def verify(
             verify_mod.save_cache(cpath, cache)
             n_ref = sum(1 for v in data.get("verdicts", []) if v.get("refuted"))
             typer.echo(f"{pg.stem}: recorded {n} verdict(s) ({n_ref} refuted) → {cpath}")
+            # OKF `verified`: stamp the tool entry only when EVERY claim holds at current
+            # evidence; otherwise drop the tool entry (human entries always survive).
+            if hashes is not None:
+                wl = verify_mod.plan_worklist(pg, claims, cache, hashes, ref)
+                all_hold = not wl.to_verify or (
+                    len(wl.to_verify) == len(wl.resampled) and not wl.refuted and not wl.invalid)
+                from . import __version__
+                text = pg.read_text(encoding="utf-8")
+                by = okf_mod.actor("wikify-verify", __version__) if all_hold else None
+                new_text = okf_mod.stamp_verified(text, by, okf_mod.now_iso())
+                if new_text != text:
+                    pg.write_text(new_text, encoding="utf-8")
+                    typer.echo(f"  verified: {'stamped ' + by if by else 'tool entry removed (not all claims hold)'}")
             if unmatched:
                 typer.echo(f"  unmatched claim_line(s), not recorded: {unmatched} "
                            f"(use the L<n> numbers from the worklist)", err=True)

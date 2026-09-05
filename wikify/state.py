@@ -69,12 +69,19 @@ def set_ref(state: dict, ref: str) -> None:
     state["ref"] = ref
 
 
-def record_page(state: dict, concept: str, cited: list[str], built_ref: str) -> None:
-    """Record a built page: its (deduped, sorted) cited monikers and build ref."""
-    state.setdefault("pages", {})[concept] = {
-        "cited": sorted(set(cited)),
-        "built_ref": built_ref,
-    }
+def record_page(state: dict, concept: str, cited: list[str], built_ref: str,
+                body_sha: str | None = None) -> None:
+    """Record a built page: its (deduped, sorted) cited monikers, build ref and, when
+    given, the sha of its body (front matter excluded) — what ``finalize`` compares to
+    decide whether the OKF ``generated`` stamp advances."""
+    entry = {"cited": sorted(set(cited)), "built_ref": built_ref}
+    if body_sha:
+        entry["body_sha"] = body_sha
+    state.setdefault("pages", {})[concept] = entry
+
+
+def page_body_sha(state: dict, concept: str) -> str | None:
+    return state.get("pages", {}).get(concept, {}).get("body_sha")
 
 
 def page_cited(state: dict, concept: str) -> list[str]:

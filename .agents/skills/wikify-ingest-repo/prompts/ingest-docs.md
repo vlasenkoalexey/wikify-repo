@@ -55,7 +55,6 @@ type: doc-concept
 provenance: doc
 source: <repo-relative doc path, e.g. docs/gpu_to_tpu.md>   # the doc stays there
 updated: <date>
-status: fresh
 ---
 # <Concept name>
 

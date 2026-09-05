@@ -22,6 +22,10 @@ The page unit becomes the subsystem, packets become citable, verify becomes incr
 - `finalize` warns when `overview.md` is missing or links to a page that does not exist.
 - Skill: docs/README gap check at confirmation (names, `aliases:`, missed units, cross-unit
   flow concepts, "documented, not found"); README-led topics must route in the overview.
+- **OKF v0.2-compatible output** (`wikify/okf.py`): `finalize` stamps `generated` and
+  file-level `sources` on concept pages (generated on doc-concepts and the overview), drops
+  `status: fresh`; `verify --record` stamps `verified` once every claim on a page holds; the
+  silo `index.md` declares `okf_version: "0.2"` and the pinned snapshot; three shape warnings.
 - `wikify --version`.
 
 ### Fixed

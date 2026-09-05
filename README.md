@@ -1,14 +1,88 @@
-# 🧠 wikify repo
+# wikify-repo
 
-**Compile any codebase into a knowledge base wiki your AI agent can actually trust.**
+**Compile any codebase into a knowledge-base wiki your AI agent can actually trust.**
 
-**wikify-repo** turns a repo into a grounded, lint-clean [**Andrej Karpathy style LLM markdown wiki**](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) where every claim is traced to
-a real, compiler-resolved symbol — behind a citation linter that fails the build if one doesn't
-check out. No graph database, no dashboard, no hosted service: the output is plain markdown your agent
-answers from with `grep`, and that you own in your own git repo. Deterministic tool does the
-grounding (SCIP symbol graph, packets, citation lint); one LLM-in-the-loop step does the synthesis.
+![version](https://img.shields.io/badge/version-0.2.0-blue)
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+![works with](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity-8A2BE2)
 
-The idea is simple: record every class, method, and their relationships with SCIP, then spend the LLM annotating only the most central ~20% of nodes — enough to explain ~80% of the repo, while the rest still get a deterministic catalog page so nothing is dropped.
+**wikify-repo** turns a repository into a grounded, lint-clean
+[Karpathy-style LLM markdown wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
+every claim on every page cites a real, compiler-resolved symbol, and a citation linter fails the build
+if one doesn't check out. No graph database, no dashboard, no hosted service — the output is plain
+markdown in your own git repo, and your agent answers from it with nothing but `grep`. A deterministic
+tool does the grounding (SCIP symbol graph, packets, citation lint, coverage); one LLM-in-the-loop step
+writes the prose. Record every class, method and relationship with SCIP, spend the model on the ~20% of
+the code that explains ~80% of it, and give the rest a deterministic catalog page so nothing is dropped.
+
+**For:** teams running coding agents on a codebase too large to read; knowledge bases that span many
+repositories; onboarding without a tour guide.
+
+## 30 seconds
+
+```bash
+pipx install git+https://github.com/vlasenkoalexey/wikify-repo && wikify setup   # CLI + agent skill
+cd my-repo && wikify init                # wiki config + a block in CLAUDE.md / AGENTS.md
+```
+
+Then, in your agent session (Claude Code, Codex, or Antigravity): **"wikify this repo"**.
+Many repos in one wiki instead? See [Two ways to run it](#two-ways-to-run-it).
+
+## What you get
+
+- **Mechanism pages** for each subsystem — overview, a Mermaid diagram with a legend that maps every
+  node to a symbol, design rationale, and a step-by-step mechanism with citations woven in.
+- **A catalog page for every module** — signature, docstring, source line, ranked callers — so the whole
+  repo is represented, by set-difference over the symbol table, not by what the model chose to visit.
+- **An overview** that maps questions and tasks to pages: the front door for agents and humans.
+- **A hard gate**: the citation linter fails the build on any claim that does not resolve to a real
+  symbol; **adversarial verify** then tries to refute every load-bearing claim against the source.
+- **Incremental by construction**: pin a commit, and a version bump rebuilds only the pages whose cited
+  symbols changed, relinks the ones that merely moved, and re-verifies only the claims whose evidence
+  changed. `changes/<ref>.md` records what changed between versions and why, in the authors' words.
+- **Cross-repo concept pages** that link the same idea across every ingested repo.
+- **Trust you can read**: OKF v0.2 front matter (`generated`, `verified`, `sources`) tells any reader
+  which pages a tool verified and which a human reviewed.
+- **Plain markdown**: retrieval is `grep` plus `index.md`. No embeddings, no database, no server.
+
+## What a page looks like
+
+From a real page in the survey wiki (wikify documenting its own `acquire` stage):
+
+````markdown
+## Overview
+`acquire` is the very first thing every wikify pipeline command (`prepare`, `finalize`, `plan`) does,
+and it is the provenance foundation the rest of the grounded wiki rests on. Its job is deceptively
+small: turn a `source` string — a local path or a git URL — into an on-disk source tree at a known,
+recorded commit SHA, returned as an [`Acquired`](../catalog/wikify/acquire.md#Acquired) record.
+Everything downstream is meaningful only because the tree it points into is pinned.
+
+## Diagram
+```mermaid
+flowchart TD
+    A["acquire(source, slug, raw_dir, ref, mode)"] --> B{"src_path.exists()?"}
+    B -->|"yes: local path"| C{"already under raw/code/ ?"}
+    B -->|"no: git URL"| F{"mode == submodule?"}
+```
+Legend:
+- `A` — [`acquire`](../catalog/wikify/acquire.md#acquire)
+````
+
+Every `catalog/…#Symbol` link resolves to a catalog entry with the symbol's signature, docstring and a
+link to the exact source line at the pinned commit. If it didn't, the build would have failed.
+
+## Proof
+
+Measured on a 150k-line PyTorch TPU backend (C++ via Bazel plus Python) and in the survey:
+
+| | |
+|---|---|
+| Symbols represented | 11,536 of 11,536 — every module has a catalog page |
+| Mechanism pages / citations | 27 pages, 691 citations, all resolving to pinned source lines |
+| Adversarial verify | 39 of 329 load-bearing claims refuted and fixed before the wiki shipped |
+| Head-to-head with openwiki on the same repo | wikify pages named 111–183 symbols each; openwiki's code pages named 1–8 ([analysis](https://github.com/vlasenkoalexey/codebase-cartography-wiki/blob/main/wiki/notes/torch-tpu-ingest-tool-choice.md)) |
+| Survey | 12 code-comprehension tools ingested and compared from their own grounded wikis |
 
 ## How wikify-repo compares
 
@@ -17,7 +91,7 @@ The idea is simple: record every class, method, and their relationships with SCI
 | **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Agent-written docs — an LLM reads the repo and writes the pages | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Zero-setup hosted docs for public repos |
 | **Output** | ✅ Markdown wiki — pages in your git repo | ✅ Markdown docs — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ❌ Hosted web docs only |
 | **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang). **Full semantic mapping** | ❌ **nothing** — no parser at all; the LLM reads source with filesystem + shell tools | ➖ tree-sitter AST, **name-based** (20 languages). Syntactic mapping. | ➖ tree-sitter AST, **name-based**. Syntactic mapping. | ❔ Gemini (closed) |
-| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ❌ **prompt directive only** — a ~130-line system prompt, no gate, no citations | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
+| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ **claims sidecar** — per-page claims cite line ranges with content hashes, re-checked when the evidence drifts; the prose itself is not gated, and there is no symbol index | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
 | **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ❔ whatever the agent chooses to visit — unbounded | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❔ not specified |
 | **Inputs** | ➖ code + prose (docs / articles) | ➖ code repos only | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only |
 | **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, no additional tools** | ✅ `grep` over markdown — no embeddings, no DB | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
@@ -32,13 +106,14 @@ a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/i
 and — closest of all — agent-written markdown you own ([openwiki](https://github.com/langchain-ai/openwiki)).
 openwiki is the sharpest comparison, because it shares the two things that matter most here: the output
 is markdown in your repo, and retrieval is nothing but `grep`. What it does not share is the gate — it
-has no parser and no citations, so grounding is a *prompt instruction* and nothing fails when a claim
-does not check out.
+has no parser, so its claims point at line ranges rather than symbols, and nothing fails the build when the
+prose disagrees with the code.
+
 **wikify-repo** optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
 gate, a deterministic coverage pass guarantees no module is silently dropped, and the result is plain
-markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo**, just a few changes to your CLAUDE.md/AGENTS.md to instruct agent to navigate code wiki.
+markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo** — a short block in `CLAUDE.md` / `AGENTS.md` tells the agent how to navigate the wiki.
 
-## SCIP vs AST parsing
+## Why SCIP, not an AST
 
 Most code-knowledge tools (graphify, understand-anything) parse with [**tree-sitter**](https://tree-sitter.github.io/tree-sitter/) — a fast,
 build-free [**AST**](https://en.wikipedia.org/wiki/Abstract_syntax_tree) (abstract syntax tree), one tree per file. Great for breadth (20+ languages, no toolchain), but it resolves
@@ -59,7 +134,7 @@ Because grounding is SCIP (language-neutral), **languages are pluggable**: Pytho
 **TS/JS, Go, and Rust** use their own SCIP indexers. All indexers are installed *on demand* — `prepare`
 detects the language and installs what it needs into a user prefix rather than bundling everything up front.
 
-## Why use a wiki as the storage format
+## Why a wiki, not a graph or a vector index
 
 The consumer is an **AI agent**, and agents already read markdown and retrieve with `grep` / `ripgrep`
 natively — no query language, no graph runtime, no vector index, no MCP server, even no skill. **The output is the
@@ -75,23 +150,6 @@ a live graph you have to query.
 Pages carry [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 front matter (`generated`, `verified`, file-level `sources`), so a reader can tell agent-generated from
 human-reviewed pages without knowing anything wikify-specific.
-
-## Demo and template
-
-**[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo)**
-is a live, populated wiki *produced by this tool* — two real codebases
-([`mini_pytorch_xla`](https://github.com/vlasenkoalexey/wikify-repo-demo/blob/main/wiki/code/mini_pytorch_xla/overview.md)
-and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
-
-[![Force-directed graph of the wiki: two ingested codebases (mini_pytorch_xla and wikify-repo) plus the prose pages, colored by page type](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
-(click image for interactive view)
-
-It plays two roles:
-
-- **Showcase** — browse a finished wiki end to end (`overview.md` → `concepts/` → `catalog/` → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
-- **Template** — the repo's [`main`](https://github.com/vlasenkoalexey/wikify-repo-demo) branch is the empty template (the populated showcase is the [`demo`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/demo) branch): click **"Use this template"** or clone it to get a new wiki repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then, in your agent, `wikify <repo url>`.
-
-But it is important to note that wikify-repo can be integrated into any LLM wiki project.
 
 ## Install
 
@@ -118,7 +176,7 @@ The CLI does the deterministic stages; the page-writing (synthesis) stage is **L
 an agent runs the `wikify-ingest-repo` skill — one self-contained, tool-neutral markdown procedure
 that works in Claude Code, Codex, and Antigravity.
 
-## Quick start
+## Two ways to run it
 
 wikify has a **producer** side (build/maintain the wiki — needs the install) and a **consumer** side
 (answer from it — needs nothing). The wiki can live in one of two places.
@@ -189,25 +247,25 @@ for a host wiki and by `wikify init` for an in-repo wiki (between `<!-- wikify:b
 idempotently); paste it by hand when you are consuming a committed wiki without wikify at all:
 
 ```markdown
-## Code wikis (wikify)
-Grounded internals wikis for ingested repositories live under `wiki/code/<slug>/`; `wiki/code/index.md` lists
-them. Every claim on a concept page cites a real symbol (a citation linter fails the build otherwise),
-so for questions about a repository's internals **retrieve from its wiki instead of reading source**:
-- Start at `wiki/code/<slug>/overview.md`: it maps questions and tasks to pages. Then `grep` the silo for
-  the `concepts/` (mechanism) or `catalog/` (per-symbol) page and read only that section; `index.md`
-  rows carry one-line descriptions and pages carry `aliases:` (the authors' terms), so grep those.
-- Cite the catalog anchor `catalog/<module>.md#<Symbol>`; follow its source link only when you need
-  the exact line. Diagram legends map nodes to the same anchors.
-- Trust is in the front matter: `verified:` says who checked a page (`human:<id>` or a tool);
-  treat a page with no `verified:` as agent-generated and say so when you rely on it.
-- What changed between versions is in `wiki/code/<slug>/changes/<ref>.md` and `log.md`; the silo's pin is
-  the `commit:` in its `index.md`.
-- Never bulk-read pages, never guess, and never hand-edit `catalog/`, `index.md`, `log.md` or
-  `changes/` inside a silo (regenerated by `wikify finalize`).
-To ingest or update a repository, invoke the `wikify-ingest-repo` skill: "wikify <repo url or path>".
-```
 
-The markdown *is* the interface — that's the whole integration.
+## Demo and template
+
+**[wikify-repo-demo](https://github.com/vlasenkoalexey/wikify-repo-demo)**
+is a live, populated wiki *produced by this tool* — two real codebases
+([`mini_pytorch_xla`](https://github.com/vlasenkoalexey/wikify-repo-demo/blob/main/wiki/code/mini_pytorch_xla/overview.md)
+and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
+
+[![Force-directed graph of the wiki: two ingested codebases (mini_pytorch_xla and wikify-repo) plus the prose pages, colored by page type](assets/demo-graph.png)](https://vlasenkoalexey.github.io/wikify-repo-demo/tools/graph/)
+(click image for interactive view)
+
+It plays two roles:
+
+- **Showcase** — browse a finished wiki end to end (`overview.md` → `concepts/` → `catalog/` → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
+- **Template** — the repo's [`main`](https://github.com/vlasenkoalexey/wikify-repo-demo) branch is the empty template (the populated showcase is the [`demo`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/demo) branch): click **"Use this template"** or clone it to get a new wiki repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then, in your agent, `wikify <repo url>`.
+
+A second, larger showcase: **[codebase-cartography-wiki](https://github.com/vlasenkoalexey/codebase-cartography-wiki)**
+ingests twelve code-comprehension tools (graphify, openwiki, understand-anything, codegraph, …) with
+wikify and compares them from their own grounded wikis — the survey behind the table above.
 
 ## Architecture
 
@@ -216,3 +274,7 @@ build, coverage, citation lint — and the LLM is invoked at exactly one step, c
 concept-link judgment). The model proposes prose; Python decides what is true. The rationale and the
 decisions log are in [docs/design.md](docs/design.md); the stage-by-stage mechanics, config keys and
 CLI surface are in [docs/implementation.md](docs/implementation.md).
+
+## License
+
+MIT.

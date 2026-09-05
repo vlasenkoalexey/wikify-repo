@@ -25,6 +25,7 @@ from . import (
     acquire,
     assemble,
     bazel_cc,
+    changes as changes_mod,
     connect as connect_mod,
     coverage as coverage_mod,
     diff,
@@ -462,6 +463,32 @@ def prepare(
                    f"{len(plan.moves)} moved symbol(s) folded into state")
 
     todo = set(plan.todo)
+    # History as routing (§10.14): the commits between the old and new pin, attributed to
+    # the pages whose cited files they touched; persisted for finalize (change page + log)
+    # and rendered into rebuilt pages' packets as "Since last ingest".
+    old_ref = state.get("ref")
+    commits, truncated = changes_mod.git_commits(acq.repo_dir, old_ref, acq.commit) if old_ref else ([], 0)
+    page_files: dict[str, set[str]] = {}
+    for pg_slug, entry in state.get("pages", {}).items():
+        files = {graph.symbols[m].def_path for m in entry.get("cited", [])
+                 if m in graph.symbols and graph.symbols[m].def_path}
+        if files:
+            page_files[pg_slug] = files
+    changes_mod.attribute_pages(commits, page_files)
+    removed_files = sorted({(state.get("paths") or {}).get(m, "") for m in state.get("symbols", {})
+                            if m not in hashes and m not in plan.moves} - {""})
+    rec = changes_mod.Reconcile(
+        old_ref=old_ref, new_ref=acq.commit, build=list(plan.build), rebuild=list(plan.rebuild),
+        relink=list(plan.relink), leave=list(plan.leave), changed=plan.changed_symbols,
+        removed=plan.removed_symbols, moved=len(plan.moves), removed_files=removed_files,
+        commits=commits, truncated=truncated)
+    rpath = changes_mod.reconcile_path(p.cache, slug)
+    rpath.parent.mkdir(parents=True, exist_ok=True)
+    rpath.write_text(rec.to_json(), encoding="utf-8")
+    if old_ref and old_ref != acq.commit:
+        typer.echo(f"history: {len(commits)} commit(s) since {old_ref[:10]}"
+                   + (f" (+{truncated} not collected)" if truncated else "")
+                   + f"; {sum(1 for c in commits if c.pages)} touch cited files")
     # The host wiki's shared concept vocabulary (wiki/concepts/) — handed to synthesis so
     # pages self-tag with `concepts:`, which Stage 7 connect resolves as authoritative.
     vocab = connect_mod.load_vocabulary(p.wiki, "concepts")
@@ -469,11 +496,14 @@ def prepare(
     for concept in agenda:
         if concept.slug not in todo:
             continue
+        since = (changes_mod.render_since_block(concept.slug, commits, old_ref)
+                 if old_ref and concept.slug in plan.rebuild else "")
         text, subgraph = packet.build_packet(
             graph, acq.repo_dir, slug, acq.commit, concept, cfg.tests, _today(),
             seed_monikers=seedmap.get(concept.slug), focus=cfg.synthesis_focus, vocab=vocab,
             scope=ag.scopes.get(concept.slug, ""),
             scope_symbols=ag.scope_sets.get(concept.slug),
+            since=since,
         )
         pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
         typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")
@@ -592,6 +622,20 @@ def finalize(
     typer.echo(report.render())
 
     scip_tool = "scip-python"
+    # Change page + silo log from the reconcile record prepare left (§10.14). Only for a
+    # real bump (the record's refs must match this finalize's pin).
+    rpath = changes_mod.reconcile_path(p.cache, slug)
+    if rpath.exists():
+        try:
+            rec = changes_mod.Reconcile.from_json(rpath.read_text(encoding="utf-8"))
+        except (ValueError, TypeError, KeyError):
+            rec = None
+        if rec and rec.new_ref == acq.commit:
+            changes_mod.append_log(p.wiki_slug, rec, slug, _today())
+            if rec.old_ref and rec.old_ref != rec.new_ref:
+                cp = changes_mod.write_change_page(p.wiki_slug, rec, slug, cfg.source_url, now, gen_by)
+                typer.echo(f"changes: wrote {cp.relative_to(p.wiki_slug)} "
+                           f"({len(rec.commits)} commit(s), {len(rec.rebuild)} rebuilt, {len(rec.relink)} relinked)")
     index_dir = p.wiki_slug.resolve()
     snapshot = okf_mod.snapshot_resource(
         cfg.source_url, os.path.relpath(Path(acq.repo_dir).resolve(), index_dir))

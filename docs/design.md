@@ -311,6 +311,19 @@ The *how* lives in `implementation.md` §10.
   mechanically, the move is folded into state, and stale catalog pages are pruned.
   Ambiguity falls back to a rebuild, so a missed move costs time, never correctness;
   a wrong rewrite would be a dead anchor at the gate. (§10.13)
+- **History is routing, not content.** A wiki pinned to nightlies must say what changed
+  between pins, and openwiki showed the cheap half: feed `git log old..new` to the
+  model as context so its edits are surgical. wikify keeps that (a rebuilt page's packet
+  carries the commits that touched its cited files, in the authors' words — the *why*
+  no diff contains — and the page gains a short "Recent changes" section outside the
+  claim sections) and adds the half a versioned consumer needs: a deterministic
+  `changes/<ref>.md` per bump (pages built / rebuilt / relinked, commits grouped by
+  the pages they affected, each a hash + subject + files, linked to the forge or to
+  `git show` in the pinned checkout) and one `log.md` line per ingest (the OKF log).
+  Never the diff: copying it would be large, drift, and tempt an agent to trust the
+  copy over the source. The wiki gets an agent to the right commit; git confirms.
+  Merges are dropped and commits are attributed only through cited files, which is
+  what keeps this bounded on a nightly cadence. (§10.14)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

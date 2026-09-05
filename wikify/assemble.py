@@ -135,6 +135,22 @@ def write_repo_index(
             + rows_d + "\n"
         )
 
+    # Version-to-version change pages (§10.14), newest first by their generated stamp.
+    change_pages = sorted((wiki_slug_dir / "changes").glob("*.md"))
+    if change_pages:
+        def _stamp(pg: Path) -> str:
+            g = _frontmatter(pg).get("generated")
+            return str(g.get("at", "")) if isinstance(g, dict) else ""
+        change_pages.sort(key=lambda pg: (_stamp(pg), pg.name), reverse=True)
+        rows_c = "\n".join(
+            f"- [{pg.stem}](changes/{pg.name})" + (f" — {page_description(pg)}" if page_description(pg) else "")
+            for pg in change_pages)
+        concepts_section += (
+            "\n## Changes\n"
+            "What changed between pins — pages affected and the commits behind them, newest "
+            "first (see also [log.md](log.md)).\n" + rows_c + "\n"
+        )
+
     # Front door: the synthesized overview page (skills/prompts/overview.md), when
     # it exists, is what a newcomer should read first.
     overview_section = ""

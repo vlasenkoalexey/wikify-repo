@@ -840,3 +840,29 @@ because `finalize` never deleted the old catalog page, lint stayed green over a 
 - `finalize` now records `state.paths`; silos finalized before this have none and get
   ordinary changed/removed treatment on their first `--ref` bump, moves from then on.
   Tests: `tests/test_relink.py`, `tests/test_cli.py` (simulated move end to end).
+
+### 10.14 Version-to-version changes — `wikify/changes.py` (realized 2026-09-05)
+Design.md decisions log "History is routing, not content". Handoff is a file, like packets.
+- **`prepare`**: when state has a previous `ref`, `changes.git_commits(repo_dir, old, new)`
+  runs one `git log --no-merges --name-only old..new` (record/field separators, capped at
+  `MAX_COMMITS` 400 with the overflow counted), `attribute_pages` marks each commit with the
+  pages whose cited files (from `state.pages[*].cited` → `def_path`) it touched, and the
+  whole reconcile (refs, build/rebuild/relink/leave, symbol counts, removed files, commits)
+  is written to `.cache/plan/<slug>.reconcile.json`. Each *rebuilt* page's packet gets
+  `## Since last ingest` (`render_since_block`: its commits, ≤ 20, subject + up to 4 body
+  lines + files) ahead of `## Scope`. Git failures (shallow clone, not a repo) degrade to
+  "no commits", never an error.
+- **`finalize`**: if the record's `new_ref` is this finalize's pin, `append_log` adds one
+  line to the silo `log.md` (created with a header on first use; idempotent by marker) and,
+  for a real bump, `write_change_page` writes `changes/<new-ref[:10]>.md`: front matter
+  (`type: changelog`, description, `generated`), then a `changes:auto` block — Summary
+  table, Pages affected (new / rebuilt with commit counts / relinked), Removed files,
+  Commits by page (hash linked via `commit_url` when `source_url` is a forge blob/tree
+  base, else the `git show` hint), and Other commits summarized by most-touched
+  directory. Prose above the begin marker survives regeneration (narrative slot).
+  `assemble` lists `changes/*.md` in a `## Changes` index section, newest first by
+  `generated.at`.
+- **Prompts**: synthesis writes `## Recent changes` on rebuilt pages (not a claim section);
+  the overview's task table gets the "what changed" row when `changes/` exists.
+  Tests: `tests/test_changes.py`; `tests/test_cli.py` (a real second commit in the fixture
+  repo drives rebuild → since block → change page → log → index).

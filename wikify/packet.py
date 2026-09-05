@@ -21,6 +21,13 @@ from .graph import SymbolGraph
 
 MAX_SUBGRAPH = 60   # relevance-ranked budget (was a flat BFS-order cap)
 MAX_HOPS = 4        # how far to expand the candidate frontier before ranking
+# Scope-aware budget (§10.3, decisions log "The packet budget belongs to the unit"):
+# when a packet is for a planned subsystem, this share of the budget is reserved for
+# the unit's own members, and no single outside module may contribute more than
+# SCOPE_OUTSIDE_PER_MODULE symbols — so repo-wide helpers (status/error/logging) stop
+# crowding out the mechanism the page is about.
+SCOPE_RESERVE = 0.75
+SCOPE_OUTSIDE_PER_MODULE = 2
 SNIPPET_LINES = 50
 
 
@@ -73,7 +80,12 @@ def auto_seeds(graph: SymbolGraph, n: int = 8) -> list[str]:
 
 
 def gather_subgraph(
-    graph: SymbolGraph, seeds: list[str], max_nodes: int = MAX_SUBGRAPH
+    graph: SymbolGraph,
+    seeds: list[str],
+    max_nodes: int = MAX_SUBGRAPH,
+    scope: set[str] | None = None,
+    reserve: float = SCOPE_RESERVE,
+    per_outside_module: int = SCOPE_OUTSIDE_PER_MODULE,
 ) -> list[str]:
     """Relevance-bounded subgraph: keep the seeds, then the most relevant neighbours.
 
@@ -83,7 +95,15 @@ def gather_subgraph(
     seeds' direct callers for entry-point context), score every candidate by
     **importance ÷ (1 + distance from a seed)**, and fill the budget by score. So
     the budget spends on the central, close symbols rather than whatever BFS hit
-    first. Deterministic: ties break on the moniker string."""
+    first. Deterministic: ties break on the moniker string.
+
+    ``scope`` (the planned unit's member monikers) turns on the scope-aware budget:
+    every member is a candidate even if the seeds do not reach it, ``reserve`` of
+    the budget is filled with members first, and outside symbols are admitted by
+    relevance but capped at ``per_outside_module`` per definition file. Measured on
+    torch_tpu this moved the in-unit share of a 60-symbol packet from 8 to 45 and
+    cut repo-wide helpers from ~30 to ~9 — seeds and ranking were not the lever;
+    the budget was. Without ``scope`` the behaviour is unchanged."""
     seeds = [s for s in seeds if s in graph.symbols]
     dist: dict[str, int] = {s: 0 for s in seeds}
 
@@ -110,14 +130,54 @@ def gather_subgraph(
     # Seeds are always kept (in their given order); fill the rest by relevance.
     selected = list(dict.fromkeys(seeds))
     seed_set = set(selected)
-    candidates = sorted(
-        (m for m in dist if m not in seed_set),
-        key=lambda m: (-relevance(m), m),
-    )
-    for m in candidates:
+    if scope is None:
+        candidates = sorted(
+            (m for m in dist if m not in seed_set),
+            key=lambda m: (-relevance(m), m),
+        )
+        for m in candidates:
+            if len(selected) >= max_nodes:
+                break
+            selected.append(m)
+        return selected
+
+    # Scope-aware: unit members are always candidates (a unit page must be able to
+    # cite its own mechanism), members fill the reserved share first, outside
+    # symbols are context capped per module, members backfill any remaining room.
+    for m in scope:
+        if m in graph.symbols:
+            dist.setdefault(m, MAX_HOPS + 1)
+    inside = sorted((m for m in dist if m in scope and m not in seed_set),
+                    key=lambda m: (-relevance(m), m))
+    outside = sorted((m for m in dist if m not in scope and m not in seed_set),
+                     key=lambda m: (-relevance(m), m))
+    n_reserved = int(max_nodes * reserve)
+    selected += inside[:max(0, n_reserved - len(selected))]
+    taken = set(selected)
+    per_module: dict[str, int] = {}
+    for m in outside:
         if len(selected) >= max_nodes:
             break
+        mod = graph.symbols[m].def_path or "?"
+        if per_module.get(mod, 0) >= per_outside_module:
+            continue
+        per_module[mod] = per_module.get(mod, 0) + 1
         selected.append(m)
+        taken.add(m)
+    for m in inside:
+        if len(selected) >= max_nodes:
+            break
+        if m not in taken:
+            selected.append(m)
+            taken.add(m)
+    # Members exhausted and room left (small unit): more outside context crowds
+    # nothing out, so relax the per-module cap and fill by relevance.
+    for m in outside:
+        if len(selected) >= max_nodes:
+            break
+        if m not in taken:
+            selected.append(m)
+            taken.add(m)
     return selected
 
 
@@ -155,12 +215,16 @@ def build_packet(
     focus: str = "",
     vocab: list[str] | None = None,
     scope: str = "",
+    scope_symbols: set[str] | None = None,
 ) -> tuple[str, list[str]]:
     """Render the packet markdown and return (text, subgraph_monikers).
 
     ``scope`` (subsystem planner, §10.11) is a rendered block naming the unit the page
     is about — its modules and entry points — emitted as ``## Scope`` after the seeds
     so synthesis writes about the subsystem, not the first hub symbol it sees.
+    ``scope_symbols`` is the same unit as a moniker set: it switches
+    ``gather_subgraph`` to the scope-aware budget and marks outside symbols in the
+    Subgraph listing as context.
 
     ``seed_monikers`` (from discovery) are used directly; otherwise the concept's
     seed tokens are resolved by name. ``vocab`` is the host wiki's shared concept
@@ -180,7 +244,7 @@ def build_packet(
         if unresolved:
             seed_note += f"  (unresolved seed tokens: {', '.join(unresolved)})"
 
-    subgraph = gather_subgraph(graph, seeds)
+    subgraph = gather_subgraph(graph, seeds, scope=scope_symbols)
     subset = set(subgraph)
     tests = evidence.collect_tests(graph, test_globs, subset)
 
@@ -208,6 +272,10 @@ def build_packet(
     if scope.strip():
         a("## Scope")
         a(scope.strip())
+        if scope_symbols:
+            n_in = sum(1 for m in subgraph if m in scope_symbols)
+            a(f"Subgraph: {n_in} of {len(subgraph)} symbols below are inside this unit; the rest "
+              f"are marked *(outside this unit)* — context you may cite, never the subject.")
         a("")
     a("## Subgraph")
     a("Cite ONLY these symbols. Each: moniker · signature · def · calls/refs.")
@@ -216,7 +284,8 @@ def build_packet(
     a("")
     for m in subgraph:
         sym = graph.symbols[m]
-        a(f"### `{sym.name}`  ({_kind(sym)})")
+        outside = "  *(outside this unit)*" if scope_symbols and m not in scope_symbols else ""
+        a(f"### `{sym.name}`  ({_kind(sym)}){outside}")
         a(f"- moniker: `{m}`")
         if sym.def_path and sym.suffix in coverage.DOCUMENTABLE_SUFFIXES:
             a(f"- cite: [`{sym.name}`]({coverage.catalog_ref(sym.def_path, m)})")

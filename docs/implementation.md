@@ -532,6 +532,25 @@ by **importance ÷ (1 + distance from a seed)**, filling a budget (60) by releva
 so a hub (e.g. `nn.Module`, 1000+ callers) keeps its load-bearing collaborators
 instead of an alphabetical slice. Seeds are always kept.
 
+**Scope-aware budget (realized 2026-09-05; design.md Decisions log "The packet budget
+belongs to the unit").** For a planned subsystem, `prepare` passes the unit's member
+monikers as `scope_symbols` (`Agenda.scope_sets`, wired to `build_packet(...,
+scope_symbols=)` → `gather_subgraph(..., scope=)`). With a scope: every member is a
+candidate at distance `MAX_HOPS+1` even if no seed reaches it; the first
+`SCOPE_RESERVE` (0.75) of the budget is filled with members by relevance; outside
+symbols follow by relevance but no definition file may contribute more than
+`SCOPE_OUTSIDE_PER_MODULE` (2); members backfill any remaining room, and only once
+members are exhausted is the cap relaxed to fill the budget (a small unit gets more
+context; nothing is crowded out). The packet's
+`## Scope` block reports "N of M symbols inside this unit" and each outside symbol's
+heading carries *(outside this unit)*. Measured on torch_tpu @ `ea8ca515` (60-symbol
+packets): `ops` 8→45 inside / 31→9 helpers, `eager-device_buffer` 9→45 / 29→8,
+`distributed` 8→45 / 30→9, `internal-compile` 8→45 / 29→9, `pjrt` 8→45 / 29→8;
+`common-cache_key` 26→45 with helpers 20→25 because that unit *contains* the helpers
+(correct). Rejected alternatives, measured: seed exclusion of ubiquitous helpers
+(no change to the packet), unit re-ranking by fan-out (cosmetic). Without a scope the
+function is byte-for-byte the legacy path. Tests: `tests/test_packet_scope.py`.
+
 ### 10.4 Stage 6 — catalog format, fix, verify, overview
 - **Catalog format** (`coverage.render_catalog`): frontmatter factors the common
   moniker prefix into `symbol_base:` (anchors→terminal, ~70% shorter); no

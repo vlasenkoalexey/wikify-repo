@@ -294,3 +294,12 @@ def test_agenda_file_has_paste_ready_concepts_block(project_planned):
     text = (project_planned / ".cache" / "plan" / f"{SLUG}.agenda.md").read_text()
     assert "## Concepts" in text
     assert "- **core** — seeds: (subsystem: .)" in text
+
+
+def test_planned_packet_marks_outside_symbols(project_planned):
+    res = _prepare(project_planned)
+    assert res.exit_code == 0, res.output
+    core = (project_planned / ".cache" / "packets" / SLUG / "core.md").read_text()
+    assert "symbols below are inside this unit" in core
+    # a single-module repo: everything is inside, nothing is marked outside
+    assert "(outside this unit)" not in core.split("## Subgraph", 1)[1]

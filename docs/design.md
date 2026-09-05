@@ -242,6 +242,21 @@ The *how* lives in `implementation.md` §10.
   the first hub. Hubs become sections. The proposal is shown before synthesis;
   curation is config (`agenda_exclude`, `seeds: (subsystem: <prefix>)`). The gate,
   packets, coverage and verify are unchanged. (§10.11)
+- **The packet budget belongs to the unit.** With subsystem units, the first packets
+  showed the planner's page could not cite its own mechanism: for `ops`, `distributed`,
+  `internal-compile` and `pjrt` only 8 of the 60 citable symbols were inside the unit
+  and about 30 were repo-wide helpers, `error_utils.h` alone taking 14 slots. The
+  cause is the relevance rank (importance ÷ distance): helpers have the highest
+  importance in the repo and sit one hop from every seed, so they win the budget
+  whatever the seeds are. Two hypotheses were measured and rejected before the fix:
+  excluding ubiquitous helpers from the seeds changed the packet not at all (the
+  identical 60 symbols for `common-cache_key`), and re-ranking units by fan-out only
+  reorders a few rows until a cap bites. The fix is in the budget: a scoped packet
+  admits every unit member as a candidate, reserves 75% of the budget for members,
+  caps any outside module at 2 symbols, and marks outside symbols as context. Same
+  units after: 45 of 60 inside, helpers 8 or 9. Unscoped packets (module mode, plain
+  seed concepts) are unchanged. Since the citation gate only lets a page cite what is
+  in its packet, this is the change that makes subsystem pages citable at all. (§10.3)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

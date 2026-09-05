@@ -17,8 +17,10 @@ packets, lint, assemble). You write one mechanism page per packet. Never put
 synthesis in Python; never push linting into your prose.
 
 ## Preconditions
-- `wikify` is on PATH, plus the SCIP indexer for the repo's language(s): `scip-python`
-  and the vendored `scip-clang` come from `scripts/setup-vendor.sh` (see the repo's README);
+- `wikify` is on PATH (`wikify doctor` reports what is installed and the fix for what is
+  not). The SCIP indexer for the repo's language(s): `scip-python` and `scip-clang` are
+  installed **on demand** by `prepare` into a user prefix, or ahead of time by
+  `wikify setup --indexers python,cpp`;
   TS/JS, Go, and Rust indexers are installed **on demand** — `prepare` detects the language
   and auto-installs a missing indexer, announcing the command (pass `--no-install-indexers`
   to skip instead). If prepare reports a language was skipped anyway (install failed — e.g.

@@ -7,7 +7,7 @@ name = "wikify-repo"
 version = "0.2.0"
 description = "Ingest a code repo into a grounded, lint-clean markdown wiki"
 requires-python = ">=3.11"
-dependencies = ["protobuf", "pyyaml", "typer", "gitpython"]
+dependencies = ["protobuf>=5.29,<7", "pyyaml", "typer", "gitpython"]
 
 [project.scripts]
 wikify = "wikify.cli:app"
@@ -17,6 +17,11 @@ dev = ["pytest"]
 
 [tool.setuptools]
 packages = ["wikify"]
+
+[tool.setuptools.package-data]
+# The agent skills ship inside the wheel so `wikify setup` can install them without a
+# repo checkout (pipx installs). .agents/skills/ in this repo symlinks here.
+wikify = ["skills/*/*.md", "skills/*/prompts/*.md", "scip.proto"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -338,6 +338,15 @@ The *how* lives in `implementation.md` §10.
   the wiki's version *is* the code's version, so a knowledge base can pin such a repo
   as a submodule and reuse its wiki instead of re-ingesting it — the per-version
   catalog pipeline dissolves. (§10.15)
+- **The install is one command after the CLI, and the skill ships in the wheel.** The
+  in-repo layout promises "with wikify installed, say wikify this repo", which made the
+  old install — a clone, an editable install, a vendor script and a per-project skill
+  copy — the weakest link. Now the CLI comes either from `pipx install git+…` or a
+  checkout, and `wikify setup` does the rest: the skill (package data, so no checkout is
+  needed) at user level for Claude Code or into a project's `.agents/skills/` for Codex
+  and Antigravity; indexers into a user prefix, no sudo, lazily on the first `prepare`
+  that needs them; `wikify doctor` for the rest. The generated protobuf module is
+  committed so no codegen step survives. The two scripts stay as wrappers for a release.
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

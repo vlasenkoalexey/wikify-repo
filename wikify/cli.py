@@ -38,6 +38,7 @@ from . import (
     packet,
     relink as relink_mod,
     scip_index,
+    setup_cmd,
     state as state_mod,
     subsystems as subsystems_mod,
     verify as verify_mod,
@@ -115,7 +116,11 @@ def _today() -> str:
 
 
 def _scip_clang_bin() -> str:
-    """The vendored scip-clang if present (glibc-compatible build), else PATH."""
+    """The vendored scip-clang if present (glibc-compatible build): the user prefix
+    (`wikify setup`, ~/.wikify/vendor/bin) first, then a repo-local vendor/bin, else PATH."""
+    hit = setup_cmd.find_tool("scip-clang")
+    if hit:
+        return hit
     vbin = Path(__file__).parents[1] / "vendor" / "bin"
     for cand in sorted(vbin.glob("scip-clang*"), reverse=True):
         if cand.is_file():
@@ -442,6 +447,12 @@ def prepare(
     if langs != (cfg.languages or ["python"]):
         typer.echo(f"detected languages: {', '.join(langs)}")
     if "python" in langs and (reindex or not p.scip.exists()):
+        if not setup_cmd.find_tool("scip-python"):
+            typer.echo("scip-python not found" + (": installing on demand (user prefix; disable with "
+                       "--no-install-indexers)" if install_indexers else "; run `wikify setup --indexers python`"))
+            if not (install_indexers and setup_cmd.install_scip_python(echo=typer.echo)):
+                typer.echo("error: scip-python unavailable; Python cannot be indexed", err=True)
+                raise typer.Exit(2)
         if cfg.index_shards:
             targets = _expand_shards(acq.repo_dir, cfg.index_shards)
             typer.echo(f"indexing with scip-python ({len(targets)} shards, "
@@ -464,6 +475,12 @@ def prepare(
             cc = Path(cfg.compile_commands)
             if not cc.is_absolute():
                 cc = acq.repo_dir / cc
+        if not setup_cmd.find_tool("scip-clang") and not _scip_clang_bin().startswith("/"):
+            typer.echo("scip-clang not found" + (": downloading on demand (user prefix)" if install_indexers
+                       else "; run `wikify setup --indexers cpp`"))
+            if not (install_indexers and setup_cmd.install_scip_clang(echo=typer.echo)):
+                typer.echo("error: scip-clang unavailable; C++ cannot be indexed", err=True)
+                raise typer.Exit(2)
         typer.echo(f"indexing C++ with scip-clang ({cc}) ...")
         scip_index.run_clang_indexer(acq.repo_dir, cc, p.scip_cpp,
                                      scip_clang_bin=_scip_clang_bin())
@@ -909,6 +926,8 @@ def init(
     instructions: str = typer.Option(
         "CLAUDE.md,AGENTS.md", help="Comma-separated agent instruction files to inject the block into."),
     force: bool = typer.Option(False, help="Rewrite an existing wikify.md."),
+    with_skill: bool = typer.Option(False, "--with-skill", help="Also install the ingest skill into "
+                                    "this repo's .agents/skills (Codex/Antigravity; Claude Code symlink)."),
 ) -> None:
     """Set up the in-repo layout (§10.15): the wiki lives inside this repository.
 
@@ -963,8 +982,60 @@ Add `synthesis_focus:` for a domain lens; `agenda_exclude:` to trim the planner.
     block = _instruction_block(wiki_dir)
     for f in [x.strip() for x in instructions.split(",") if x.strip()]:
         typer.echo(f"{f}: {inject_instructions(root / f, block)} wikify block")
+    if with_skill:
+        dest, status = setup_cmd.install_skill_project(root)
+        typer.echo(f"skill: {status} {dest.relative_to(root)} (+ .claude/skills symlink)")
     typer.echo(f"\nNext: invoke the `wikify-ingest-repo` skill here, or run `wikify prepare` "
                f"(no slug needed), synthesize the packets, then `wikify finalize`.")
+
+
+@app.command()
+def setup(
+    project: Path = typer.Option(None, help="Also install the skill into this project's .agents/skills "
+                                            "(Codex/Antigravity; Claude Code symlink; .gitignore line)."),
+    user: bool = typer.Option(True, help="Install the skill at user level for Claude Code (~/.claude/skills)."),
+    claude_dir: Path = typer.Option(Path("~/.claude"), help="Claude Code config dir for the user-level skill."),
+    indexers: str = typer.Option("check", help="'check' (report only; prepare installs on demand), "
+                                               "'python', 'cpp', 'python,cpp' or 'none'."),
+) -> None:
+    """One-time setup after installing the CLI: indexers + the agent skill (§10.16).
+
+    Replaces scripts/setup-vendor.sh and scripts/install-skill.sh. Idempotent."""
+    if user:
+        dest, status = setup_cmd.install_skill_user(claude_dir)
+        typer.echo(f"skill (Claude Code, user): {status} {dest}")
+    if project is not None:
+        dest, status = setup_cmd.install_skill_project(project)
+        typer.echo(f"skill (project): {status} {dest} (+ .claude/skills symlink, .gitignore)")
+    want = {x.strip() for x in indexers.split(",") if x.strip()}
+    if "none" not in want:
+        for tool, key, fn in (("scip-python", "python", setup_cmd.install_scip_python),
+                              ("scip-clang", "cpp", setup_cmd.install_scip_clang)):
+            hit = setup_cmd.find_tool(tool)
+            if hit:
+                typer.echo(f"{tool}: ok ({hit})")
+            elif key in want:
+                typer.echo(f"{tool}: installing into {setup_cmd.vendor_bin()} ...")
+                hit = fn(echo=typer.echo)
+                typer.echo(f"{tool}: {'ok (' + hit + ')' if hit else 'FAILED'}")
+            else:
+                typer.echo(f"{tool}: not installed — `prepare` installs it on demand when a repo needs it "
+                           f"(or `wikify setup --indexers {key}` now)")
+    typer.echo("\nNext: `wikify init` inside a repo, or `wikify setup --project <wiki-project>` for a "
+               "host wiki; `wikify doctor` re-checks everything.")
+
+
+@app.command()
+def doctor(
+    project: Path = typer.Option(None, help="Also check this project's .agents/skills."),
+    claude_dir: Path = typer.Option(Path("~/.claude"), help="Claude Code config dir."),
+) -> None:
+    """Report what is installed and the fix for what is not (§10.16)."""
+    rows = setup_cmd.doctor(claude_dir, project)
+    for name, ok, detail, fix in rows:
+        typer.echo(f"{'OK  ' if ok else 'MISS'} {name:32s} {detail}" + (f"   -> {fix}" if fix else ""))
+    missing = [r for r in rows if not r[1]]
+    typer.echo(f"\n{len(rows) - len(missing)} ok, {len(missing)} missing")
 
 
 @app.command()

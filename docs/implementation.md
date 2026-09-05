@@ -393,8 +393,8 @@ of the whole design.
 
 | Artifact | Audience | Channel | Install |
 |---|---|---|---|
-| `wikify` engine (Python) | builds wikis | PyPI | `pipx install wikify-repo` |
-| skills (SKILL.md) | builds wikis (in Claude Code) | Claude Code plugin | `/plugin install wikify-builder@wikify-repo` |
+| `wikify` engine (Python) | builds wikis | git (PyPI later) | `pipx install git+https://github.com/vlasenkoalexey/wikify-repo` |
+| skills (SKILL.md) | builds wikis (in any agent) | inside the wheel; `wikify setup` installs them (§10.16) | `wikify setup [--project DIR]` |
 | generated wikis (markdown) | reads/queries wikis | git repo / submodule | `git submodule add ...` (no tool needed) |
 
 ### Channel 1 — the engine (pip/pipx)
@@ -891,3 +891,26 @@ index *is* `<wiki_dir>/index.md`) and messages use the wiki path; `prepare` keep
 and `.wikify/` out of the docs worklist. Everything else (packets, planner, lint, catalogs with
 relative source links, OKF stamps, verify cache, relink, change pages) is unchanged because it
 was already path-relative. Tests: `tests/test_inrepo.py`; host-mode tests untouched.
+
+### 10.16 Install: `wikify setup` / `wikify doctor` — `wikify/setup_cmd.py` (realized 2026-09-05)
+The two install scripts are folded into the CLI so both CLI channels (pipx from git, or a
+checkout with `pip install -e .`) end the same way: `wikify setup`. Prerequisites for that:
+- the skills are **package data** (`wikify/skills/<name>/`, `pyproject` `package-data`), so a
+  pipx install has them with no checkout; `.agents/skills/<name>` in this repo are symlinks to
+  them (Codex/Antigravity read the repo-level dir);
+- `wikify/scip_pb2.py` is **committed** with `protobuf>=5.29,<7` (the gencode/runtime version
+  warning is benign), so no codegen step exists at install time. Regenerate only after a SCIP
+  schema bump: `pip install grpcio-tools==1.71.0 && python -m grpc_tools.protoc -I wikify
+  --python_out=wikify wikify/scip.proto`.
+`setup_cmd`: `install_skill_user(claude_dir)` (`~/.claude/skills/<name>`),
+`install_skill_project(project)` (copy into `.agents/skills/`, `.claude/skills` relative symlink,
+`.gitignore` line — the old `install-skill.sh` contract), both idempotent by tree comparison;
+`find_tool` (PATH, then `$WIKIFY_HOME/vendor/bin`, default `~/.wikify/vendor/bin`);
+`install_scip_python` (`npm i -g --prefix <vendor> @sourcegraph/scip-python`, no sudo) and
+`install_scip_clang` (pinned `v0.3.3` release binary, glibc 2.35); `doctor` rows. CLI:
+`wikify setup [--project DIR] [--no-user] [--claude-dir] [--indexers check|python|cpp|python,cpp|none]`,
+`wikify doctor [--project] [--claude-dir]`, `wikify init --with-skill`. `prepare` now installs
+scip-python / scip-clang **on demand** when missing (announced; `--no-install-indexers` turns it
+into an error with the fix), matching the TS/Go/Rust path; `_scip_clang_bin` prefers the user
+prefix, then a repo-local `vendor/bin`, then PATH. `scripts/setup-vendor.sh` and
+`scripts/install-skill.sh` remain as one-line wrappers for one release. Tests: `tests/test_setup.py`.

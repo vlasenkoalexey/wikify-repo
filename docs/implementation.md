@@ -763,3 +763,12 @@ model family, `models-moe`, `hf_datasets`). Pinning tests: `tests/test_subsystem
   rename never builds a page twice. `subsystem_for_prefix` accepts a full `dir::stem` prefix.
   Tests: `tests/test_assemble.py`, `tests/test_cli.py` (dead-link warning, suppression, agenda
   block), `tests/test_subsystems.py` (community prefix, concepts block).
+
+**Docs as the naming signal (realized 2026-09-05, process only).** No code: the ingest
+skill's confirm step reads the README and the headings of the `prepare` docs worklist
+(`.cache/docs/<slug>.txt`) against the proposed agenda — renames slugs to the authors'
+terms, records other terms as `aliases:` (synthesis prompt frontmatter), adds a missed
+unit as `(subsystem: <prefix>)` or a cross-unit flow concept with explicit symbol seeds
+(grounding rule unchanged: no packet symbols, no page), and logs "documented, not found".
+`prompts/overview.md` requires every README-led topic to route to a page or be declared
+uncovered. Design.md decisions log: "The graph finds the units; the docs name them".

@@ -89,6 +89,26 @@ never grounding.
    prefix, so renaming never builds a page twice. A community unit is addressed by its full
    `dir::stem` prefix.
 
+   **Check the plan against the authors' own map (same step, before confirming).** The
+   planner sees structure, not vocabulary. Read the repo's README and the headings of the
+   docs `prepare` listed in `.cache/docs/<slug>.txt` (headings only — the docs themselves are
+   ingested later, step 4), and compare with the proposed table:
+   - **Names.** Where the docs have a name for a unit ("compilation cache tiers" for
+     `common-cache_key`), use it as the slug, and keep the authors' other terms as
+     `aliases:` on the page (the synthesis prompt asks for them). Retrieval is index + grep in
+     the words a question uses — the authors' words, not directory names.
+   - **Missing units.** A subsystem or workflow the README leads with that has no row: add
+     it — `(subsystem: <prefix>)` for a directory the planner cut or split away, or a
+     cross-unit **flow** concept with explicit symbol seeds (`- **eager-op-lifecycle** — seeds:
+     \`DispatchOp\`, \`MaterializeAndReturn\``) for something that spans units. Only what
+     resolves to packet symbols can be added; a documented feature with no code behind it
+     is not a concept page.
+   - **Documented, not found.** Note anything the docs describe that you cannot locate in the
+     graph in the log entry for this ingest (stale docs or an unshipped feature); do not
+     invent a page for it.
+   Then confirm with the user and re-run `prepare`. In batch, apply the renames and additions
+   you are confident of and proceed.
+
 2. **Synthesize (this is your job — heavy processing, not annotation).** For EACH
    packet the plan built, read the packet and follow
    `prompts/synthesis.md` exactly to write ONE file: the

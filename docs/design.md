@@ -270,6 +270,20 @@ The *how* lives in `implementation.md` §10.
   page or is declared uncovered). A deterministic heading-to-symbol matcher was
   designed and rejected as over-engineering: naming is judgment, and the gate
   already guarantees that nothing the docs suggest can become an ungrounded page.
+- **Verify verdicts are memoized on content + evidence, never on position.** The
+  reviewer pass is the expensive half of verify (eight skeptic agents over 329 claims
+  on torch_tpu) and it was repeated in full after every repair and every `--ref`. A
+  verdict is now recorded per claim under a key made of the claim's normalized prose
+  and the body hashes of the symbols it cites (`state.py` already tracks those), and
+  a hold is dropped from the next worklist while both are unchanged. A claim's line
+  number is not part of the key — lines shift on every edit, prose changes only when
+  the claim does. Safety: a miss costs a re-verify, a hit reuses a verdict a reviewer
+  gave; nothing is marked as holding that was not checked. The one inherited blind
+  spot is the reconcile rule's own — a claim can depend on a symbol it does not cite —
+  so two guards exist: `--all` forces a full pass and 5% of cached holds are
+  re-sampled deterministically each run, rotating with the ref. The cache lives under
+  `.cache/` (gitignored) as a cache; if a shipped "verified at SHA" stamp is ever
+  wanted that is OKF provenance and a separate decision. (§10.4)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

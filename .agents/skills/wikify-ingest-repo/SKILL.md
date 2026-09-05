@@ -174,9 +174,13 @@ never grounding.
    wikify verify <slug> --page <concept>   # the claim worklist for one page
    ```
    For each concept page, follow `prompts/verify.md`: re-read the real source behind each
-   load-bearing claim and try to REFUTE it. Fix refuted claims in place (correct the prose,
-   or demote to `> [!inferred]` if the source can't support it), then re-run
-   `wikify finalize <slug>` so the gate re-checks the edited pages.
+   load-bearing claim and try to REFUTE it, then **record the verdicts**
+   (`wikify verify <slug> --page <concept> --record <json>`). Fix refuted claims in place
+   (correct the prose, or demote to `> [!inferred]` if the source can't support it), re-run
+   `wikify finalize <slug>` so the gate re-checks the edited pages, then `wikify verify` again:
+   the worklist is now **incremental** — only the claims you edited, claims whose cited code
+   changed, and a small deterministic re-sample come back; recorded holds carry forward across
+   `--ref` bumps too. `--all` forces the full list when you want a clean sweep.
 
 8. **Register in the host wiki (REQUIRED).** The ingest is not done until the repo is
    reachable from the host's read-first index and recorded in its log, **following the host

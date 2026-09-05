@@ -13,6 +13,7 @@ deterministic half never calls a model; the agent half never parses protobuf.
 from __future__ import annotations
 
 import datetime
+import json
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -596,24 +597,82 @@ def verify(
     slug: str,
     page: str = typer.Option(None, help="Dump claims for one concept (stem or filename)."),
     root: Path = typer.Option(Path("."), help="Project root."),
+    all_claims: bool = typer.Option(False, "--all", help="Ignore cached holds: full worklist."),
+    record: Path = typer.Option(None, help="With --page: the reviewer's STRICT JSON verdicts "
+                                          "file to memoize (prompts/verify.md output)."),
+    repo: str = typer.Option(None, help="Source path or git URL (overrides config)."),
 ) -> None:
     """List the load-bearing claims to adversarially verify (worklist for the
     verifier agent in .agents/skills/wikify-ingest-repo/prompts/verify.md).
-    Deterministic; runs no model."""
-    p, _cfg = _load(root, slug)
+    Deterministic; runs no model.
+
+    Incremental (§10.4): verdicts recorded with ``--record`` are memoized per claim on
+    its prose + the body hashes of the symbols it cites, and dropped from later
+    worklists while both are unchanged (plus a deterministic re-sample). ``--all``
+    forces the full list. Without a cached SCIP index the cache is bypassed."""
+    p, cfg = _load(root, slug)
     pages = sorted((p.wiki_slug / "concepts").glob("*.md"))
     if page:
         pages = [x for x in pages if page in (x.stem, x.name)]
-    total = 0
+    if record and not page:
+        typer.echo("error: --record needs --page", err=True)
+        raise typer.Exit(2)
+
+    # Evidence hashes for the cache: the current graph's symbol body-shas at the pin.
+    hashes: dict[str, str] | None = None
+    ref = cfg.ref or ""
+    if _scip_indexes(p):
+        acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref, mode=cfg.acquire)
+        ref = acq.commit
+        hashes = diff.current_hashes(_graph(p), acq.repo_dir)
+    else:
+        typer.echo("note: no SCIP index cached; verdict cache bypassed (run `wikify prepare` "
+                   "to enable incremental verify)", err=True)
+
+    total = to_verify_total = 0
     for pg in pages:
         claims = verify_mod.load_bearing_claims(pg)
         total += len(claims)
-        typer.echo(f"{pg.stem}: {len(claims)} claim(s)")
+        cpath = verify_mod.cache_path(p.cache, slug, pg.stem)
+        cache = verify_mod.load_cache(cpath)
+
+        if record:
+            data = json.loads(Path(record).read_text(encoding="utf-8"))
+            n, unmatched = verify_mod.record_verdicts(
+                cache, pg, claims, data.get("verdicts", []), hashes or {}, ref, _today())
+            verify_mod.save_cache(cpath, cache)
+            n_ref = sum(1 for v in data.get("verdicts", []) if v.get("refuted"))
+            typer.echo(f"{pg.stem}: recorded {n} verdict(s) ({n_ref} refuted) → {cpath}")
+            if unmatched:
+                typer.echo(f"  unmatched claim_line(s), not recorded: {unmatched} "
+                           f"(use the L<n> numbers from the worklist)", err=True)
+            continue
+
+        if hashes is None:
+            wl = verify_mod.Worklist(to_verify=list(claims))
+            wl.reason = {c.id: "no cache" for c in claims}
+        else:
+            wl = verify_mod.plan_worklist(pg, claims, cache, hashes, ref, force=all_claims)
+        to_verify_total += len(wl.to_verify)
+        parts = [f"{len(wl.to_verify)} to verify"]
+        if wl.cached:
+            parts.append(f"{len(wl.cached)} cached hold(s)")
+        if wl.invalid:
+            parts.append(f"{len(wl.invalid)} cited code changed")
+        if wl.resampled:
+            parts.append(f"{len(wl.resampled)} re-sampled")
+        if wl.refuted:
+            parts.append(f"{len(wl.refuted)} still refuted")
+        typer.echo(f"{pg.stem}: {len(claims)} claim(s) — " + ", ".join(parts))
         if page:
-            for c in claims:
+            for c in wl.to_verify:
                 cites = f"  [{len(c.citations)} cite]" if c.citations else ""
-                typer.echo(f"  L{c.line} [{c.section}]{cites} {c.text[:88]}")
-    typer.echo(f"\ntotal: {total} load-bearing claim(s) across {len(pages)} page(s)")
+                why = wl.reason.get(c.id, "")
+                tag = f" ({why})" if why and why != "new" else ""
+                typer.echo(f"  L{c.line} [{c.section}]{cites}{tag} {c.text[:88]}")
+    if not record:
+        typer.echo(f"\ntotal: {to_verify_total} to verify of {total} load-bearing claim(s) "
+                   f"across {len(pages)} page(s)")
 
 
 @app.command()

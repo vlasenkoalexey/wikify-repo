@@ -303,3 +303,50 @@ def test_planned_packet_marks_outside_symbols(project_planned):
     assert "symbols below are inside this unit" in core
     # a single-module repo: everything is inside, nothing is marked outside
     assert "(outside this unit)" not in core.split("## Subgraph", 1)[1]
+
+
+def test_verify_worklist_record_and_cached_holds(project):
+    """verify → record the reviewer's JSON → verify again: recorded holds drop off the
+    worklist; --all brings them back; a refuted claim stays until its prose changes."""
+    import json as _json
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(
+        scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    (silo / "concepts" / "compute-pipeline.md").write_text(
+        "---\ntitle: t\n---\n\n# t\n\n## Overview\nThe pipeline is driven by "
+        f"[`compute`]({ref}) once per call.\n\n## Mechanism (step-by-step)\n"
+        f"1. [`compute`]({ref}) multiplies then squares.\n2. [`compute`]({ref}) returns a plain int.\n",
+        encoding="utf-8")
+    assert runner.invoke(app, ["finalize", SLUG, "--root", str(project)]).exit_code == 0
+
+    res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "3 claim(s) — 3 to verify" in res.output
+    lines = [int(l.split()[0][1:]) for l in res.output.splitlines() if l.strip().startswith("L")]
+    assert len(lines) == 3
+    verdicts = project / "v.json"
+    verdicts.write_text(_json.dumps({"page": "compute-pipeline.md", "verdicts": [
+        {"claim_line": lines[0], "refuted": False},
+        {"claim_line": lines[1], "refuted": False},
+        {"claim_line": lines[2], "refuted": True, "note": "returns a float"},
+        {"claim_line": 999, "refuted": False},
+    ]}))
+    res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--record", str(verdicts),
+                              "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "recorded 3 verdict(s) (1 refuted)" in res.output and "unmatched" in res.output
+
+    res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    line = next(l for l in res.output.splitlines() if l.startswith("compute-pipeline:"))
+    assert "1 still refuted" in line
+    assert "cached hold(s)" in line or "re-sampled" in line
+    assert "(previously refuted, prose unchanged)" in res.output
+
+    res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--all", "--root", str(project)])
+    assert "3 to verify" in res.output

@@ -32,4 +32,15 @@ source contradicts, an invariant that isn't enforced. Default to suspicion.
 }
 ```
 Include an entry only for claims you actually checked; omit a `note` when it holds.
+`claim_line` is the `L<n>` number printed by `wikify verify <slug> --page <concept>`.
 Be precise and terse — this feeds a deterministic aggregator, not a human.
+
+## Record the verdicts (so the next pass is incremental)
+Save the JSON to `.cache/verify/<slug>/<concept>.verdicts.json` and run
+```
+wikify verify <slug> --page <concept> --record .cache/verify/<slug>/<concept>.verdicts.json
+```
+Holds are memoized on the claim's prose + the body hashes of the symbols it cites; the
+next `wikify verify` lists only claims that are new, edited, cite code that changed, were
+refuted, or fall in a small deterministic re-sample. Record after every pass, including
+the re-check that follows your fixes.

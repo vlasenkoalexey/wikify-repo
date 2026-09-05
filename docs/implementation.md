@@ -772,3 +772,20 @@ unit as `(subsystem: <prefix>)` or a cross-unit flow concept with explicit symbo
 (grounding rule unchanged: no packet symbols, no page), and logs "documented, not found".
 `prompts/overview.md` requires every README-led topic to route to a page or be declared
 uncovered. Design.md decisions log: "The graph finds the units; the docs name them".
+
+**Verify cache (realized 2026-09-05; design.md decisions log "Verify verdicts are memoized").**
+`wikify verify` is now incremental. `Claim.key` = sha256 of the normalized prose (16 hex);
+`verify.claim_evidence` = `{moniker: body_sha}` for the symbols a claim cites (via
+`lint._resolve_citation` + `diff.current_hashes`; a removed symbol maps to `''`).
+`verify.plan_worklist` splits a page's claims into to-verify (new / cited code changed /
+previously refuted / re-sample / forced) and cached holds; `record_verdicts` stores the
+reviewer's STRICT JSON (matched by `claim_line`) under `.cache/verify/<slug>/<page>.json`
+with evidence, ref and date. CLI: `wikify verify <slug> [--page P] [--all] [--record FILE]`
+prints per-page "N to verify, K cached hold(s), J cited code changed, R re-sampled, F still
+refuted"; with `--page` only the to-verify claims are listed, each tagged with its reason.
+`RESAMPLE_PCT` (5) holds are re-checked per run, chosen by `sha256(key:ref)` so the set
+rotates with the pin. A claim whose citations do not resolve (no catalog yet) is never
+cached. Without a cached SCIP index the cache is bypassed with a note. `prompts/verify.md`
+ends with the record step; the skill's step 7 describes the incremental loop.
+Tests: `tests/test_verify.py` (key stability, evidence invalidation, refuted/resample
+handling, record round-trip), `tests/test_cli.py` (worklist → record → cached).

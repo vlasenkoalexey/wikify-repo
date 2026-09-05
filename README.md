@@ -12,23 +12,28 @@ The idea is simple: record every class, method, and their relationships with SCI
 
 ## How wikify-repo compares
 
-| | **wikify-repo** | graphify | understand-anything | Google Code Wiki |
-|---|---|---|---|---|
-| **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Zero-setup hosted docs for public repos |
-| **Output** | ✅ Markdown wiki — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ❌ Hosted web docs only |
-| **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang). **Full semantic mapping** | ➖ tree-sitter AST, **name-based** (20 languages). Syntactic mapping. | ➖ tree-sitter AST, **name-based**. Syntactic mapping. | ❔ Gemini (closed) |
-| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
-| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❔ not specified |
-| **Inputs** | ➖ code + prose (docs / articles) | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only |
-| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, no additional tools** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
-| **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed *symbols* | ✅ `--update` re-extracts only changed *files* (caches semantic passes) | ✅ incremental — re-analyzes only changed *files* | ✅ auto-maintained (hosted) |
-| **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ❌ **Google-hosted** (private repos waitlisted) |
+| | [**wikify-repo**](https://github.com/vlasenkoalexey/wikify-repo) | [graphify](https://github.com/Graphify-Labs/graphify) | [understand-anything](https://github.com/Egonex-AI/Understand-Anything) | [openwiki](https://github.com/langchain-ai/openwiki) | [Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/) |
+|---|---|---|---|---|---|
+| **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Agent-written docs — an LLM reads the repo and writes the pages | Zero-setup hosted docs for public repos |
+| **Output** | ✅ Markdown wiki — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ✅ Markdown docs — pages in your git repo | ❌ Hosted web docs only |
+| **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang). **Full semantic mapping** | ➖ tree-sitter AST, **name-based** (20 languages). Syntactic mapping. | ➖ tree-sitter AST, **name-based**. Syntactic mapping. | ❌ **nothing** — no parser at all; the LLM reads source with filesystem + shell tools | ❔ Gemini (closed) |
+| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ **prompt directive only** — a ~130-line system prompt, no gate, no citations | ❌ *"AI-generated map, not a source of truth"* |
+| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❔ whatever the agent chooses to visit — unbounded | ❔ not specified |
+| **Inputs** | ➖ code + prose (docs / articles) | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only | ➖ code repos only |
+| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, no additional tools** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ✅ `grep` over markdown — no embeddings, no DB | ➖ hosted UI + Gemini chat — no MCP / API |
+| **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed *symbols* | ✅ `--update` re-extracts only changed *files* (caches semantic passes) | ✅ incremental — re-analyzes only changed *files* | ✅ incremental — git-diff since the last run's `gitHead`, then an LLM edits the affected pages | ✅ auto-maintained (hosted) |
+| **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ✅ plain markdown in your repo — offline, git-diffable | ❌ **Google-hosted** (private repos waitlisted) |
 
 <sub>✅ strong · ➖ partial / trade-off · ❌ weak or absent · ❔ unknown / closed</sub>
 
-The other three optimize for navigation and reach — a graph to traverse ([graphify](https://github.com/safishamsi/graphify)),
-a visual dashboard to explore ([understand-anything](https://github.com/labolado/understand-anything)),
-a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)).
+The other four optimize for something else — a graph to traverse ([graphify](https://github.com/Graphify-Labs/graphify)),
+a visual dashboard to explore ([understand-anything](https://github.com/Egonex-AI/Understand-Anything)),
+a zero-setup hosted site ([Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/)),
+and — closest of all — agent-written markdown you own ([openwiki](https://github.com/langchain-ai/openwiki)).
+openwiki is the sharpest comparison, because it shares the two things that matter most here: the output
+is markdown in your repo, and retrieval is nothing but `grep`. What it does not share is the gate — it
+has no parser and no citations, so grounding is a *prompt instruction* and nothing fails when a claim
+does not check out.
 **wikify-repo** optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
 gate, a deterministic coverage pass guarantees no module is silently dropped, and the result is plain
 markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo**, just a few changes to your CLAUDE.md/AGENTS.md to instruct agent to navigate code wiki.

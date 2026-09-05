@@ -425,3 +425,45 @@ def test_verify_record_stamps_verified_when_all_hold(project):
     res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--record", str(v), "--root", str(project)])
     assert res.exit_code == 0, res.output
     assert "verified:" not in page.read_text()
+
+
+def test_prepare_relinks_moved_module_and_finalize_prunes_stale_catalog(project):
+    """Simulate a file move on the fixture: state says `compute` used to live in
+    old/mathlib.py; a stale catalog page and a page citing it exist. prepare must relink
+    the citation (no rebuild), and finalize must delete the stale catalog page."""
+    from wikify import state as state_mod
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(
+        scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    new_ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    old_ref = coverage_mod.catalog_ref("old/" + graph.symbols[compute].def_path, compute)
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    page = silo / "concepts" / "compute-pipeline.md"
+    page.write_text(f"---\ntitle: t\n---\n\n# t\n\n## Overview\nDriven by [`compute`]({new_ref}).\n")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    # Now recreate the world as it was BEFORE the move: the page cites the old catalog
+    # path, a stale catalog copy still sits there (as a real move leaves behind), and
+    # state remembers the old location.
+    page.write_text(page.read_text().replace(new_ref, old_ref))
+    old_cat = silo / "catalog" / "old" / "mathlib.md"
+    old_cat.parent.mkdir(parents=True)
+    old_cat.write_text((silo / "catalog" / "mathlib.md").read_text())
+    st = state_mod.load_state(state_mod.state_path(project / ".cache", SLUG))
+    st["paths"] = {m: "old/" + p for m, p in st["paths"].items()}
+    state_mod.save_state(state_mod.state_path(project / ".cache", SLUG), st)
+
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    assert "will relink  : compute-pipeline" in res.output and "relinked: 1 citation(s)" in res.output
+    assert "will rebuild : (none)" in res.output
+    assert new_ref in page.read_text() and old_ref not in page.read_text()
+    res = _prepare(project)                                  # folded into state: no-op now
+    assert "will relink" not in res.output and "will leave   : compute-pipeline" in res.output
+
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "removed 1 stale page(s)" in res.output and not old_cat.exists()

@@ -211,7 +211,9 @@ never grounding.
 - **Adding a concept later**: add it to `config/<slug>.md` and re-run from step 1;
   `prepare` builds only the new packet (same commit, nothing else marked stale).
 - **Version bump**: `wikify prepare <slug> --ref <newcommit>` — only changed
-  symbols' pages rebuild.
+  symbols' pages rebuild. Symbols that merely **moved** (same body, new file or new
+  module) are *relinked*: `prepare` rewrites their citations in place and reports
+  `will relink`; nothing to synthesize for those pages.
 - `wikify plan <slug>` previews the delta without emitting anything (requires a cached
   index from a prior `prepare`). `wikify agenda <slug> [--max N]` prints the planner's
   proposed table of contents from the same cached index, no packets.

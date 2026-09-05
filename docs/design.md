@@ -299,6 +299,18 @@ The *how* lives in `implementation.md` §10.
   index, and the old `status: fresh` dropped because OKF reserves `status`. Rejected: a
   JSON Schema and validator (three shape checks in `okf.warnings` suffice), per-symbol
   `sources`, the attested-computation family. (§10.12)
+- **Moves are relinked, not rebuilt.** torch_tpu moved its C++ under `csrc/` between
+  two pins, which exposed the reconcile's blind spot: it keys everything on the
+  moniker and never records where a symbol lives. A Python move renames every
+  moniker in the file, so every citing page was rebuilt by the model although the
+  code was unchanged; a C++ move keeps the monikers, so the page was left alone with
+  links to the old catalog path — and since old catalog pages were never deleted,
+  lint stayed green over a stale link. Now state records each symbol's file; a move
+  is an unchanged body in a new file or a one-to-one rename with the same qualified
+  name and body; citations, packet subgraphs and verify holds are rewritten
+  mechanically, the move is folded into state, and stale catalog pages are pruned.
+  Ambiguity falls back to a rebuild, so a missed move costs time, never correctness;
+  a wrong rewrite would be a dead anchor at the gate. (§10.13)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

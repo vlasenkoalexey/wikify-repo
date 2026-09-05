@@ -26,7 +26,7 @@ def state_path(cache_dir: str | Path, slug: str) -> Path:
 
 def _empty_state() -> dict:
     """A fresh, never-built state with all top-level keys present."""
-    return {"ref": None, "symbols": {}, "pages": {}}
+    return {"ref": None, "symbols": {}, "paths": {}, "pages": {}}
 
 
 def load_state(path: str | Path) -> dict:
@@ -47,6 +47,8 @@ def load_state(path: str | Path) -> dict:
         state["symbols"] = {}
     if state.get("pages") is None:
         state["pages"] = {}
+    if state.get("paths") is None:
+        state["paths"] = {}
     return state
 
 
@@ -62,6 +64,30 @@ def save_state(path: str | Path, state: dict) -> None:
 def set_symbols(state: dict, symbols: dict[str, str]) -> None:
     """Replace the moniker → body-sha map."""
     state["symbols"] = dict(symbols)
+
+
+def set_paths(state: dict, paths: dict[str, str]) -> None:
+    """Replace the moniker → definition-file map (what ``diff.detect_moves`` compares)."""
+    state["paths"] = {m: p for m, p in paths.items() if p}
+
+
+def apply_moves(state: dict, moves: dict[str, str], new_paths: dict[str, str]) -> None:
+    """Fold detected moves into state so the next ``prepare`` sees nothing to relink:
+    symbol hashes and page citations move to the new monikers, paths to the new files."""
+    if not moves:
+        return
+    syms = state.get("symbols", {})
+    for old, new in moves.items():
+        if old in syms and new != old:
+            syms[new] = syms.pop(old)
+    paths = state.setdefault("paths", {})
+    for old, new in moves.items():
+        paths.pop(old, None)
+        if new in new_paths:
+            paths[new] = new_paths[new]
+    for entry in state.get("pages", {}).values():
+        cited = entry.get("cited", [])
+        entry["cited"] = sorted({moves.get(m, m) for m in cited})
 
 
 def set_ref(state: dict, ref: str) -> None:

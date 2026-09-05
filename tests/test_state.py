@@ -14,8 +14,8 @@ def test_state_path(tmp_path):
 
 def test_load_missing_returns_empty_shape(tmp_path):
     s = st.load_state(tmp_path / "state" / "nope.json")
-    assert s == {"ref": None, "symbols": {}, "pages": {}}
-    assert set(s) == {"ref", "symbols", "pages"}
+    assert s == {"ref": None, "symbols": {}, "paths": {}, "pages": {}}
+    assert set(s) == {"ref", "symbols", "paths", "pages"}
 
 
 def test_load_partial_fills_missing_keys(tmp_path):

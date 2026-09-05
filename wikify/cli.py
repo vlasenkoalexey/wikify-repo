@@ -35,6 +35,7 @@ from . import (
     lint,
     okf as okf_mod,
     packet,
+    relink as relink_mod,
     scip_index,
     state as state_mod,
     subsystems as subsystems_mod,
@@ -449,6 +450,16 @@ def prepare(
     hashes = diff.current_hashes(graph, acq.repo_dir)
     plan = diff.compute_plan(graph, acq.repo_dir, state, agenda_cfg, hashes)
     typer.echo(plan.render())
+    if plan.moves:
+        # Moves are relinked, not rebuilt (§10.13): rewrite citations in pages, packet
+        # subgraphs and the verify cache, then fold the move into state so this is a no-op
+        # next time. Lint at finalize remains the gate for any rewrite.
+        c = relink_mod.relink_silo(p.wiki_slug, p.cache, slug, plan.moves, plan.old_paths, plan.new_paths)
+        state_mod.apply_moves(state, plan.moves, plan.new_paths)
+        state_mod.save_state(p.state, state)
+        typer.echo(f"relinked: {c['links']} citation(s) in {c['pages']} page(s), "
+                   f"{c['subgraphs']} packet subgraph(s), {c['verify_keys']} verify entries; "
+                   f"{len(plan.moves)} moved symbol(s) folded into state")
 
     todo = set(plan.todo)
     # The host wiki's shared concept vocabulary (wiki/concepts/) — handed to synthesis so
@@ -510,6 +521,9 @@ def finalize(
         graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url,
         collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude)
     typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
+    pruned = relink_mod.prune_catalogs(p.wiki_slug / "catalog", catalog_paths)
+    if pruned:
+        typer.echo(f"catalog: removed {pruned} stale page(s) for modules that no longer exist")
 
     if fix:
         edits, report_lint = fix_mod.fix_silo(p.wiki_slug, graph, p.cache, slug)
@@ -532,6 +546,7 @@ def finalize(
     state = state_mod.load_state(p.state)
     state_mod.set_ref(state, acq.commit)
     state_mod.set_symbols(state, diff.current_hashes(graph, acq.repo_dir))
+    state_mod.set_paths(state, diff.current_paths(graph))
     # OKF stamps (wikify/okf.py): generated + file-level sources on concept pages,
     # generated on doc-concepts and the overview, `status: fresh` dropped. Key-scoped
     # textual edits; a second run with no body change writes nothing.

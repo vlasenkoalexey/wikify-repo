@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Moves are relinked, not rebuilt** (`wikify/relink.py`, `diff.detect_moves`): a symbol with
+  an unchanged body in a new file, or a one-to-one rename with the same qualified name and
+  body, no longer invalidates the pages citing it. `prepare` rewrites their citations, packet
+  subgraphs and verify-cache evidence and folds the move into state (a new `paths` map);
+  the plan reports a `relink` bucket. `finalize` prunes catalog pages for modules that no
+  longer exist, so a stale link can no longer pass lint silently.
+
 ## 0.2.0 - 2026-09-05
 
 The page unit becomes the subsystem, packets become citable, verify becomes incremental.

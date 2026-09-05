@@ -89,7 +89,7 @@ and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
 It plays two roles:
 
 - **Showcase** — browse a finished wiki end to end (`overview.md` → `concepts/` → `catalog/` → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
-- **Template** — click **"Use this template"** (or start from the empty [`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch) to get a new repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then just `ingest <your-repo>`.
+- **Template** — the repo's [`main`](https://github.com/vlasenkoalexey/wikify-repo-demo) branch is the empty template (the populated showcase is the [`demo`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/demo) branch): click **"Use this template"** or clone it to get a new wiki repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then, in your agent, `wikify <repo url>`.
 
 But it is important to note that wikify-repo can be integrated into any LLM wiki project.
 
@@ -128,8 +128,11 @@ wikify has a **producer** side (build/maintain the wiki — needs the install) a
 ```bash
 cd my-repo && wikify init        # writes wikify.md, .gitignore (.wikify/), and a wikify block in
                                  # CLAUDE.md + AGENTS.md telling agents where the wiki is
-# then, in your agent: "wikify this repo"
 ```
+
+Then, in your agent session (Claude Code, Codex, or Antigravity), type:
+
+> wikify this repo
 
 ```
 my-repo/
@@ -150,13 +153,15 @@ A separate **Karpathy-style wiki repo** carrying the skill, the agent convention
 clone), silos under `wiki/code/<slug>/`, and cross-repo concept pages on top (`wikify connect`).
 
 ```bash
-git clone -b clean https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki   # empty template
-wikify setup --project my-wiki      # or any existing project: wikify setup --project <dir>
+git clone https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki   # the empty template ships the skill
 ```
 
-Open the project in your agent and say:
+Then, in your agent session (Claude Code, Codex, or Antigravity), type:
 
-> ingest https://github.com/owner/myrepo      (a local path works too)
+> wikify https://github.com/owner/myrepo      (a local path works too)
+
+To use a wiki project of your own instead, or to refresh the template's skill after upgrading wikify,
+run `wikify setup --project <dir>` once.
 
 The agent runs the `wikify-ingest-repo` procedure — bootstrap config → index → symbol graph → write the
 concept pages → citation lint → assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is

@@ -37,9 +37,11 @@ slug: <slug>
 repo: <the URL or local path>
 ---
 ```
-No `## Concepts` list is needed — discovery auto-seeds the agenda from code centrality; add seed
-concepts later only to go deeper into a subsystem. If a config for that slug already exists,
-reuse it (re-ingest is idempotent). Then run the Procedure below with `<slug>`.
+No `## Concepts` list is needed — the **subsystem planner** derives the agenda (a table of
+contents of directory-shaped units with their entry points) for a fresh silo; add seeds later
+only to add or rename a unit. If a config for that slug already exists, reuse it (re-ingest is
+idempotent; an existing silo keeps module-level discovery until its config says
+`agenda: subsystems`). Then run the Procedure below with `<slug>`.
 
 **Focus (lens) — settle it before synthesizing; ask only if it isn't already known.** If the
 config already has `synthesis_focus`, or the host wiki has an established lens (skim a couple of
@@ -68,6 +70,16 @@ never grounding.
    packet per to-build concept at `.cache/packets/<slug>/<concept>.md`. If the
    plan is a no-op, STOP — the wiki is already converged.
 
+   **Confirm the agenda before synthesizing (interactive; skip in batch).** In subsystem
+   mode `prepare` prints the **proposed agenda** — a ranked table of units (slug, directory,
+   modules, symbols, external fan-in, entry points) — and writes it to
+   `.cache/plan/<slug>.agenda.md` (`wikify agenda <slug>` re-emits it alone). Show it to the
+   user and ask what to drop, merge or add: drop with `agenda_exclude:` globs in
+   `config/<slug>.md` (`dir` drops a unit, `dir/*` its children — e.g. fold per-op kernel
+   directories back into their parent), cap with `agenda_max`, add or rename with
+   `- **<slug>** — seeds: (subsystem: <dir prefix>)`. Then re-run `prepare` (cheap: the index
+   is cached). With no user present, proceed with the proposal as printed.
+
 2. **Synthesize (this is your job — heavy processing, not annotation).** For EACH
    packet the plan built, read the packet and follow
    `prompts/synthesis.md` exactly to write ONE file: the
@@ -78,15 +90,19 @@ never grounding.
    citations (a few per paragraph, no `[extracted →]` tags). You do **not** create
    symbol stubs — paste each symbol's `cite:` link from the Subgraph verbatim (it
    resolves to the catalog anchor). Cite ONLY Subgraph symbols; ungrounded → a
-   `> [!inferred]` block.
+   `> [!inferred]` block. When the packet has a **`## Scope`** block, the page is about
+   that subsystem *as a whole* — its responsibilities, the mechanism tying its modules
+   together, how the rest of the repo enters it (the listed entry points) — never about
+   the first hub symbol; hub utilities inside it are sections, not the subject.
 
    **Then offer to go deeper (interactive; skip in batch).** List the concept pages you just
-   wrote and — from the reconcile **plan** and the Stage-6b coverage (modules that got only a
-   catalog, not a deep page) — the highest-centrality subsystems *not yet* deep-dived. Ask the
-   user which, if any, to add. For each chosen one, add it as a seed to the `## Concepts` list in
+   wrote and — from `wikify agenda <slug> --max 60` (planned units beyond the built set) and
+   the Stage-6b coverage (modules that got only a catalog, not a deep page) — the subsystems
+   *not yet* deep-dived. Ask the user which, if any, to add. For each chosen one, add
+   `- **<slug>** — seeds: (subsystem: <dir prefix>)` to the `## Concepts` list in
    `config/<slug>.md` and **re-run from step 1** (`prepare` builds only the new packet). This is
    the derived, ranked agenda — offer real candidates, never free-form (a concept with no packet
-   symbols cannot be grounded). With no user present, proceed with the auto-seeded set.
+   symbols cannot be grounded). With no user present, proceed with the planned set.
 
 3. **Overview (after all concepts exist).** Follow
    `prompts/overview.md` to write `wiki/code/<slug>/overview.md` —
@@ -113,7 +129,9 @@ never grounding.
    success it also runs **Stage 6b coverage**: it emits a `catalog/<module>.md` page
    for every module (deterministic, no model) so the *whole repo* is represented,
    prints a coverage report, assembles `wiki/code/<slug>/index.md` (concepts + areas +
-   **doc-derived concepts**), and updates reconcile state.
+   **doc-derived concepts**), and updates reconcile state. It warns (exit 0) if
+   `overview.md` is missing — the front door the host index and `connect` rely on; go back
+   to step 3 and re-run finalize.
 
 6. **Repair loop.** If `finalize` exits non-zero, it lists each failing
    `page:line [rule N]`. Fix those pages (add the missing citation or move the
@@ -161,7 +179,11 @@ never grounding.
 - **Version bump**: `wikify prepare <slug> --ref <newcommit>` — only changed
   symbols' pages rebuild.
 - `wikify plan <slug>` previews the delta without emitting anything (requires a cached
-  index from a prior `prepare`).
+  index from a prior `prepare`). `wikify agenda <slug> [--max N]` prints the planner's
+  proposed table of contents from the same cached index, no packets.
+- **Planner modes**: `agenda: subsystems` (directory-shaped units with entry points; the
+  default for a fresh silo) or `agenda: modules` (single modules by centrality; what an
+  existing silo keeps until its config opts in). `prepare --agenda <mode>` overrides for one run.
 - **Interrupted or failed run**: the reconcile is idempotent — re-run `wikify prepare <slug>`
   and it rebuilds only what's missing/stale; already-written pages are never double-built.
   If `scip-python` OOMs on a huge repo (exit 137/144), add `index_shards:` globs to

@@ -187,3 +187,38 @@ def test_concept_dataclass_defaults():
     assert c.seeds == []
     assert c.auto is False
     assert c.note == ""
+
+
+def test_subsystem_seed_form(tmp_path):
+    text = FIXTURE.replace(
+        "- **dispatch-path** — seeds: (auto)",
+        "- **dispatch-path** — seeds: (subsystem: torch_tpu/csrc/common/)",
+    )
+    cfg = load_config(_write(tmp_path, text))
+    dispatch = next(c for c in cfg.concepts if c.slug == "dispatch-path")
+    assert dispatch.auto is True
+    assert dispatch.seeds == []
+    assert dispatch.subsystem == "torch_tpu/csrc/common"     # trailing slash stripped
+    assert dispatch.note == "subsystem: torch_tpu/csrc/common"
+    # plain concepts carry no subsystem
+    assert all(c.subsystem is None for c in cfg.concepts if c.slug != "dispatch-path")
+
+
+def test_agenda_keys(tmp_path):
+    text = FIXTURE.replace(
+        "slug: torch_tpu\n",
+        "slug: torch_tpu\nagenda: subsystems\nagenda_max: 12\nagenda_exclude: [\"torch_tpu/ops/*\"]\n",
+    )
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.agenda == "subsystems"
+    assert cfg.agenda_max == 12
+    assert cfg.agenda_exclude == ["torch_tpu/ops/*"]
+    # unset → None (the CLI resolves fresh→subsystems / existing→modules)
+    assert load_config(_write(tmp_path, FIXTURE)).agenda is None
+
+
+def test_agenda_mode_validated(tmp_path):
+    import pytest
+    text = FIXTURE.replace("slug: torch_tpu\n", "slug: torch_tpu\nagenda: bogus\n")
+    with pytest.raises(ValueError, match="agenda"):
+        load_config(_write(tmp_path, text))

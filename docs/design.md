@@ -158,7 +158,13 @@ stays easy.
      is un-annotated; no trivial unit burns a deep page.
    - **The unit is the derived cluster** (module-tree node / graph community), not
      the file (→ shallow "summarize everything") and not the hand-named concept
-     (→ gaps). Boundaries are computed; size adapts to the repo.
+     (→ gaps). Boundaries are computed; size adapts to the repo. *(Realized
+     2026-09-04 as the **subsystem planner**, implementation.md §10.11: directory
+     subtrees split to a module budget, flat directories split by reference
+     community, ranked by external fan-in, seeded from entry points + hubs. The
+     first realization — one module per unit, ranked by fan-in — survives as
+     `agenda: modules`; see the Decisions log entry "The page unit is the
+     subsystem, not the hub module".)*
    - **Docstrings are L2 authored evidence — prefer them over synthesis.** A
      docstring is comprehension that is *also ground truth*: the author's stated
      intent, more authoritative than any LLM guess and free to ingest. So they
@@ -220,6 +226,22 @@ The *how* lives in `implementation.md` §10.
   section, becoming the domain entry point (it can replace a hand-written perf page).
   The lens moves emphasis, never grounding — every claim still cites a real symbol.
   Host-wiki-owned; when absent from context, the ingest skill *asks* rather than guesses.
+- **The page unit is the subsystem, not the hub module.** The first discovery
+  ranked single modules by fan-in. Centrality rewards what everything depends on,
+  so on torch_tpu the 27 deep pages landed on `to_string`, `status_builder`,
+  `error_utils`, `macro_utils`, while the compilation-cache tiers, the distributed
+  backend, the compile backend, PjRt and RNG — the subsystems users ask about — had
+  no mechanism page at all (catalog + doc-concepts only); on tpu-inference, a flat
+  Python package with few hubs, discovery found 5 units against 208 catalog pages.
+  An openwiki run on the same repo planned 32 subsystem pages that matched the
+  questions. The fix keeps decision 8's derivation but changes the unit: the
+  planner splits the module tree to a budget (flat directories by reference
+  community), ranks units by *external* fan-in + internal interactions, seeds each
+  from its entry points (the API surface the rest of the repo enters through) and
+  hubs, and hands synthesis a `## Scope` block so the page is about the unit, not
+  the first hub. Hubs become sections. The proposal is shown before synthesis;
+  curation is config (`agenda_exclude`, `seeds: (subsystem: <prefix>)`). The gate,
+  packets, coverage and verify are unchanged. (§10.11)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host
@@ -391,19 +413,28 @@ The comprehension agenda is **derived from topology, not authored**, and effort 
 list is an optional override, not the source.
 
 **Where the agenda comes from (derivation order — deterministic until synthesis):**
-1. **Discovery (primary, automated).** Cluster the symbol graph into cohesive
-   units (default: the module/package tree, refinable by graph community
-   structure), rank by centrality (aggregate fan-in), and **assign a tier by
-   relative rank** so thresholds adapt to any repo size. Auto-seed each unit from
-   its highest-centrality symbols — no hand-seeding. This is the bulk of the
-   agenda for every repo.
+1. **Planning (primary, automated) — the subsystem planner.** Split the module
+   tree (library modules only; tests/examples/vendored excluded) top-down until
+   every node holds at most a budget of modules; a flat directory over budget is
+   split by reference community instead. Each unit gets its symbol set, internal
+   edges, and **external fan-in** (distinct outside symbols that reference it);
+   units are ranked by external fan-in + internal interactions and capped. Each is
+   seeded from its **entry points** (inside symbols with the most outside callers —
+   the API surface) and then its hubs, and its packet carries a `## Scope` block
+   naming the modules and entry points. The proposal (a table of contents) is
+   printed and written to `.cache/plan/<slug>.agenda.md` for the user to confirm
+   before synthesis. Module-level centrality (one module per unit, ranked by
+   fan-in) remains as `agenda: modules` — an existing silo keeps it until told
+   otherwise, so a `--ref` bump never surprises with new pages. (§10.11)
 2. **Shared + type-aware defaults.** A stable domain set (`compilation-pipeline,
    dispatch-path, compute-comm-overlap, …`) and a per-repo-kind set (trainer →
    `sharding / checkpointing / data-pipeline`; Pallas → `block-sizing / autotune /
    numerics`) seed the agenda before discovery refines it.
-3. **Curation (optional override).** The user edits `config/<slug>.md` to add or
-   re-tier a concept, or supply seed symbols — worth it only for priority repos;
-   never required.
+3. **Curation (optional override).** The user edits `config/<slug>.md`: drop
+   planned units with `agenda_exclude:` globs, cap them with `agenda_max`, add or
+   rename a unit with `- **<slug>** — seeds: (subsystem: <dir prefix>)` (seeded
+   from that directory's entry points + hubs, re-derived every run), or supply
+   seed symbols directly — worth it only for priority repos; never required.
 
 **Synthesis is HEAVY processing, not annotation.** A concept page that merely
 traces the code with a citation per clause is a failure even if it lints. The

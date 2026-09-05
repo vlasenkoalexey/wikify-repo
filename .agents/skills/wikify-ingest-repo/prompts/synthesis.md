@@ -22,6 +22,12 @@ to the frontmatter using ONLY the keys that genuinely apply — this is what let
 `connect` link your page to the same concept in other repos as an authoritative match
 (vs. a name-guess). Omit the field entirely if none apply; never invent a key not listed.
 
+**Scope.** If the packet has a `## Scope` block, the page is about that **subsystem as a
+whole** (the subsystem planner chose it): its responsibilities, the mechanism that ties the
+listed modules together, and how the rest of the repo enters it through the listed entry
+points. Do not write the page about the first hub symbol you meet; hub utilities inside the
+unit are sections at most. The `## Seeds` are where to start reading, not the subject.
+
 ## Method (this is different from a shallow pass — follow it)
 1. The packet is your **grounding index + citation target list**, not your only
    source. Its Subgraph lists the symbols you may cite (with `cite:` links) and

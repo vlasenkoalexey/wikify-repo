@@ -40,6 +40,7 @@ steps**. Keeping this boundary clean is the most important implementation rule.
 | symbol diff (reconcile) | **Python** | 2 |
 | ~~dispatch extractor~~ *(descoped — devirtualization in `build_graph` crosses the dynamic-dispatch seam instead; §10.2)* | **Python** | 3 |
 | evidence collection (tests-as-spec; docs/dynamics-source not realized) | **Python** | 4 |
+| agenda planning: subsystem tree/community split, entry points, seeds, scope | **Python** | 5 |
 | **concept synthesis → mechanism pages** | **LLM agent** | 5 |
 | citation linter, assemble, index | **Python** | 6 |
 | coverage set-difference → module catalogs | **Python** | 6b |
@@ -86,7 +87,8 @@ wikify-repo/
     verify.py         # adversarial-verify worklist + verdict aggregation (deterministic half)
     assemble.py       # Stage 6: write index.md (per-repo + top catalog)
     coverage.py       # Stage 6b: set-difference coverage + per-module catalog pages (+ docstrings, connections)
-    discover.py       # Stage 5 agenda: centrality-rank + auto-seed concepts (realized)
+    discover.py       # Stage 5 agenda, module tier: centrality-rank + auto-seed (legacy `agenda: modules`)
+    subsystems.py     # Stage 5 agenda, subsystem tier: tree/community split, entry points, scope (§10.11)
     docs.py           # Docs mode (source_type: docs): doc packets, src: lint, doc coverage (§10.7)
     source.py         # read def-body snippets + body hashes (shared by packet/diff)
     monikers.py       # parse SCIP symbol strings → descriptors (shared)
@@ -123,6 +125,8 @@ wikify lint     <slug> [--fix]    # Stage 6 lint only (re-runnable)
 wikify coverage <slug> [--emit]   # Stage 6b: report whole-repo coverage; --emit (re)writes catalogs
 wikify verify   <slug> [--page]   # adversarial-verify worklist (claims per page; no model)
 wikify plan     <slug> [--ref]    # dry-run: same derived agenda as prepare; needs a cached index
+wikify agenda   <slug> [--max N]  # propose the subsystem table of contents from the cached index (§10.11)
+      # prepare --agenda subsystems|modules overrides the config/default planner for one run
 wikify connect  [--apply k1,k2] [--refresh] [--exclude repo/path] [--vocab concepts]
       # Stage 7: propose (no args) / wire cross-repo concept links inline (§10.10)
 ```
@@ -130,6 +134,9 @@ wikify connect  [--apply k1,k2] [--refresh] [--exclude repo/path] [--vocab conce
 `finalize` runs Stage 6b automatically (lint concepts → emit module catalogs →
 write the coverage report into `index.md`). `wikify coverage` is the standalone
 inspector — it answers "is the whole repo represented?" without re-synthesizing.
+`finalize` also **warns** (never fails) when the silo has no `overview.md`: the overview is
+the front door — the host index links it (skill register step) and `connect` discovers silos
+by its presence — but it is written last, so a partial run must still finalize.
 
 `prepare`/`finalize` are the two halves the SKILL.md orchestrates around agent
 synthesis. `ingest` is the conceptual reconcile = `prepare` + agent + `finalize`.
@@ -201,6 +208,7 @@ One markdown file per concept at `.cache/packets/<slug>/<concept>.md`
 ## Synthesis focus (lens)        ← only when config sets `synthesis_focus` (§10.9)
 ## Seeds
 <seed symbols, or "(discover: top-centrality in module X)">
+## Scope                         ← subsystem planner (§10.11): the unit's modules + entry points
 ## Subgraph
 <each symbol: moniker, signature, def file:line, docstring summary, callers[],
  callees[], and its `cite:` catalog-anchor link — copy VERBATIM when citing>
@@ -324,7 +332,8 @@ skill drives the LLM half; `connect.py` is the deterministic half.
   human's concept selection is honored (unpicked concepts stay unconnected).
 
 ### Phase 4 — discovery, lanes, L4
-- Candidate-concept discovery → "Candidate concepts" in `index.md`.
+- Candidate-concept discovery → realized twice: module centrality (`discover.py`) and the
+  subsystem planner (`subsystems.py`, §10.11), which proposes the table of contents.
 - Lane router (code-py / code-cpp / pallas-kernel / config / doc) + Pallas
   extractor + tpu-recipes config path.
 - Optional L4 runtime enrichment (`## Observed dynamics`), wired to XProf.
@@ -568,7 +577,12 @@ the same slug in place), `wiki_subdir` (default `code` → `wiki/code/<slug>`; `
 detection; e.g. `[python, typescript]`), `synthesis_focus` (a domain **lens** foregrounded in
 overview/concept synthesis — e.g. "TPU performance — kernels, sharding, autotune, precision"),
 `coverage_collapse` (globs → catalog page kept citeable but member body dropped — model zoos),
-`coverage_exclude` (globs → no catalog page — uncited tests/vendored only).
+`coverage_exclude` (globs → no catalog page — uncited tests/vendored only),
+`agenda` (`subsystems` | `modules` — the Stage 5 planner, §10.11; unset → subsystems for a
+fresh silo, modules for one that already has state), `agenda_max` (cap on planned units),
+`agenda_exclude` (globs over directory prefixes: `dir` drops the unit, `dir/*` its children).
+In the `## Concepts` list, `seeds: (subsystem: <dir prefix>)` seeds a concept from a whole
+directory (entry points + hubs, re-derived each run) in either mode.
 *Connect (Stage 7) adds no per-repo config keys:* its vocabulary is the host wiki's
 `wiki/concepts/` filenames (CLI `--vocab <dir>` to override) and *which* concepts to wire is a
 skill-interactive choice (batch does only `--refresh`) — nothing to put in `config/<slug>.md`.
@@ -654,3 +668,54 @@ Selection (which concepts) is a human decision at the connection phase — conne
 the pages. Deepening a concept into a real hub is optional LLM prose *outside* the auto block
 (`wikify-connect-repo` skill). Dependency links (Stage 7 "(a)") are not yet automated. Pinning tests:
 `tests/test_connect.py`.
+
+### 10.11 Subsystem planner — `wikify/subsystems.py` (realized 2026-09-04)
+Decision 8's unit is "the derived cluster"; the first realization (`discover.py`) used one
+module per unit ranked by fan-in, which on real repos surfaces hub headers (design.md
+Decisions log, "The page unit is the subsystem, not the hub module"). The planner replaces the
+*unit*, not the derivation:
+
+- **Tree split.** Documentable symbols → definition files (library only: `PLANNER_EXCLUDES` =
+  `discover.DEFAULT_EXCLUDES` + per-file tests `_test.`/`_tests.`/`conftest.py`). Strip the
+  umbrella package (longest shared directory prefix). Split a directory whose subtree holds
+  more than `max_modules` (20) modules into its children; children under `min_modules` (2)
+  fold into the parent's own group; files directly in a split directory form that
+  directory's own unit. (`_split`)
+- **Flat split.** A flat directory over budget (torch_tpu's `common/`, 65 modules) cannot
+  split by tree: run `discover.label_propagation` over the directory's own symbols, give each
+  module its dominant community, and make communities spanning >= 3 modules units named
+  `<dir>::<stem>` after the cluster's **largest** module (naming by importance picks the
+  status helper everyone calls; the substantive module is the big one). The remainder stays
+  as the directory's group. Falls back to one flat unit when nothing separates. (`_split_flat`)
+- **Stats + seeds.** Per unit: symbol set, internal edges, **external fan-in** (distinct
+  library symbols outside the unit referencing inside; test callers never count),
+  external fan-out, class count. **Entry points** = inside symbols ranked by distinct
+  external callers (callables/types first, `operator*` last); **hubs** = inside symbols by
+  importance. Seeds = entry points then hubs, capped at 8, handed to `packet.gather_subgraph`
+  unchanged (relevance-bounded, budget 60). (`_fill`)
+- **Rank + cap.** `score = fanin_external * 2 + internal_edges`; drop units under
+  `min_symbols` (8) but always keep the top one; de-dup slugs; cap at `agenda_max` (24).
+- **Slug.** Directory path minus umbrella, `/` → `-`, leading `_` stripped, `::` → `-`; root
+  → `core`. So `torch_tpu/_internal/compile` → `internal-compile`, `torch_tpu/common::cache_key`
+  → `common-cache_key`.
+- **Packet scope.** `render_scope` → the packet's `## Scope` block: unit, module list, entry
+  points, and the instruction to write about the unit as a whole (hubs are sections).
+  `packet.build_packet(..., scope=)`.
+- **Agenda file.** `render_agenda` → `.cache/plan/<slug>.agenda.md`: a ranked table (slug,
+  subsystem, modules, symbols, ext fan-in, internal, entry points) plus per-unit module
+  lists, with the curation instructions inline. `prepare` prints it; `wikify agenda` emits it
+  alone from the cached index (no packets) — the skill's "confirm before synthesizing" step.
+- **Mode resolution** (`cli._agenda_mode`): `--agenda` > config `agenda:` > default rule —
+  a silo with no recorded pages plans by subsystems, a silo with state keeps `modules` (and
+  prints the hint to switch). Config `(subsystem: <prefix>)` concepts are seeded via
+  `subsystem_for_prefix` in either mode.
+
+Evidence at first run (torch_tpu @ `ea8ca515`, cached index): 24 units over 323 library
+modules — `common-cache_key`, `common`, `ops-op_names`, `eager-device_buffer`, `ops`,
+`ops-op_builder_utils`, `ops-macros`, `ops-view_decomposition`, `ops-scaled_dot_product_attention`,
+`eager`, `distributed`, `pjrt`, `internal-compile`, `internal-utils`, `internal-profiler`, ...
+— against the module tier's `to_string.h` / `status_builder.h` / `macro_utils.h`. torchtitan:
+15 units (`components`, `models-flux`, `distributed`, `config`, `tools`, `protocols`, one per
+model family, `models-moe`, `hf_datasets`). Pinning tests: `tests/test_subsystems.py`,
+`tests/test_config.py` (`(subsystem: …)`, `agenda*` keys), `tests/test_cli.py` (planner mode,
+`agenda` command, fresh/existing default, config subsystem seeds).

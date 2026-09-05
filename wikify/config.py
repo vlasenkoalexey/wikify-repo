@@ -24,7 +24,11 @@ import yaml
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
                  "acquire", "wiki_subdir", "source_type", "doc_globs",
-                 "coverage_collapse", "coverage_exclude", "synthesis_focus"}
+                 "coverage_collapse", "coverage_exclude", "synthesis_focus",
+                 "agenda", "agenda_max", "agenda_exclude"}
+
+# ``agenda:`` — how the derived agenda is planned (implementation.md §10.11).
+_AGENDA_MODES = ("subsystems", "modules")
 
 # Separators between a concept name and its ``seeds:`` clause: em-dash or hyphen.
 _DASH = "—"
@@ -45,6 +49,9 @@ _SEEDS_RE = re.compile(
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _BACKTICK_TOKEN_RE = re.compile(r"`([^`]+)`")
 _AUTO_RE = re.compile(r"^\(\s*(?:auto|discover\b.*?)\)\s*$", re.IGNORECASE)
+# ``(subsystem: <dir prefix>)`` — seed the concept from a whole subsystem (every library
+# module at/under the prefix): entry points + hubs, re-derived at each prepare.
+_SUBSYSTEM_RE = re.compile(r"^\(\s*subsystem:\s*(?P<prefix>[^)]+?)\s*\)\s*$", re.IGNORECASE)
 
 
 @dataclass
@@ -53,13 +60,16 @@ class Concept:
 
     ``seeds`` are backtick-quoted symbol tokens (backticks stripped); empty when
     the seeds clause was ``(auto)`` or ``(discover: ...)``, in which case
-    ``auto`` is True (Stage 5 discovers entry points instead).
+    ``auto`` is True (Stage 5 discovers entry points instead). ``(subsystem: <prefix>)``
+    sets ``subsystem`` — the concept is seeded from that directory's entry points and
+    hubs (``subsystems.subsystem_for_prefix``), re-derived at each ``prepare``.
     """
 
     slug: str
     seeds: list[str] = field(default_factory=list)
     auto: bool = False
     note: str = ""
+    subsystem: str | None = None
 
 
 @dataclass
@@ -100,6 +110,14 @@ class RepoConfig:
     # attention, autotune knobs, precision, memory"). Surfaced in every packet + the doc worklist;
     # honored by prompts/synthesis.md, overview.md, ingest-docs.md. Empty → neutral synthesis.
     synthesis_focus: str = ""
+    # Agenda planner (Stage 5, §10.11). ``subsystems`` (directory-shaped units with entry
+    # points — the default for a fresh silo) or ``modules`` (legacy: single modules by
+    # centrality). Unset on a silo that already has state → ``modules`` (no surprise
+    # rebuilds on a --ref bump); set it explicitly to switch. ``agenda_max`` caps the
+    # planned pages; ``agenda_exclude`` globs drop subsystems by directory prefix.
+    agenda: str | None = None
+    agenda_max: int | None = None
+    agenda_exclude: list[str] = field(default_factory=list)
     compile_commands: str | None = None  # path to a pre-existing compile_commands.json
     # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
     # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
@@ -141,19 +159,24 @@ def _as_list(value: object) -> list[str]:
     return [str(value)]
 
 
-def _parse_seeds(payload: str) -> tuple[list[str], bool, str]:
-    """Parse a ``seeds:`` payload → ``(seeds, auto, note)``.
+def _parse_seeds(payload: str) -> tuple[list[str], bool, str, str | None]:
+    """Parse a ``seeds:`` payload → ``(seeds, auto, note, subsystem)``.
 
-    ``(auto)`` / ``(discover: ...)`` → ``auto=True`` with no seeds. Otherwise the
-    backtick-quoted tokens are the seeds; any trailing non-token text is the note.
+    ``(auto)`` / ``(discover: ...)`` → ``auto=True`` with no seeds. ``(subsystem: <prefix>)``
+    → ``auto=True`` plus the prefix. Otherwise the backtick-quoted tokens are the seeds;
+    any trailing non-token text is the note.
     """
     payload = payload.strip()
     if _AUTO_RE.match(payload):
-        return [], True, ""
+        return [], True, "", None
+    sm = _SUBSYSTEM_RE.match(payload)
+    if sm:
+        prefix = sm.group("prefix").strip().strip("`").strip("/")
+        return [], True, f"subsystem: {prefix}", prefix
     seeds = [m.group(1).strip() for m in _BACKTICK_TOKEN_RE.finditer(payload)]
     note = _BACKTICK_TOKEN_RE.sub("", payload)
     note = note.strip().strip(",").strip()
-    return seeds, False, note
+    return seeds, False, note, None
 
 
 def _parse_concept(line: str) -> Concept:
@@ -177,16 +200,17 @@ def _parse_concept(line: str) -> Concept:
     seeds: list[str] = []
     auto = False
     note = ""
+    subsystem: str | None = None
     sm = _SEEDS_RE.search(rest)
     if sm:
-        seeds, auto, note = _parse_seeds(sm.group("payload"))
+        seeds, auto, note, subsystem = _parse_seeds(sm.group("payload"))
     else:
         # no seeds clause; treat any remaining dash-prefixed text as a note
         note = rest.lstrip(f" {_DASH}-").strip()
 
     if not note:
         note = note_from_comment
-    return Concept(slug=slug, seeds=seeds, auto=auto, note=note)
+    return Concept(slug=slug, seeds=seeds, auto=auto, note=note, subsystem=subsystem)
 
 
 def _parse_concepts(body: str) -> list[Concept]:
@@ -214,6 +238,11 @@ def validate_config(cfg: RepoConfig) -> None:
     """Raise ``ValueError`` if the parsed config violates the schema."""
     if not cfg.slug:
         raise ValueError("config frontmatter is missing required key 'slug'")
+    if cfg.agenda is not None and cfg.agenda not in _AGENDA_MODES:
+        raise ValueError(
+            f"agenda: must be one of {', '.join(_AGENDA_MODES)} (got {cfg.agenda!r})")
+    if cfg.agenda_max is not None and cfg.agenda_max < 1:
+        raise ValueError("agenda_max: must be a positive integer")
 
 
 def load_config(path: str | Path) -> RepoConfig:
@@ -243,6 +272,8 @@ def load_config(path: str | Path) -> RepoConfig:
     acq = fm.get("acquire")
     wsub = fm.get("wiki_subdir")
     stype = fm.get("source_type")
+    agenda = fm.get("agenda")
+    amax = fm.get("agenda_max")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
@@ -259,6 +290,9 @@ def load_config(path: str | Path) -> RepoConfig:
         coverage_collapse=_as_list(fm.get("coverage_collapse")),
         coverage_exclude=_as_list(fm.get("coverage_exclude")),
         synthesis_focus="" if fm.get("synthesis_focus") is None else str(fm.get("synthesis_focus")),
+        agenda=None if agenda is None else str(agenda).strip().lower(),
+        agenda_max=None if amax is None else int(amax),
+        agenda_exclude=_as_list(fm.get("agenda_exclude")),
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

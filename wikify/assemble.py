@@ -99,6 +99,7 @@ def write_repo_index(
     concept_status: list[tuple[str, str]],  # (concept_slug, status)
     date: str,
     report=None,  # coverage.CoverageReport | None
+    snapshot: str | None = None,   # OKF bundle-level provenance: the pinned tree (URL or path)
 ) -> Path:
     wiki_slug_dir = Path(wiki_slug_dir)
     wiki_slug_dir.mkdir(parents=True, exist_ok=True)
@@ -159,12 +160,15 @@ symbol is enumerated and represented.
 
 See [`catalog/`](catalog/) for the generated per-module structural index.
 """
+    okf = f'okf_version: "0.2"\n'
+    if snapshot:
+        okf += f"sources:\n  - {{resource: {snapshot}, title: {slug} @ {ref[:10]}}}\n"
     text = f"""---
 slug: {slug}
 commit: {ref}
 scip_tool: {scip_tool}
 updated: {date}
----
+{okf}---
 
 # {slug} internals wiki
 

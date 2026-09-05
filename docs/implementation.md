@@ -789,3 +789,26 @@ cached. Without a cached SCIP index the cache is bypassed with a note. `prompts/
 ends with the record step; the skill's step 7 describes the incremental loop.
 Tests: `tests/test_verify.py` (key stability, evidence invalidation, refuted/resample
 handling, record round-trip), `tests/test_cli.py` (worklist → record → cached).
+
+### 10.12 OKF v0.2 compatibility — `wikify/okf.py` (realized 2026-09-05)
+Design.md decisions log "OKF: compatible by naming, minimal by design". Front matter is edited
+**textually and key-scoped** (`okf.set_keys`): only the owned keys (`generated`, `verified`,
+`sources`, an invalid `status`) are removed/re-appended; every other line is byte-identical and
+a second run is a no-op.
+- **`finalize`**: `generated: {by: wikify/<version>, at}` on concept pages (refreshed only when
+  the page *body* sha, now recorded in `state.pages[<slug>].body_sha`, changes), doc-concepts and
+  `overview.md` (set if absent); `sources:` on concept pages = the definition files the page's
+  citations resolve to (`okf.cited_files`, occurrence-counted, most-cited first, `MAX_SOURCES`
+  10) as `<base>/<path>` where base is `source_url` or the page-relative path into the pinned
+  checkout (same rule as catalog links; `source_url: ""` → no sources); `status: fresh` dropped.
+  The silo `index.md` gets `okf_version: "0.2"` and one snapshot `sources` entry
+  (`source_url`'s `/blob/<sha>` → `/tree/<sha>`, else the relative checkout path).
+- **`verify --record`**: after recording, if every claim holds at current evidence
+  (worklist empty or re-sample only), `verified` gains/replaces the `wikify-verify/<version>`
+  entry; if any claim is refuted or invalidated the tool entry is removed. Entries by other
+  producers (`human:<id>`) always survive; the list is re-rendered in flow style.
+- **`okf.warnings`** (printed by finalize, never a gate): actor pattern
+  (`producer/version` | `human:<id>` | `process:<id>`), offset-qualified ISO datetimes,
+  `status` ∈ {draft, stable, deprecated}, `stale_after` datetime.
+- Prompts no longer write `status: fresh`; synthesis.md tells the agent the tool owns
+  `generated`/`verified`/`sources`/`status`. Tests: `tests/test_okf.py`, `tests/test_cli.py`.

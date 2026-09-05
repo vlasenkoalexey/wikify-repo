@@ -152,6 +152,21 @@ the agent to retrieve from it. Add a block like this to **`CLAUDE.md`** (Claude 
 (Codex), and/or **`GEMINI.md`** (Antigravity) — or to a shared **`SCHEMA.md`** that all three point at:
 
 ```markdown
+## OKF v0.2-compatible output
+
+Every silo is a valid [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+v0.2 bundle, Google Cloud's naming convention for markdown knowledge bases read by agents.
+`finalize` stamps each page with `generated: {by: wikify/<version>, at}` and file-level
+`sources` (the definition files its citations resolve to, at the pinned commit); `verify
+--record` stamps `verified: [{by: wikify-verify/<version>, at}]` once every load-bearing
+claim on a page holds, and a human review appends `{by: human:<id>, at}`; the silo
+`index.md` declares `okf_version: "0.2"` and the pinned snapshot. A reader derives the
+spec's trust tier from `verified` — unverified, machine-confirmed, or human-reviewed —
+without knowing anything wikify-specific. Symbol-level grounding stays inline in the
+prose, where the citation linter gates it; `sources` is its file-level projection, not a
+copy. wikify's own fields (`concept`, `concepts`, `aliases`, `provenance`) ride along as
+OKF extension fields.
+
 ## Codebase wiki — source of truth
 A grounded wiki for <repo> lives at `wiki/code/<slug>/`. To answer questions about its internals,
 **retrieve from the wiki instead of reading source**:

@@ -356,3 +356,72 @@ def test_version_flag():
     from wikify import __version__
     res = runner.invoke(app, ["--version"])
     assert res.exit_code == 0 and res.output.strip() == f"wikify {__version__}"
+
+
+def test_finalize_stamps_okf_and_is_idempotent(project):
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(
+        scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    page = silo / "concepts" / "compute-pipeline.md"
+    page.write_text("---\ntitle: t\ntype: concept\nstatus: fresh\nupdated: 2026-09-05\n---\n\n# t\n\n"
+                    f"## Overview\nDriven by [`compute`]({ref}).\n", encoding="utf-8")
+    (silo / "overview.md").write_text("---\ntitle: o\ntype: overview\n---\n# o\n", encoding="utf-8")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    text = page.read_text()
+    assert "generated: {by: wikify/" in text and "status:" not in text
+    assert "sources:\n  - {resource: " in text and "mathlib.py, title: mathlib.py}" in text
+    assert "updated: 2026-09-05\n" in text                          # untouched
+    assert text.endswith(f"## Overview\nDriven by [`compute`]({ref}).\n")
+    assert "generated: {by: wikify/" in (silo / "overview.md").read_text()
+    idx = (silo / "index.md").read_text()
+    assert 'okf_version: "0.2"' in idx and "sources:\n  - {resource: " in idx and "mathlib @" in idx
+    assert "warning: okf" not in res.output
+    # second run: nothing changes
+    before = page.read_text(), (silo / "overview.md").read_text()
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert (page.read_text(), (silo / "overview.md").read_text()) == before
+    # a body edit refreshes generated.at only via body change (same day here: value equal or newer)
+    gen_before = [l for l in before[0].splitlines() if l.startswith("generated:")][0]
+    page.write_text(page.read_text() + "\nMore prose.\n", encoding="utf-8")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert [l for l in page.read_text().splitlines() if l.startswith("generated:")][0] >= gen_before
+
+
+def test_verify_record_stamps_verified_when_all_hold(project):
+    import json as _json
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(
+        scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    page = silo / "concepts" / "compute-pipeline.md"
+    page.write_text(f"---\ntitle: t\n---\n\n# t\n\n## Overview\nDriven by [`compute`]({ref}).\n"
+                    f"\n## Mechanism (step-by-step)\n1. [`compute`]({ref}) squares.\n", encoding="utf-8")
+    assert runner.invoke(app, ["finalize", SLUG, "--root", str(project)]).exit_code == 0
+    out = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--root", str(project)]).output
+    lines = [int(l.split()[0][1:]) for l in out.splitlines() if l.strip().startswith("L")]
+    v = project / "v.json"
+    v.write_text(_json.dumps({"verdicts": [{"claim_line": n, "refuted": False} for n in lines]}))
+    res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--record", str(v), "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "verified: stamped wikify-verify/" in res.output
+    assert "verified: [{by: wikify-verify/" in page.read_text()
+    # one refuted → tool entry removed. The stamp added a front-matter line, so claim
+    # lines moved: re-read the worklist (as the skill does) before recording again.
+    out = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--all", "--root", str(project)]).output
+    lines = [int(l.split()[0][1:]) for l in out.splitlines() if l.strip().startswith("L")]
+    v.write_text(_json.dumps({"verdicts": [{"claim_line": lines[0], "refuted": True, "note": "no"}]}))
+    res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--record", str(v), "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "verified:" not in page.read_text()

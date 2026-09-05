@@ -75,7 +75,6 @@ concepts: [<shared-key>, ...]   # OPTIONAL — see "Concept tags" below; omit if
 aliases: [<author name>, ...]   # OPTIONAL — the authors' terms for this mechanism (README /
                                 # docs / docstrings); what a question would call it. Omit if none.
 updated: <date>
-status: fresh
 ---
 # <concept title>
 
@@ -119,6 +118,11 @@ Honest gaps where even the source didn't settle it.
 
 ## See also
 Sibling concept pages.
+
+## Front matter owned by the tool
+Do not write `generated`, `verified`, `sources` or `status`: `wikify finalize` stamps
+`generated` and file-level `sources` (OKF v0.2), `wikify verify --record` stamps
+`verified`. Anything you put there is overwritten.
 
 ## Citations resolve into the catalog (no stubs)
 You write ONE file: the concept page. Every symbol already lives in its module

@@ -65,24 +65,49 @@ def _main(
 # --------------------------------------------------------------------------- #
 # Layout helpers
 # --------------------------------------------------------------------------- #
+INREPO_CONFIG = "wikify.md"     # marks the in-repo layout (§10.15)
+INREPO_CACHE = ".wikify"
+
+
 class Paths:
-    def __init__(self, root: Path, slug: str) -> None:
+    """Every path the pipeline touches, resolved once per run for one of two layouts:
+
+    - **host wiki** (default): ``config/<slug>.md``, source under ``raw/code/<slug>``,
+      cache ``.cache/``, silo ``wiki/<subdir>/<slug>/``;
+    - **in-repo** (``wikify.md`` at the root): the repo is the source, cache
+      ``.wikify/``, silo ``<wiki_dir>/`` flat with no slug level, no ``raw/``.
+    Nothing downstream knows which layout it is in."""
+
+    def __init__(self, root: Path, slug: str, in_repo: bool = False, wiki_dir: str = "wiki") -> None:
         self.root = root
         self.slug = slug
-        self.cache = root / ".cache"
-        self.raw = root / "raw"
-        self.config = root / "config" / f"{slug}.md"
+        self.in_repo = in_repo
+        self.cache = root / (INREPO_CACHE if in_repo else ".cache")
+        self.raw = (self.cache / "raw") if in_repo else (root / "raw")
+        self.config = root / INREPO_CONFIG if in_repo else root / "config" / f"{slug}.md"
         self.scip = self.cache / "scip" / f"{slug}.scip"
         self.scip_cpp = self.cache / "scip" / f"{slug}.cpp.scip"  # C++ index (scip-clang)
         self.state = state_mod.state_path(self.cache, slug)
-        self.wiki = root / "wiki"
+        self.wiki_dir = wiki_dir
+        self.wiki = root / (wiki_dir if in_repo else "wiki")
         self.set_wiki_subdir("code")  # default; _load() overrides from config
 
     def set_wiki_subdir(self, subdir: str | None) -> None:
-        """Place this repo's wiki at ``wiki/<subdir>/<slug>`` (subdir="" → ``wiki/<slug>``)."""
+        """Place this repo's wiki at ``wiki/<subdir>/<slug>`` (subdir="" → ``wiki/<slug>``).
+        In-repo the silo is ``<wiki_dir>/`` itself: flat, no slug level."""
+        if self.in_repo:
+            self.wiki_subdir = ""
+            self.wiki_base = self.wiki
+            self.wiki_slug = self.wiki
+            return
         self.wiki_subdir = subdir or ""
         self.wiki_base = self.wiki / self.wiki_subdir if self.wiki_subdir else self.wiki
         self.wiki_slug = self.wiki_base / self.slug
+
+    @property
+    def wiki_rel(self) -> str:
+        """The silo directory relative to the root, for messages."""
+        return os.path.relpath(self.wiki_slug, self.root)
 
 
 def _today() -> str:
@@ -98,7 +123,22 @@ def _scip_clang_bin() -> str:
     return "scip-clang"
 
 
-def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
+def _load(root: Path, slug: str | None) -> tuple[Paths, RepoConfig]:
+    """Resolve the layout: ``wikify.md`` at the root means in-repo (slug optional, must
+    match when given); otherwise a host wiki needs ``config/<slug>.md``."""
+    inrepo = root / INREPO_CONFIG
+    if inrepo.exists():
+        cfg = load_config(inrepo)
+        if slug and slug != cfg.slug:
+            typer.echo(f"error: {INREPO_CONFIG} here is for '{cfg.slug}', not '{slug}'", err=True)
+            raise typer.Exit(2)
+        cfg = replace(cfg, in_repo=True)
+        return Paths(root, cfg.slug, in_repo=True, wiki_dir=cfg.wiki_dir), cfg
+    if not slug:
+        typer.echo(f"error: no {INREPO_CONFIG} in {root} and no <slug> given — run `wikify init` "
+                   f"here for the in-repo layout, or pass the slug of a host-wiki config/<slug>.md",
+                   err=True)
+        raise typer.Exit(2)
     p = Paths(root, slug)
     if not p.config.exists():
         typer.echo(f"error: no config at {p.config}", err=True)
@@ -106,6 +146,17 @@ def _load(root: Path, slug: str) -> tuple[Paths, RepoConfig]:
     cfg = load_config(p.config)
     p.set_wiki_subdir(cfg.wiki_subdir)
     return p, cfg
+
+
+def _acquire(p: Paths, cfg: RepoConfig, repo: str | None, ref: str | None):
+    """Stage 0 for either layout. In-repo: the root itself, pinned at HEAD, with a warning
+    when the tree is dirty (hashes come from disk, the pin is HEAD)."""
+    if p.in_repo:
+        if acquire.is_dirty(p.root):
+            typer.echo("warning: working tree has uncommitted changes — the wiki will record "
+                       "HEAD as its pin but ground against the files on disk", err=True)
+        return acquire.in_place(p.root, p.slug)
+    return acquire.acquire(_source(cfg, repo), p.slug, p.raw, ref=ref, mode=cfg.acquire)
 
 
 def _source(cfg: RepoConfig, repo: str | None) -> str:
@@ -325,7 +376,7 @@ def _prepare_docs(p: Paths, cfg: RepoConfig, acq) -> None:
 def _finalize_docs(p: Paths, cfg: RepoConfig, repo: str | None) -> None:
     """Docs-mode finalize: gate `src:` citations against the doc map + coverage floor +
     assemble the docs index."""
-    acq = acquire.acquire(_source(cfg, repo), p.slug, p.raw, ref=cfg.ref, mode=cfg.acquire)
+    acq = _acquire(p, cfg, repo, cfg.ref)
     import json
     dm_path = p.cache / "docs" / f"{p.slug}.docmap.json"
     if dm_path.exists():
@@ -361,7 +412,7 @@ def _finalize_docs(p: Paths, cfg: RepoConfig, repo: str | None) -> None:
 # --------------------------------------------------------------------------- #
 @app.command()
 def prepare(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     ref: str = typer.Option(None, help="Pinned commit/tag to ingest."),
     repo: str = typer.Option(None, help="Source path or git URL (overrides config)."),
     root: Path = typer.Option(Path("."), help="Project root."),
@@ -375,7 +426,8 @@ def prepare(
 ) -> None:
     """Stages 0-4: acquire, index, build graph, emit packets, print the plan."""
     p, cfg = _load(root, slug)
-    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
+    slug = p.slug
+    acq = _acquire(p, cfg, repo, ref or cfg.ref)
     typer.echo(f"acquired {slug} @ {acq.commit[:10]}  ({acq.repo_dir})")
     if cfg.synthesis_focus.strip():
         typer.echo(f"synthesis focus (lens): {cfg.synthesis_focus.strip()}")
@@ -517,6 +569,9 @@ def prepare(
     # step (doc-concept extraction, skills/prompts/ingest-docs.md). The docs stay in
     # place; we only record which to process, relative to the repo root.
     docs = _find_docs(acq.repo_dir, cfg.docs)
+    if p.in_repo:
+        own = (cfg.wiki_dir.rstrip("/") + "/", INREPO_CACHE + "/")
+        docs = [d for d in docs if not d.startswith(own)]
     if docs:
         manifest = p.cache / "docs" / f"{slug}.txt"
         manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -527,20 +582,21 @@ def prepare(
 
 @app.command()
 def finalize(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     repo: str = typer.Option(None, help="Source path or git URL (overrides config)."),
     root: Path = typer.Option(Path("."), help="Project root."),
     fix: bool = typer.Option(False, help="Auto-repair deterministically-fixable lint errors first."),
 ) -> None:
     """Stage 6: lint the agent-written pages, assemble the index, update state."""
     p, cfg = _load(root, slug)
+    slug = p.slug
     if cfg.source_type == "docs":
         _finalize_docs(p, cfg, repo)
         return
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
-    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref, mode=cfg.acquire)
+    acq = _acquire(p, cfg, repo, cfg.ref)
     graph = _graph(p)
 
     # Stage 6b FIRST — emit module catalogs (the symbol homes). Citations resolve
@@ -645,15 +701,16 @@ def finalize(
     )
     # Top catalog of code wikis, written into the configured base (wiki/code/ by default,
     # or wiki/ when wiki_subdir=""). Leaves a curated wiki/index.md untouched when subdir'd.
-    assemble.write_top_index(
-        p.wiki_base, [d.name for d in p.wiki_base.iterdir() if d.is_dir()], _today())
-    rel = f"{p.wiki_subdir}/{slug}" if p.wiki_subdir else slug
-    typer.echo(f"assembled wiki/{rel}/index.md  (commit {acq.commit[:10]})")
+    if not p.in_repo:   # in-repo has one silo and no multi-silo catalog above it
+        assemble.write_top_index(
+            p.wiki_base, [d.name for d in p.wiki_base.iterdir() if d.is_dir()], _today())
+    rel = p.wiki_rel
+    typer.echo(f"assembled {rel}/index.md  (commit {acq.commit[:10]})")
     # The overview is the silo's front door: the host index links it (skill register
     # step) and `connect` discovers silos by its presence. It is written last (skill
     # step 3), so a partial run must still finalize — warn, never fail.
     if not (p.wiki_slug / "overview.md").exists():
-        typer.echo(f"warning: no overview.md at wiki/{rel}/ — the silo is unreachable from "
+        typer.echo(f"warning: no overview.md at {rel}/ — the silo is unreachable from "
                    f"the host index and invisible to `wikify connect` until it exists; write "
                    f"it (skill step 3, prompts/overview.md) and re-run finalize.", err=True)
     else:
@@ -664,12 +721,13 @@ def finalize(
 
 @app.command(name="lint")
 def lint_cmd(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     root: Path = typer.Option(Path("."), help="Project root."),
     fix: bool = typer.Option(False, help="Auto-repair deterministically-fixable errors in place."),
 ) -> None:
     """Re-run the citation linter alone (Stage 6 gate); ``--fix`` auto-repairs first."""
     p, _cfg = _load(root, slug)
+    slug = p.slug
     graph = _graph(p)
     if fix:
         edits, report = fix_mod.fix_silo(p.wiki_slug, graph, p.cache, slug)
@@ -686,12 +744,13 @@ def lint_cmd(
 
 @app.command()
 def coverage(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     root: Path = typer.Option(Path("."), help="Project root."),
     emit: bool = typer.Option(False, help="Write/refresh catalog pages."),
 ) -> None:
     """Report whole-repo coverage (set-difference over the SCIP symbol table)."""
     p, _cfg = _load(root, slug)
+    slug = p.slug
     if not p.scip.exists():
         typer.echo(f"error: no SCIP index at {p.scip}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
@@ -708,7 +767,7 @@ def coverage(
 
 @app.command()
 def verify(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     page: str = typer.Option(None, help="Dump claims for one concept (stem or filename)."),
     root: Path = typer.Option(Path("."), help="Project root."),
     all_claims: bool = typer.Option(False, "--all", help="Ignore cached holds: full worklist."),
@@ -725,6 +784,7 @@ def verify(
     worklists while both are unchanged (plus a deterministic re-sample). ``--all``
     forces the full list. Without a cached SCIP index the cache is bypassed."""
     p, cfg = _load(root, slug)
+    slug = p.slug
     pages = sorted((p.wiki_slug / "concepts").glob("*.md"))
     if page:
         pages = [x for x in pages if page in (x.stem, x.name)]
@@ -736,7 +796,7 @@ def verify(
     hashes: dict[str, str] | None = None
     ref = cfg.ref or ""
     if _scip_indexes(p):
-        acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=cfg.ref, mode=cfg.acquire)
+        acq = _acquire(p, cfg, repo, cfg.ref)
         ref = acq.commit
         hashes = diff.current_hashes(_graph(p), acq.repo_dir)
     else:
@@ -802,6 +862,111 @@ def verify(
                    f"across {len(pages)} page(s)")
 
 
+WIKIFY_BEGIN = "<!-- wikify:begin -->"
+WIKIFY_END = "<!-- wikify:end -->"
+
+
+def _instruction_block(wiki_dir: str) -> str:
+    w = wiki_dir.rstrip("/")
+    return f"""{WIKIFY_BEGIN}
+## Codebase wiki (wikify)
+A grounded internals wiki for this repository lives at `{w}/` (generated by wikify-repo:
+every claim cites a real symbol, checked by a linter). For questions about how this code
+works, read `{w}/overview.md` first and follow its map to the concept page; cite catalog
+anchors (`{w}/catalog/<module>.md#<Symbol>`) and drop to the source line they link when
+you need certainty. `{w}/changes/` records what changed between versions and `{w}/log.md`
+lists every ingest. Do not hand-edit `{w}/catalog/`, `{w}/index.md` or `{w}/log.md`; they
+are regenerated by `wikify finalize`. To build or update the wiki, invoke the
+`wikify-ingest-repo` skill from the repo root (`wikify prepare` -> synthesize ->
+`wikify finalize`; `wikify plan` previews what is stale). Config: `wikify.md`.
+{WIKIFY_END}"""
+
+
+def inject_instructions(path: Path, block: str) -> str:
+    """Write/replace the marker-delimited block in an instruction file. Returns
+    'created' | 'updated' | 'unchanged'."""
+    if not path.exists():
+        path.write_text(block + "\n", encoding="utf-8")
+        return "created"
+    text = path.read_text(encoding="utf-8")
+    if WIKIFY_BEGIN in text and WIKIFY_END in text:
+        head, rest = text.split(WIKIFY_BEGIN, 1)
+        _old, tail = rest.split(WIKIFY_END, 1)
+        new_text = head + block + tail
+    else:
+        new_text = text.rstrip("\n") + "\n\n" + block + "\n"
+    if new_text == text:
+        return "unchanged"
+    path.write_text(new_text, encoding="utf-8")
+    return "updated"
+
+
+@app.command()
+def init(
+    root: Path = typer.Option(Path("."), help="Repository root."),
+    slug: str = typer.Option(None, help="Wiki slug (default: the repo directory name)."),
+    wiki_dir: str = typer.Option("wiki", help="Where the wiki lives inside the repo."),
+    instructions: str = typer.Option(
+        "CLAUDE.md,AGENTS.md", help="Comma-separated agent instruction files to inject the block into."),
+    force: bool = typer.Option(False, help="Rewrite an existing wikify.md."),
+) -> None:
+    """Set up the in-repo layout (§10.15): the wiki lives inside this repository.
+
+    Writes `wikify.md` (config), a `.gitignore` line for `.wikify/`, and a marker-delimited
+    block into the agent instruction files telling agents where the wiki is, how to read it
+    and how to update it. Idempotent. Refuses inside a host-wiki project (`config/*.md`)."""
+    root = root.resolve()
+    if (root / "config").is_dir() and any((root / "config").glob("*.md")):
+        typer.echo("error: this looks like a host-wiki project (config/<slug>.md); the in-repo "
+                   "layout is for a code repository. Run `wikify init` inside the repo instead.", err=True)
+        raise typer.Exit(2)
+    top = acquire._toplevel(root)
+    name = slug or (top.name if top else root.name)
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", name).strip("-") or "repo"
+    cfg_path = root / INREPO_CONFIG
+    if cfg_path.exists() and not force:
+        typer.echo(f"{INREPO_CONFIG}: exists (slug '{load_config(cfg_path).slug}'); use --force to rewrite")
+    else:
+        cfg_path.write_text(f"""---
+slug: {name}
+in_repo: true
+wiki_dir: {wiki_dir.strip('/') or 'wiki'}
+repo: .
+docs:
+  - "**/README*.md"
+  - "docs/**/*.md"
+tests:
+  - "tests/**/*.py"
+  - "test/**/*.py"
+coverage_collapse:
+  - "tests/**"
+  - "test/**"
+  - "third_party/**"
+  - "vendor/**"
+---
+
+# {name} — wikify config (in-repo layout)
+
+Source: this repository. Wiki: `{wiki_dir.strip('/') or 'wiki'}/`. Cache: `.wikify/` (gitignored).
+Add `synthesis_focus:` for a domain lens; `agenda_exclude:` to trim the planner.
+
+## Concepts
+<!-- discovery-driven (subsystem planner); to pin or rename a unit add a list item: **<slug>** — seeds: (subsystem: <dir prefix>) -->
+""", encoding="utf-8")
+        typer.echo(f"wrote {INREPO_CONFIG} (slug '{name}', wiki at {wiki_dir}/)")
+    gi = root / ".gitignore"
+    line = INREPO_CACHE + "/"
+    existing = gi.read_text(encoding="utf-8") if gi.exists() else ""
+    if line not in existing.splitlines():
+        gi.write_text(existing.rstrip("\n") + ("\n" if existing else "") + line + "\n", encoding="utf-8")
+        typer.echo(f".gitignore: added {line}")
+    block = _instruction_block(wiki_dir)
+    for f in [x.strip() for x in instructions.split(",") if x.strip()]:
+        typer.echo(f"{f}: {inject_instructions(root / f, block)} wikify block")
+    typer.echo(f"\nNext: invoke the `wikify-ingest-repo` skill here, or run `wikify prepare` "
+               f"(no slug needed), synthesize the packets, then `wikify finalize`.")
+
+
 @app.command()
 def connect(
     apply: str = typer.Option("", help="Comma-separated concept keys to connect (wire inline)."),
@@ -837,7 +1002,7 @@ def connect(
 
 @app.command()
 def plan(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     ref: str = typer.Option(None, help="Pinned commit/tag."),
     repo: str = typer.Option(None, help="Source path or git URL."),
     root: Path = typer.Option(Path("."), help="Project root."),
@@ -847,7 +1012,8 @@ def plan(
     Reuses the cached SCIP index — a dry-run never triggers indexing (prepare owns
     that, including the sharded path for large repos)."""
     p, cfg = _load(root, slug)
-    acq = acquire.acquire(_source(cfg, repo), slug, p.raw, ref=ref or cfg.ref, mode=cfg.acquire)
+    slug = p.slug
+    acq = _acquire(p, cfg, repo, ref or cfg.ref)
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
@@ -861,7 +1027,7 @@ def plan(
 
 @app.command()
 def agenda(
-    slug: str,
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     root: Path = typer.Option(Path("."), help="Project root."),
     max_subsystems: int = typer.Option(0, "--max", help="Cap the proposal (0 = config/default)."),
     write: bool = typer.Option(True, help="Write .cache/plan/<slug>.agenda.md."),
@@ -872,6 +1038,7 @@ def agenda(
     each with its entry points — for the user to confirm, trim (`agenda_exclude:`) or
     extend (`seeds: (subsystem: <prefix>)`) before `prepare` builds packets."""
     p, cfg = _load(root, slug)
+    slug = p.slug
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)

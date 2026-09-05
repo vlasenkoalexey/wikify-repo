@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **In-repo layout** (`wikify init`): the wiki can live inside the repository it documents —
+  `wikify.md` at the root, the repo itself as the source pinned at HEAD, the silo flat at
+  `wiki/`, the cache at `.wikify/`, and a marker-delimited block injected into `CLAUDE.md` /
+  `AGENTS.md` telling agents where the wiki is and how to update it. Every command then runs
+  from the repo root without a slug. Host-wiki projects are unchanged.
 - **Version-to-version changes** (`wikify/changes.py`): on a `--ref` bump, rebuilt pages'
   packets carry the commits that touched their cited files (`## Since last ingest`, so the
   page can say what changed and why in the authors' words); `finalize` writes

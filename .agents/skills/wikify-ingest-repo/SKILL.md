@@ -29,8 +29,17 @@ synthesis in Python; never push linting into your prose.
 You are called with a repo **URL or local path** (e.g. `wikify-ingest-repo
 https://github.com/owner/myrepo`), or with an existing `<slug>` to update.
 
-**Step 0 — bootstrap the config yourself (never ask the user to write it).** Derive `<slug>`
-from the repo (basename, minus `.git`). If `config/<slug>.md` does not already exist, create it:
+**Step 0 — pick the layout, then bootstrap the config yourself (never ask the user to write
+it).** Two layouts (implementation.md §10.15):
+- **In-repo** — you are *inside* a code repository (no `config/` directory of host configs, no
+  host `SCHEMA.md`), or the user says "wikify this repo" / "initialize the wiki here": run
+  `wikify init` (idempotent). It writes `wikify.md`, gitignores `.wikify/`, and injects the
+  wikify block into `CLAUDE.md` and `AGENTS.md` (add `--instructions CLAUDE.md,AGENTS.md,GEMINI.md`
+  when the repo carries one). From then on every command below runs from the repo root with
+  **no `<slug>`**; the wiki lands flat at `wiki/`. Skip steps 8–9 (register/connect): the
+  injected block *is* the registration, and there are no sibling silos.
+- **Host wiki** — a project with `config/` and a curated `wiki/` spanning repos: derive `<slug>`
+  from the repo (basename, minus `.git`). If `config/<slug>.md` does not already exist, create it:
 ```
 ---
 slug: <slug>
@@ -182,7 +191,8 @@ never grounding.
    changed, and a small deterministic re-sample come back; recorded holds carry forward across
    `--ref` bumps too. `--all` forces the full list when you want a clean sweep.
 
-8. **Register in the host wiki (REQUIRED).** The ingest is not done until the repo is
+8. **Register in the host wiki (REQUIRED; host layout only).** In-repo: re-run `wikify init`
+   so the instruction block is current, and stop here. The ingest is not done until the repo is
    reachable from the host's read-first index and recorded in its log, **following the host
    wiki's own conventions** (read its `SCHEMA.md` / `index.md` for the exact format):
    - **Index** — add/refresh the repo's entry in the host's top `index.md`, linking the

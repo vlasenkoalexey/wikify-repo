@@ -324,6 +324,20 @@ The *how* lives in `implementation.md` §10.
   copy over the source. The wiki gets an agent to the right commit; git confirms.
   Merges are dropped and commits are attributed only through cited files, which is
   what keeps this bounded on a nightly cadence. (§10.14)
+- **Two layouts, one pipeline: the wiki may live inside the repo it documents.** The
+  host-wiki layout (config per repo, sources under `raw/`, silos under `wiki/code/`) is
+  right for a survey or a knowledge base that spans many repos, and clunky for the
+  common case openwiki serves well: one repository that wants its own wiki checked in
+  next to the code, with `CLAUDE.md`/`AGENTS.md` pointing at it. So `wikify init` sets
+  up an in-repo layout — `wikify.md` at the root, the repo itself as the source (pin =
+  `HEAD`, no `raw/`), the silo flat at `wiki/`, the cache at `.wikify/`, and a
+  marker-delimited instruction block injected into the agent files. The layout is
+  decided once, by where the config lives, inside the single path resolver; every stage
+  downstream is already path-relative and does not know which layout it is in, so the
+  host layout is untouched and the two cannot be mixed. The consequence that matters:
+  the wiki's version *is* the code's version, so a knowledge base can pin such a repo
+  as a submodule and reuse its wiki instead of re-ingesting it — the per-version
+  catalog pipeline dissolves. (§10.15)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

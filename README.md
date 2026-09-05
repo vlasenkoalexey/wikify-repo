@@ -152,6 +152,42 @@ the agent to retrieve from it. Add a block like this to **`CLAUDE.md`** (Claude 
 (Codex), and/or **`GEMINI.md`** (Antigravity) — or to a shared **`SCHEMA.md`** that all three point at:
 
 ```markdown
+## Two layouts: a host wiki, or the wiki inside your repo
+
+wikify builds the same silo in either of two places:
+
+- **Host wiki** (the layout above): a separate project with `config/<slug>.md` per repo, the
+  sources under `raw/code/<slug>` (submodule or clone), silos under `wiki/code/<slug>/`, and
+  cross-repo concept pages on top. This is the survey / knowledge-base shape: many repos, one
+  wiki, `wikify connect` linking them.
+- **In-repo** (`wikify init`): the wiki lives *inside* the repository it documents, the way
+  an `openwiki/` or `docs/` folder does, and travels with the code.
+
+```
+cd my-repo
+wikify init                 # writes wikify.md, .gitignore (.wikify/), and a wikify block in
+                            # CLAUDE.md + AGENTS.md telling agents where the wiki is and how to
+                            # read and update it
+# then, from an agent with the wikify-ingest-repo skill: "wikify this repo"
+#   (= wikify prepare -> synthesize -> wikify finalize; no slug needed here)
+```
+
+```
+my-repo/
+  wikify.md        config (slug, wiki_dir, docs/tests globs, synthesis_focus, agenda tuning)
+  wiki/            overview.md, index.md, log.md, concepts/, catalog/, doc-concepts/, changes/
+  .wikify/         cache: packets, SCIP index, state, verify holds (gitignored)
+  CLAUDE.md        <!-- wikify:begin --> ... <!-- wikify:end -->
+  AGENTS.md        (same block; add GEMINI.md with --instructions)
+```
+
+The pin is the repo's own `HEAD` at each ingest, so a re-run after new commits is the version
+bump: changed symbols rebuild, moved ones relink, and `wiki/changes/<ref>.md` records what
+changed and why. The layout is chosen by where the config lives (`wikify.md` at the root means
+in-repo), every command resolves paths once, and nothing else in the pipeline knows the
+difference — host-wiki projects are untouched. A knowledge base can then pin such a repo as a
+submodule and get its matching wiki for free instead of ingesting it.
+
 ## OKF v0.2-compatible output
 
 Every silo is a valid [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)

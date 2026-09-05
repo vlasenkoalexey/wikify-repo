@@ -25,7 +25,7 @@ _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
                  "acquire", "wiki_subdir", "source_type", "doc_globs",
                  "coverage_collapse", "coverage_exclude", "synthesis_focus",
-                 "agenda", "agenda_max", "agenda_exclude"}
+                 "agenda", "agenda_max", "agenda_exclude", "in_repo", "wiki_dir"}
 
 # ``agenda:`` — how the derived agenda is planned (implementation.md §10.11).
 _AGENDA_MODES = ("subsystems", "modules")
@@ -118,6 +118,11 @@ class RepoConfig:
     agenda: str | None = None
     agenda_max: int | None = None
     agenda_exclude: list[str] = field(default_factory=list)
+    # In-repo layout (§10.15): the config is ``<repo>/wikify.md``, the source is the repo
+    # itself (no raw/), the wiki lives at ``<repo>/<wiki_dir>/`` (flat, no slug level) and
+    # the cache at ``<repo>/.wikify/``. Set by ``wikify init``; host-wiki projects never set it.
+    in_repo: bool = False
+    wiki_dir: str = "wiki"
     compile_commands: str | None = None  # path to a pre-existing compile_commands.json
     # bazel target pattern (e.g. "//pkg/...") to AUTO-generate the C++ compile DB
     # from — `prepare` runs bazel build+aquery and converts it (wikify/bazel_cc.py),
@@ -293,6 +298,8 @@ def load_config(path: str | Path) -> RepoConfig:
         agenda=None if agenda is None else str(agenda).strip().lower(),
         agenda_max=None if amax is None else int(amax),
         agenda_exclude=_as_list(fm.get("agenda_exclude")),
+        in_repo=bool(fm.get("in_repo", False)),
+        wiki_dir=str(fm.get("wiki_dir") or "wiki").strip("/") or "wiki",
         index_shards=_as_list(fm.get("index_shards")),
         tests=_as_list(fm.get("tests")),
         docs=_as_list(fm.get("docs")),

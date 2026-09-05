@@ -116,9 +116,21 @@ is markdown in your repo, and retrieval is nothing but `grep`. What it does not 
 has no parser, so its claims point at line ranges rather than symbols, and nothing fails the build when the
 prose disagrees with the code.
 
-**wikify-repo** optimizes for **trust and ownership**: every claim cites a resolved symbol behind a hard
-gate, a deterministic coverage pass guarantees no module is silently dropped, and the result is plain
-markdown an agent reads with **nothing but `grep`** — no runtime, no database, no SaaS. For retrieval, **you don't even need this repo** — a short block in `CLAUDE.md` / `AGENTS.md` tells the agent how to navigate the wiki.
+**Why wikify-repo wins for its job — trusted retrieval of a codebase's internals by an agent.** It is the
+only tool in the table whose grounding is compiler-grade: a citation is *the* symbol SCIP resolved, not a
+name that happens to match, so a wrong reference cannot hide behind a string. It is the only one with a
+hard faithfulness gate — the build fails on a claim that does not resolve — and the only one with a
+second floor above it, adversarial verify, where a skeptic agent tries to refute every load-bearing
+claim against the source. Coverage is a guarantee, not an outcome: every module gets a page by
+set-difference over the symbol table, where the others cover what the model visited or a clustering kept.
+Versioning is built for repos that move: a commit pin, rebuilds at symbol granularity, moved symbols
+relinked instead of rewritten, verified claims carried forward, and a change page per bump — the others
+re-extract by file or track a live tree. It scales sideways too: the same concept page can link its
+implementations across every ingested repo. And the result asks nothing of the reader: plain markdown in
+your git repo, retrieved with `grep`, by any agent, offline; **you don't even need this repo** to answer
+from a wiki — a short block in `CLAUDE.md` / `AGENTS.md` is the whole integration. The others are better
+at what they chose instead — breadth of inputs and languages, visual exploration, zero-setup hosting —
+and worse at every axis that decides whether an agent can *trust* what it reads.
 
 ## Why SCIP, not an AST
 

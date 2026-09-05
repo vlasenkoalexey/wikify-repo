@@ -257,6 +257,19 @@ The *how* lives in `implementation.md` §10.
   units after: 45 of 60 inside, helpers 8 or 9. Unscoped packets (module mode, plain
   seed concepts) are unchanged. Since the citation gate only lets a page cite what is
   in its packet, this is the change that makes subsystem pages citable at all. (§10.3)
+- **The graph finds the units; the docs name them — and that is a skill step, not a
+  matcher.** A README says what the authors want you to believe matters (stale,
+  aspirational, incomplete), so it never proposes units. But it carries the one
+  signal the graph cannot see: the vocabulary questions are asked in, and which
+  subsystems the authors consider central. Retrieval here is index + grep, so a page
+  named after a directory is invisible to a question phrased in the authors' words.
+  The docs therefore enter at the two points where the agent already reads and
+  decides: the confirm step (rename slugs to author names, add `aliases:`, add a
+  missed unit or a cross-unit flow concept *only if it resolves to packet symbols*,
+  log "documented, not found") and the overview (every README-led topic routes to a
+  page or is declared uncovered). A deterministic heading-to-symbol matcher was
+  designed and rejected as over-engineering: naming is judgment, and the gate
+  already guarantees that nothing the docs suggest can become an ungrounded page.
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

@@ -77,3 +77,8 @@ README-derived doc-concepts, never at prose you wrote here.
   where to go next.
 - Every relative link must resolve (`wikify finalize` warns on each one that does
   not); never invent a task, page, or path to fill the table.
+- **Every topic the README leads with routes somewhere.** Re-read the README before
+  writing the map: each subsystem, workflow or feature it foregrounds must appear in
+  the question map or the task table with a link to the page that owns it — or the map
+  must say explicitly that this wiki does not cover it yet. Silence is the one thing
+  the map may not do.

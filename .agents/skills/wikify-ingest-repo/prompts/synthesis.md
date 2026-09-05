@@ -27,6 +27,9 @@ whole** (the subsystem planner chose it): its responsibilities, the mechanism th
 listed modules together, and how the rest of the repo enters it through the listed entry
 points. Do not write the page about the first hub symbol you meet; hub utilities inside the
 unit are sections at most. The `## Seeds` are where to start reading, not the subject.
+Write in the authors' vocabulary: if the README, docs or docstrings name this mechanism,
+use that name in the title and prose and list the terms under `aliases:` — pages are found
+by grep in the words a question uses, and those are the authors' words.
 
 ## Method (this is different from a shallow pass — follow it)
 1. The packet is your **grounding index + citation target list**, not your only
@@ -69,6 +72,8 @@ type: concept
 provenance: mixed
 concept: <concept-slug>
 concepts: [<shared-key>, ...]   # OPTIONAL — see "Concept tags" below; omit if none apply
+aliases: [<author name>, ...]   # OPTIONAL — the authors' terms for this mechanism (README /
+                                # docs / docstrings); what a question would call it. Omit if none.
 updated: <date>
 status: fresh
 ---

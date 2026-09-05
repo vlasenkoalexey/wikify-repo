@@ -13,6 +13,7 @@ deterministic half never calls a model; the agent half never parses protobuf.
 from __future__ import annotations
 
 import datetime
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -196,6 +197,10 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
             max_subsystems=cfg.agenda_max or subsystems_mod.DEFAULT_MAX_SUBSYSTEMS,
             exclude_globs=cfg.agenda_exclude,
         )
+        # A config concept seeded from a directory REPLACES the planned unit(s) at or
+        # under that prefix (renaming a unit must never build it twice).
+        pinned = [c.subsystem for c in cfg.concepts if c.subsystem is not None]
+        subs = [u for u in subs if not any(_covers(pfx, u.prefix) for pfx in pinned)]
         discovered_slugs = []
         for sub in subs:
             seedmap[sub.slug] = sub.seeds
@@ -219,6 +224,42 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
     agenda = [Concept(slug=s) for s in discovered_slugs if s not in cfg_slugs] + cfg.concepts
     return Agenda(replace(cfg, concepts=agenda), seedmap, scopes, len(discovered_slugs),
                   mode, subs, defaulted)
+
+
+def _covers(config_prefix: str, unit_prefix: str) -> bool:
+    """Does a config ``(subsystem: <config_prefix>)`` entry cover a planned unit? Exact
+    match, a descendant directory, or a community unit (``dir::stem``) whose dir matches."""
+    cp = config_prefix.strip().strip("/")
+    if cp == ".":
+        cp = ""
+    if unit_prefix == cp:
+        return True
+    dir_part = unit_prefix.split("::", 1)[0]
+    if cp == "":
+        return True                       # the repo root covers everything
+    return dir_part == cp or dir_part.startswith(cp + "/")
+
+
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+
+
+def _overview_link_warnings(silo: Path) -> list[str]:
+    """Relative links in overview.md that point at nothing. The overview is not under the
+    citation gate (it is synthesis over concept pages), so its task/question routing can
+    only be checked for existence — as a warning, never a failure."""
+    ov = silo / "overview.md"
+    if not ov.exists():
+        return []
+    text = re.sub(r"```.*?```", "", ov.read_text(encoding="utf-8", errors="replace"), flags=re.S)
+    missing: list[str] = []
+    for m in _MD_LINK_RE.finditer(text):
+        target = m.group(1)
+        if target.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        rel = target.split("#", 1)[0]
+        if rel and not (ov.parent / rel).exists() and target not in missing:
+            missing.append(target)
+    return missing
 
 
 def _write_agenda_file(p: Paths, agenda: Agenda, graph) -> Path | None:
@@ -494,6 +535,10 @@ def finalize(
         typer.echo(f"warning: no overview.md at wiki/{rel}/ — the silo is unreachable from "
                    f"the host index and invisible to `wikify connect` until it exists; write "
                    f"it (skill step 3, prompts/overview.md) and re-run finalize.", err=True)
+    else:
+        for target in _overview_link_warnings(p.wiki_slug):
+            typer.echo(f"warning: overview.md links to a page that does not exist: {target}",
+                       err=True)
 
 
 @app.command(name="lint")

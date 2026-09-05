@@ -80,6 +80,15 @@ never grounding.
    `- **<slug>** — seeds: (subsystem: <dir prefix>)`. Then re-run `prepare` (cheap: the index
    is cached). With no user present, proceed with the proposal as printed.
 
+   **Name the pages now, not later.** The agenda file ends with a paste-ready `## Concepts`
+   block (one `(subsystem: ...)` line per unit). Slugs are permanent — page filenames, state
+   keys, and what `connect` matches on — so rename the bold, directory-shaped slugs to
+   **topic names** here (`compilation-cache-tiers`, not `common-cache_key`), preferring a key
+   from the host `wiki/concepts/` vocabulary when the unit is an instance of one. Paste the
+   renamed lines into `config/<slug>.md`; an entry replaces the planned unit(s) under its
+   prefix, so renaming never builds a page twice. A community unit is addressed by its full
+   `dir::stem` prefix.
+
 2. **Synthesize (this is your job — heavy processing, not annotation).** For EACH
    packet the plan built, read the packet and follow
    `prompts/synthesis.md` exactly to write ONE file: the
@@ -155,7 +164,8 @@ never grounding.
    - **Index** — add/refresh the repo's entry in the host's top `index.md`, linking the
      **`overview.md`** front door (`wiki/<wiki_subdir>/<slug>/overview.md`), *not* the per-repo
      `index.md` (the overview routes on to it). One entry per repo. If the host already lists the
-     repo (e.g. a curated page), add the overview as an "internals" link on that same row.
+     repo (e.g. a curated page), add the overview as an "internals" link on that same row. Use
+     the overview's `description:` frontmatter as the row's one-line summary.
    - **Log** — append one line to the host's `log.md`, prefixed per its convention
      (e.g. `## [YYYY-MM-DD] ingest-code | <slug>`).
    (wikify's CLI never edits the curated `index.md` / `log.md`; that's deliberate — this

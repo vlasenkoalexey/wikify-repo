@@ -719,3 +719,28 @@ modules — `common-cache_key`, `common`, `ops-op_names`, `eager-device_buffer`,
 model family, `models-moe`, `hf_datasets`). Pinning tests: `tests/test_subsystems.py`,
 `tests/test_config.py` (`(subsystem: …)`, `agenda*` keys), `tests/test_cli.py` (planner mode,
 `agenda` command, fresh/existing default, config subsystem seeds).
+
+**Front door (realized 2026-09-05, borrowed from openwiki's index/quickstart).**
+- **`description:` frontmatter** on every concept, doc-concept and overview page (one sentence,
+  required by `prompts/synthesis.md` / `overview.md`). `assemble.write_repo_index` renders it in
+  the concept table, the doc-concept list and the "Start here" line; the skill's register step
+  reuses the overview's for the host index row. Pages written before the field existed render
+  with an empty cell — never linted.
+- **Area grouping.** Each concept row carries the *area* its catalog citations mostly point
+  into (`assemble.page_area`: the directory of the most-cited `../catalog/<module>.md` link,
+  `(cross-cutting)` when a page cites nothing). Derived from the page itself, so it needs no
+  side file and works for legacy pages. Past `GROUP_MIN_CONCEPTS` (6) pages with >= 2 areas
+  the table becomes per-area sections, biggest first; below that, one flat table with an Area
+  column.
+- **Task routing.** `prompts/overview.md` adds a "Where to go for a given task" table
+  (verb-shaped rows, each cell a page that exists) beside the question-shaped map. The overview
+  is not under the citation gate, so `finalize` checks its relative links for existence and
+  **warns** per dead link (`cli._overview_link_warnings`; fenced code and http links skipped).
+- **Topic titles at confirmation.** `render_agenda` ends with a paste-ready `## Concepts`
+  block (`- **<slug>** — seeds: (subsystem: <prefix>)` per unit); the confirm step renames the
+  directory-shaped slug to a topic name, preferring host `wiki/concepts/` keys. A config
+  subsystem entry **replaces** the planned unit(s) at or under its prefix (`cli._covers`:
+  exact, descendant, or the `dir` of a `dir::stem` community unit; `.`/`""` covers all), so a
+  rename never builds a page twice. `subsystem_for_prefix` accepts a full `dir::stem` prefix.
+  Tests: `tests/test_assemble.py`, `tests/test_cli.py` (dead-link warning, suppression, agenda
+  block), `tests/test_subsystems.py` (community prefix, concepts block).

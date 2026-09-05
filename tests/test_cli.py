@@ -257,3 +257,40 @@ def test_finalize_warns_without_overview_but_still_succeeds(project):
     res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
     assert res.exit_code == 0, res.output
     assert "warning: no overview.md" not in res.output
+
+
+def test_finalize_warns_on_dead_overview_links(project):
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    (silo / "concepts" / "compute-pipeline.md").write_text("---\ntitle: t\n---\n\n# t\n", encoding="utf-8")
+    (silo / "overview.md").write_text(
+        "---\ntitle: o\n---\n\n# o\n\n| Task | Start here |\n|---|---|\n"
+        "| Run it | [nope](doc-concepts/missing.md) |\n| Compute | [ok](concepts/compute-pipeline.md#x) |\n"
+        "See [ext](https://example.com) and ```[in code](fake.md)```\n", encoding="utf-8")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "does not exist: doc-concepts/missing.md" in res.output
+    assert "compute-pipeline.md" not in [l for l in res.output.splitlines() if "does not exist" in l][0]
+    assert "fake.md" not in res.output and "example.com" not in res.output
+
+
+def test_config_subsystem_entry_replaces_planned_unit(project_planned):
+    """Renaming a planned unit via ``(subsystem: <prefix>)`` must not build it twice: the
+    config entry covers the planned ``core`` unit (repo root), which is suppressed."""
+    cfg = project_planned / "config" / f"{SLUG}.md"
+    cfg.write_text(cfg.read_text() + "- **whole-lib** — seeds: (subsystem: .)\n", encoding="utf-8")
+    res = _prepare(project_planned)
+    assert res.exit_code == 0, res.output
+    pkts = sorted(p.stem for p in (project_planned / ".cache" / "packets" / SLUG).glob("*.md"))
+    assert pkts == ["compute-pipeline", "whole-lib"], pkts
+    assert "## Scope" in (project_planned / ".cache" / "packets" / SLUG / "whole-lib.md").read_text()
+
+
+def test_agenda_file_has_paste_ready_concepts_block(project_planned):
+    res = runner.invoke(app, ["agenda", SLUG, "--root", str(project_planned)])
+    assert res.exit_code == 0, res.output
+    text = (project_planned / ".cache" / "plan" / f"{SLUG}.agenda.md").read_text()
+    assert "## Concepts" in text
+    assert "- **core** — seeds: (subsystem: .)" in text

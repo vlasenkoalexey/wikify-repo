@@ -23,6 +23,7 @@ hand-written perf page). With no lens, keep the overview neutral.
 ## Page structure
 ---
 title: <repo> — overview
+description: <ONE sentence: what the repo is and does — the host index reuses it verbatim>
 type: overview
 updated: <date>
 ---
@@ -53,6 +54,20 @@ in a few sentences linking the concepts in order.
 A short guide: which concept to read for which question; pointer to `catalog/` for
 the exhaustive per-module index; pointer to `index.md` for the concept table.
 
+## Where to go for a given task
+Agents arrive with a job, not a question. A table of 5–8 rows, each a **verb-shaped
+task** a maintainer or user of this repo actually performs (add or extend X; debug Y;
+run, build or test; port or migrate; tune or profile), with the page to start on and the
+page(s) to continue to:
+
+| Task | Start here | Then |
+|---|---|---|
+| Add a new <unit of extension> | [<concept>](concepts/<slug>.md) | [<doc-concept>](doc-concepts/<slug>.md) |
+
+Every cell links a page that EXISTS in this silo (a concept, doc-concept, or catalog
+page); a task with no page behind it is not a row. Build/run/test rows point at the
+README-derived doc-concepts, never at prose you wrote here.
+
 ## Rules
 - This page is **synthesis over the concept pages**, not new grounding. It may
   state a concept in plain prose; depth and citations live in the concept pages it
@@ -60,3 +75,5 @@ the exhaustive per-module index; pointer to `index.md` for the concept table.
 - Diagrams must reflect real subsystems/relationships (grounded), not aspiration.
 - Keep it tight: a newcomer should read the whole page in a few minutes and know
   where to go next.
+- Every relative link must resolve (`wikify finalize` warns on each one that does
+  not); never invent a task, page, or path to fill the table.

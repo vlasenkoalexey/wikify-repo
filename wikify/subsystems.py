@@ -312,6 +312,14 @@ def subsystem_for_prefix(
     prefix = prefix.strip().strip("/")
     if prefix == ".":          # "." names the repo root, like ""
         prefix = ""
+    if "::" in prefix:         # a community unit (``dir::stem``): re-derive the split
+        for s in discover_subsystems(graph, max_subsystems=10**6, min_symbols=1, excludes=excludes,
+                                     seeds_per=seeds_per):
+            if s.prefix == prefix:
+                if slug:
+                    s.slug = slug
+                return s
+        return None
     mods = _modules(graph, excludes)
     files = sorted(f for f in mods if f == prefix or f.startswith(prefix + "/") or not prefix)
     if not files:
@@ -363,6 +371,18 @@ def render_agenda(subs: list[Subsystem], graph: SymbolGraph, slug: str = "") -> 
         shown = ", ".join(f"`{m}`" for m in s.modules[:12])
         more = f" (+{len(s.modules) - 12} more)" if len(s.modules) > 12 else ""
         a(f"- **{s.slug}** — `{s.title}`: {shown}{more}")
+    a("")
+    # Topic titles are decided at confirmation time (openwiki plans titles first): a
+    # paste-ready block whose only job is renaming the bold slug. A config subsystem
+    # entry REPLACES the planned unit(s) under its prefix, so renaming never duplicates.
+    a("## Concepts block (paste into `config/<slug>.md` to pin or rename)")
+    a("Rename the bold slug to a topic name (prefer a key from the host `wiki/concepts/` "
+      "vocabulary when the unit is an instance of one); keep the `(subsystem: ...)` clause as is. "
+      "Delete lines you do not want. An entry replaces the planned unit(s) under its prefix.")
+    a("")
+    a("## Concepts")
+    for s in subs:
+        a(f"- **{s.slug}** — seeds: (subsystem: {s.prefix or '.'})")
     a("")
     return "\n".join(lines)
 

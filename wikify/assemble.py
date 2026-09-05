@@ -7,7 +7,88 @@ the top-level ``wiki/index.md``. Pure Python; runs after lint passes.
 
 from __future__ import annotations
 
+import re
+from collections import Counter, defaultdict
 from pathlib import Path
+
+import yaml
+
+# A concept page cites catalog anchors: ``../catalog/<module path>.md#Symbol``. The
+# directory of the most-cited module is the page's *area* (§10.11 "Front door").
+_CATALOG_LINK_RE = re.compile(r"\]\((?:\.\./)+catalog/([^)#]+)\.md(?:#[^)]*)?\)")
+GROUP_MIN_CONCEPTS = 6      # group the concept table by area only past this many pages
+CROSS_CUTTING = "(cross-cutting)"
+
+
+def _frontmatter(page: Path) -> dict:
+    try:
+        text = page.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    try:
+        fm = yaml.safe_load(text[3:end]) or {}
+    except yaml.YAMLError:
+        return {}
+    return fm if isinstance(fm, dict) else {}
+
+
+def page_description(page: Path) -> str:
+    """The page's one-line ``description:`` frontmatter (borrowed from openwiki/OKF: the
+    index is built from it, so an agent can pick a page without opening it). '' if absent."""
+    d = _frontmatter(page).get("description") or ""
+    return " ".join(str(d).split())
+
+
+def page_area(page: Path) -> str:
+    """The source directory this page's catalog citations mostly point into, '' if none.
+    Derived from the page itself, so it works for every page ever written (planned or not)."""
+    try:
+        text = page.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    dirs: Counter = Counter()
+    for m in _CATALOG_LINK_RE.finditer(text):
+        path = m.group(1)
+        dirs[path.rsplit("/", 1)[0] if "/" in path else ""] += 1
+    if not dirs:
+        return ""
+    return max(dirs.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
+
+def _cell(text: str) -> str:
+    return text.replace("|", "\\|")
+
+
+def _concepts_table(wiki_slug_dir: Path, concept_status: list[tuple[str, str]]) -> str:
+    """The concept table: one row per page with its area + description; grouped into
+    per-area sections once a silo has enough pages for a flat list to stop being readable."""
+    cdir = wiki_slug_dir / "concepts"
+    rows = []
+    for c, status in concept_status:
+        page = cdir / f"{c}.md"
+        rows.append((c, status, page_area(page) or CROSS_CUTTING, page_description(page)))
+    areas = {r[2] for r in rows}
+    out: list[str] = []
+    if len(areas) >= 2 and len(rows) >= GROUP_MIN_CONCEPTS:
+        out += ["## Concepts (deep)",
+                "Grouped by the source area each page's citations point into.", ""]
+        by: dict[str, list] = defaultdict(list)
+        for r in rows:
+            by[r[2]].append(r)
+        for area in sorted(by, key=lambda a: (-len(by[a]), a)):
+            out += [f"### `{area}`", "| Concept | Description | Status |", "|---|---|---|"]
+            out += [f"| [{c}](concepts/{c}.md) | {_cell(d)} | {st} |" for c, st, _, d in by[area]]
+            out.append("")
+    else:
+        out += ["## Concepts (deep)", "| Concept | Area | Description | Status |", "|---|---|---|---|"]
+        out += [f"| [{c}](concepts/{c}.md) | `{a}` | {_cell(d)} | {st} |" for c, st, a, d in rows]
+        out.append("")
+    return "\n".join(out)
 
 
 def write_repo_index(
@@ -21,18 +102,13 @@ def write_repo_index(
 ) -> Path:
     wiki_slug_dir = Path(wiki_slug_dir)
     wiki_slug_dir.mkdir(parents=True, exist_ok=True)
-    rows = "\n".join(
-        f"| {c} | [{c}](concepts/{c}.md) | {status} |" for c, status in concept_status
-    )
 
     # Light tier (decision 8 mid-band): surface any areas/ community-annotation
     # pages, so a light-tier ingest (e.g. xla) isn't misrepresented as "0 concepts".
     area_pages = sorted((wiki_slug_dir / "areas").glob("*.md"))
     concepts_section = ""
     if concept_status:
-        concepts_section = (
-            "## Concepts (deep)\n| Concept | Page | Status |\n|---|---|---|\n" + rows + "\n"
-        )
+        concepts_section = _concepts_table(wiki_slug_dir, concept_status)
     if area_pages:
         rows_a = "\n".join(f"- [{p.stem}](areas/{p.name})" for p in area_pages)
         concepts_section += (
@@ -47,7 +123,10 @@ def write_repo_index(
     # own docs and grounded to the catalog; kept separate from code concepts.
     doc_concept_pages = sorted((wiki_slug_dir / "doc-concepts").glob("*.md"))
     if doc_concept_pages:
-        rows_d = "\n".join(f"- [{p.stem}](doc-concepts/{p.name})" for p in doc_concept_pages)
+        def _doc_row(pg: Path) -> str:
+            d = page_description(pg)
+            return f"- [{pg.stem}](doc-concepts/{pg.name})" + (f" — {d}" if d else "")
+        rows_d = "\n".join(_doc_row(p) for p in doc_concept_pages)
         concepts_section += (
             "\n## Doc-derived concepts\n"
             "Concepts extracted from the project's own docs (README / `docs/`), "
@@ -59,10 +138,9 @@ def write_repo_index(
     # it exists, is what a newcomer should read first.
     overview_section = ""
     if (wiki_slug_dir / "overview.md").exists():
-        overview_section = (
-            "\n**Start here → [Overview](overview.md)** — the whole system in one "
-            "page (main concepts + core diagrams + a map of the wiki).\n"
-        )
+        blurb = page_description(wiki_slug_dir / "overview.md") or (
+            "the whole system in one page (main concepts + core diagrams + a map of the wiki)")
+        overview_section = f"\n**Start here → [Overview](overview.md)** — {blurb}\n"
 
     coverage_section = ""
     if report is not None:

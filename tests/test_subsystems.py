@@ -143,3 +143,31 @@ def test_test_files_are_not_modules_or_seeds():
     core = next(x for x in subs if x.slug == "core")
     assert "demo/core/engine_test.py" not in core.modules
     assert not any(graph_name.endswith("test_engine().") for graph_name in core.seeds)
+
+
+def test_community_unit_addressable_by_full_prefix():
+    g = SymbolGraph()
+    def cluster(tag, n):
+        syms = []
+        for i in range(n):
+            syms.append(_sym(g, f"{PKG} `demo.flat.{tag}{i}`/{tag}_fn{i}().", f"{tag}_fn{i}", f"demo/flat/{tag}{i}.py"))
+        for i in range(1, n):
+            g.add_edge(syms[i], syms[0])
+        return syms
+    cluster("alpha", 12); cluster("beta", 12)
+    subs = subsystems.discover_subsystems(g, max_modules=20, min_symbols=1)
+    unit = subs[0]
+    assert "::" in unit.prefix
+    again = subsystems.subsystem_for_prefix(g, unit.prefix, slug="renamed")
+    assert again is not None and again.slug == "renamed"
+    assert sorted(again.modules) == sorted(unit.modules)
+    assert subsystems.subsystem_for_prefix(g, "demo/flat::nope") is None
+
+
+def test_render_agenda_ends_with_concepts_block():
+    g, _ = _g()
+    subs = subsystems.discover_subsystems(g, min_symbols=1)
+    text = subsystems.render_agenda(subs, g, "demo")
+    block = text[text.index("## Concepts\n"):]
+    assert "- **core** — seeds: (subsystem: demo/core)" in block
+    assert "- **ops** — seeds: (subsystem: demo/ops)" in block

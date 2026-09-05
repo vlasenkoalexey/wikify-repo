@@ -64,6 +64,7 @@ unit are sections at most. The `## Seeds` are where to start reading, not the su
 ## Page structure
 ---
 title: <concept title>
+description: <ONE sentence, for the index: what this page explains and when to read it>
 type: concept
 provenance: mixed
 concept: <concept-slug>

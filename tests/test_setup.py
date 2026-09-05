@@ -110,3 +110,18 @@ def test_setup_project_injects_retrieval_block(tmp_path):
     res = runner.invoke(app, ["setup", "--no-user", "--indexers", "none", "--project", str(bare),
                               "--instructions", "GEMINI.md"])
     assert "GEMINI.md: created wikify block" in res.output
+
+
+def test_setup_project_no_skill_injects_block_only(tmp_path):
+    """A project that must not carry the skill (it ships in a distribution): block only."""
+    from wikify.cli import WIKIFY_BEGIN
+    proj = tmp_path / "kb"
+    proj.mkdir()
+    (proj / "SCHEMA.md").write_text("# schema\n")
+    res = runner.invoke(app, ["setup", "--no-user", "--indexers", "none", "--project", str(proj),
+                              "--no-skill", "--wiki-dir", "wiki/codebases"])
+    assert res.exit_code == 0, res.output
+    assert "skill (project): skipped" in res.output and "SCHEMA.md: updated wikify block" in res.output
+    assert not (proj / ".agents").exists() and not (proj / ".claude").exists()
+    assert not (proj / ".gitignore").exists()
+    assert WIKIFY_BEGIN in (proj / "SCHEMA.md").read_text() and "`wiki/codebases/<slug>/`" in (proj / "SCHEMA.md").read_text()

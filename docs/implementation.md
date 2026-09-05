@@ -908,12 +908,14 @@ checkout with `pip install -e .`) end the same way: `wikify setup`. Prerequisite
 `find_tool` (PATH, then `$WIKIFY_HOME/vendor/bin`, default `~/.wikify/vendor/bin`);
 `install_scip_python` (`npm i -g --prefix <vendor> @sourcegraph/scip-python`, no sudo) and
 `install_scip_clang` (pinned `v0.3.3` release binary, glibc 2.35); `doctor` rows. CLI:
-`wikify setup [--project DIR] [--no-user] [--claude-dir] [--indexers check|python|cpp|python,cpp|none]`,
+`wikify setup [--project DIR] [--no-skill] [--no-user] [--claude-dir] [--indexers check|python|cpp|python,cpp|none]`,
 `wikify doctor [--project] [--claude-dir]`, `wikify init --with-skill`. With `--project`, `setup`
 also injects the **host-wiki retrieval block** (`cli._host_instruction_block`, `--wiki-dir`
 default `wiki/code`) between `wikify:begin/end` markers into `SCHEMA.md` when the project has one
 (its agent files route there), else into the existing `CLAUDE.md`/`AGENTS.md`/`GEMINI.md`, else
-into new `CLAUDE.md` + `AGENTS.md`; `--instructions` overrides, `--no-instructions` skips. Same
+into new `CLAUDE.md` + `AGENTS.md`; `--instructions` overrides, `--no-instructions` skips;
+`--no-skill` writes the block without copying the skill into the project (a wiki that ships
+inside a distribution must not carry it; the user-level skill serves its maintainers). Same
 `inject_instructions` as `init`, so it is idempotent and never touches text outside the markers.
 `prepare` now installs
 scip-python / scip-clang **on demand** when missing (announced; `--no-install-indexers` turns it

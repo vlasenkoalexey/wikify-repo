@@ -12,17 +12,17 @@ The idea is simple: record every class, method, and their relationships with SCI
 
 ## How wikify-repo compares
 
-| | [**wikify-repo**](https://github.com/vlasenkoalexey/wikify-repo) | [graphify](https://github.com/Graphify-Labs/graphify) | [understand-anything](https://github.com/Egonex-AI/Understand-Anything) | [openwiki](https://github.com/langchain-ai/openwiki) | [Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/) |
+| | [**wikify-repo**](https://github.com/vlasenkoalexey/wikify-repo) | [openwiki](https://github.com/langchain-ai/openwiki) | [graphify](https://github.com/Graphify-Labs/graphify) | [understand-anything](https://github.com/Egonex-AI/Understand-Anything) | [Google Code Wiki](https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/) |
 |---|---|---|---|---|---|
-| **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Agent-written docs — an LLM reads the repo and writes the pages | Zero-setup hosted docs for public repos |
-| **Output** | ✅ Markdown wiki — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ✅ Markdown docs — pages in your git repo | ❌ Hosted web docs only |
-| **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang). **Full semantic mapping** | ➖ tree-sitter AST, **name-based** (20 languages). Syntactic mapping. | ➖ tree-sitter AST, **name-based**. Syntactic mapping. | ❌ **nothing** — no parser at all; the LLM reads source with filesystem + shell tools | ❔ Gemini (closed) |
-| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ **prompt directive only** — a ~130-line system prompt, no gate, no citations | ❌ *"AI-generated map, not a source of truth"* |
-| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❔ whatever the agent chooses to visit — unbounded | ❔ not specified |
-| **Inputs** | ➖ code + prose (docs / articles) | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only | ➖ code repos only |
-| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, no additional tools** | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ✅ `grep` over markdown — no embeddings, no DB | ➖ hosted UI + Gemini chat — no MCP / API |
-| **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed *symbols* | ✅ `--update` re-extracts only changed *files* (caches semantic passes) | ✅ incremental — re-analyzes only changed *files* | ✅ incremental — git-diff since the last run's `gitHead`, then an LLM edits the affected pages | ✅ auto-maintained (hosted) |
-| **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ✅ plain markdown in your repo — offline, git-diffable | ❌ **Google-hosted** (private repos waitlisted) |
+| **Specialization** | Grounded markdown wiki you own — for trusted agent retrieval | Agent-written docs — an LLM reads the repo and writes the pages | Multi-modal knowledge graph (code + docs + media) | Visual codebase onboarding — explore it as a graph | Zero-setup hosted docs for public repos |
+| **Output** | ✅ Markdown wiki — pages in your git repo | ✅ Markdown docs — pages in your git repo | ➖ Knowledge graph (HTML + JSON) | ➖ React-Flow graph dashboard | ❌ Hosted web docs only |
+| **Code structure from** | ✅ **SCIP** — compiler-grade symbol resolution (scip-python / scip-clang). **Full semantic mapping** | ❌ **nothing** — no parser at all; the LLM reads source with filesystem + shell tools | ➖ tree-sitter AST, **name-based** (20 languages). Syntactic mapping. | ➖ tree-sitter AST, **name-based**. Syntactic mapping. | ❔ Gemini (closed) |
+| **Faithfulness** | ✅ **Citation linter is a hard build gate**; uncited → `[!inferred]` | ❌ **prompt directive only** — a ~130-line system prompt, no gate, no citations | ➖ `EXTRACTED / INFERRED / AMBIGUOUS` labels — honest, not gated | ❌ LLM per-node summaries, unverified | ❌ *"AI-generated map, not a source of truth"* |
+| **Coverage** | ✅ **Deterministic set-difference** — every module gets a page | ❔ whatever the agent chooses to visit — unbounded | ➖ Leiden community clustering | ➖ analyzes discovered files — no stated completeness | ❔ not specified |
+| **Inputs** | ➖ code + prose (docs / articles) | ➖ code repos only | ✅ **widest** — code, SQL, shell, docs, papers, images, audio/video | ➖ code + docs / LLM-wikis | ➖ code repos only |
+| **Retrieval** | ✅ `grep` + `index.md` — **no embeddings, no DB, no additional tools** | ✅ `grep` over markdown — no embeddings, no DB | ➖ graph queries + clusters (no embeddings) | ➖ name + semantic search in the dashboard | ➖ hosted UI + Gemini chat — no MCP / API |
+| **Updates** | ✅ **idempotent reconcile** — `--ref` rebuilds only changed *symbols* | ✅ incremental — git-diff since the last run's `gitHead`, then an LLM edits the affected pages | ✅ `--update` re-extracts only changed *files* (caches semantic passes) | ✅ incremental — re-analyzes only changed *files* | ✅ auto-maintained (hosted) |
+| **Ownership** | ✅ plain markdown in your repo — offline, git-diffable | ✅ plain markdown in your repo — offline, git-diffable | ➖ local graph files | ➖ local dashboard | ❌ **Google-hosted** (private repos waitlisted) |
 
 <sub>✅ strong · ➖ partial / trade-off · ❌ weak or absent · ❔ unknown / closed</sub>
 
@@ -56,8 +56,8 @@ C++) — heavier than a zero-build parse, which is the price of precision. Tree-
 call for navigation, the wrong one for *citeable* grounding.
 
 Because grounding is SCIP (language-neutral), **languages are pluggable**: Python + C++ are built in;
-**TS/JS, Go, and Rust** use their own SCIP indexers, installed *on demand* — `prepare` detects the
-language and asks you to install its indexer rather than bundling everything up front.
+**TS/JS, Go, and Rust** use their own SCIP indexers. All indexers are installed *on demand* — `prepare`
+detects the language and installs what it needs into a user prefix rather than bundling everything up front.
 
 ## Why use a wiki as the storage format
 
@@ -71,6 +71,10 @@ wikify's answer is to **materialize** the common ones into the pages — per-sym
 per-module catalogs — so the frequent questions are already answered as text, and the rare deep query
 drops to the pinned source. For *agent retrieval of internals knowledge*, materialized markdown beats
 a live graph you have to query.
+
+Pages carry [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+front matter (`generated`, `verified`, file-level `sources`), so a reader can tell agent-generated from
+human-reviewed pages without knowing anything wikify-specific.
 
 ## Demo and template
 
@@ -91,112 +95,40 @@ But it is important to note that wikify-repo can be integrated into any LLM wiki
 
 ## Install
 
-**Prerequisites:** Python ≥ 3.11 and `git`. Node.js + npm only if you index Python (for the
-`scip-python` indexer); the C++ indexer (`scip-clang`) is downloaded automatically, and only when
-a C++ repo is prepared.
-
-Two ways to get the CLI, then one command for the rest:
+**Prerequisites:** Python ≥ 3.11 and `git`. Node.js + npm only if you index Python or TS/JS
+(their SCIP indexers are npm packages); the C++ indexer is a downloaded binary.
 
 ```bash
-# A — no checkout (pipx / pip):
+# A — no checkout:
 pipx install git+https://github.com/vlasenkoalexey/wikify-repo
-
 # B — from a checkout (development):
 git clone https://github.com/vlasenkoalexey/wikify-repo && cd wikify-repo && pip install -e .
 
-wikify setup          # indexer check + the wikify-ingest-repo skill for Claude Code (~/.claude/skills)
+wikify setup          # installs the wikify-ingest-repo skill for Claude Code (~/.claude/skills)
 wikify doctor         # what is installed, and the fix for anything missing
 ```
 
-`wikify setup` replaces the old `scripts/setup-vendor.sh` and `scripts/install-skill.sh` (kept as
-thin wrappers for one release). It is idempotent. What it does:
-
-- **Skill.** The `wikify-ingest-repo` skill ships *inside* the Python package, so it installs from a
-  pipx install with no checkout. By default it goes to `~/.claude/skills/` (Claude Code reads
-  user-level skills in every project). `wikify setup --project <dir>` additionally installs it into
-  that project's `.agents/skills/` — the folder **Codex** and **Antigravity** read — with a
-  `.claude/skills/` symlink and a `.gitignore` line for the mirror. `wikify init --with-skill` does
-  the same for an in-repo wiki.
-- **Indexers.** `scip-python` and `scip-clang` are installed into a user prefix
-  (`~/.wikify/vendor`, no sudo) on the first `wikify prepare` that needs them, announced and
-  opt-out (`--no-install-indexers`); `wikify setup --indexers python,cpp` prefetches them. TS/JS,
-  Go and Rust indexers install the same way. The generated protobuf module is committed, so no
-  codegen step remains.
+`wikify setup` is idempotent. The skill ships inside the package; `wikify setup --project <dir>`
+also installs it into a project's `.agents/skills/` (what **Codex** and **Antigravity** read) with
+a `.claude/skills/` symlink. Indexers (`scip-python`, `scip-clang`, TS/JS, Go, Rust) are installed
+into `~/.wikify/vendor` on the first `wikify prepare` that needs them, announced and opt-out;
+`wikify setup --indexers python,cpp` prefetches them.
 
 The CLI does the deterministic stages; the page-writing (synthesis) stage is **LLM-in-the-loop**, so
-an agent must run the `wikify-ingest-repo` skill. The skill is one self-contained, **tool-neutral**
-markdown procedure (`SKILL.md` + `prompts/`). One install, all three agents.
+an agent runs the `wikify-ingest-repo` skill — one self-contained, tool-neutral markdown procedure
+that works in Claude Code, Codex, and Antigravity.
 
 ## Quick start
 
 wikify has a **producer** side (build/maintain the wiki — needs the install) and a **consumer** side
-(answer from it — needs nothing). Both work in **Claude Code, Codex, and Antigravity**.
+(answer from it — needs nothing). The wiki can live in one of two places.
 
-**Inside a repository** (the wiki lives with the code; see [Two layouts](#two-layouts-a-host-wiki-or-the-wiki-inside-your-repo)):
+### In-repo: the wiki lives with the code
 
 ```bash
-cd my-repo && wikify init        # wikify.md, .gitignore, CLAUDE.md/AGENTS.md block
+cd my-repo && wikify init        # writes wikify.md, .gitignore (.wikify/), and a wikify block in
+                                 # CLAUDE.md + AGENTS.md telling agents where the wiki is
 # then, in your agent: "wikify this repo"
-```
-
-### Build a host wiki (many repos, one wiki)
-
-wikify writes into a **Karpathy-style wiki repo** — a project carrying the `wikify-ingest-repo` skill,
-the agent conventions, and the committed `wiki/`. Two ways to get one (after [Install](#install)):
-
-**A — Start from the new clean wiki template.** Clone the demo's empty
-[`clean`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/clean) branch; it ships the skill and
-conventions pre-wired, with an empty `wiki/`:
-```bash
-git clone -b clean https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki
-wikify setup --project my-wiki     # skill into .agents/skills + the Claude Code symlink
-```
-
-**B — Add it to an existing repo.** Install the skill into a project you already have — it drops the
-self-contained skill into `.agents/skills/` (read natively by Codex + Antigravity) and soft-links it
-into `.claude/skills/` for Claude Code:
-```bash
-wikify setup --project /path/to/your-project
-```
-
-Either way, open the project in your agent and say:
-
-> ingest https://github.com/owner/myrepo      (a local path works too)
-
-The agent runs the `wikify-ingest-repo` procedure — bootstrap config → index → symbol graph → write the
-concept pages → citation lint → assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is
-idempotent: only changed concepts rebuild. Because the skill lives in `.agents/skills/` and the output
-is plain markdown, this also slots into **any existing LLM-wiki project** as the *code* source type —
-alongside prose, sharing one `index.md` / `log.md` (exactly what the
-[demo](https://github.com/vlasenkoalexey/wikify-repo-demo) does, with `wiki/code/` next to hand-written
-`topics/` and `sources/`).
-
-### Answer from a wiki — no install needed
-
-To let an agent answer from a wiki — one you built, or one someone else committed — you need **nothing
-installed**: no `wikify` CLI, no skill, no `scip-python`. Commit the `wiki/code/<slug>/` folder and tell
-the agent to retrieve from it. Add a block like this to **`CLAUDE.md`** (Claude Code), **`AGENTS.md`**
-(Codex), and/or **`GEMINI.md`** (Antigravity) — or to a shared **`SCHEMA.md`** that all three point at:
-
-```markdown
-## Two layouts: a host wiki, or the wiki inside your repo
-
-wikify builds the same silo in either of two places:
-
-- **Host wiki** (the layout above): a separate project with `config/<slug>.md` per repo, the
-  sources under `raw/code/<slug>` (submodule or clone), silos under `wiki/code/<slug>/`, and
-  cross-repo concept pages on top. This is the survey / knowledge-base shape: many repos, one
-  wiki, `wikify connect` linking them.
-- **In-repo** (`wikify init`): the wiki lives *inside* the repository it documents, the way
-  an `openwiki/` or `docs/` folder does, and travels with the code.
-
-```
-cd my-repo
-wikify init                 # writes wikify.md, .gitignore (.wikify/), and a wikify block in
-                            # CLAUDE.md + AGENTS.md telling agents where the wiki is and how to
-                            # read and update it
-# then, from an agent with the wikify-ingest-repo skill: "wikify this repo"
-#   (= wikify prepare -> synthesize -> wikify finalize; no slug needed here)
 ```
 
 ```
@@ -204,32 +136,42 @@ my-repo/
   wikify.md        config (slug, wiki_dir, docs/tests globs, synthesis_focus, agenda tuning)
   wiki/            overview.md, index.md, log.md, concepts/, catalog/, doc-concepts/, changes/
   .wikify/         cache: packets, SCIP index, state, verify holds (gitignored)
-  CLAUDE.md        <!-- wikify:begin --> ... <!-- wikify:end -->
-  AGENTS.md        (same block; add GEMINI.md with --instructions)
+  CLAUDE.md        <!-- wikify:begin --> ... <!-- wikify:end -->   (same block in AGENTS.md)
 ```
 
-The pin is the repo's own `HEAD` at each ingest, so a re-run after new commits is the version
-bump: changed symbols rebuild, moved ones relink, and `wiki/changes/<ref>.md` records what
-changed and why. The layout is chosen by where the config lives (`wikify.md` at the root means
-in-repo), every command resolves paths once, and nothing else in the pipeline knows the
-difference — host-wiki projects are untouched. A knowledge base can then pin such a repo as a
-submodule and get its matching wiki for free instead of ingesting it.
+The pin is the repo's own `HEAD` at each ingest, so a re-run after new commits is the version bump:
+changed symbols rebuild, moved ones relink, and `wiki/changes/<ref>.md` records what changed and why.
+A knowledge base can then pin such a repo as a submodule and get its matching wiki for free.
 
-## OKF v0.2-compatible output
+### Host wiki: many repos, one wiki
 
-Every silo is a valid [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
-v0.2 bundle, Google Cloud's naming convention for markdown knowledge bases read by agents.
-`finalize` stamps each page with `generated: {by: wikify/<version>, at}` and file-level
-`sources` (the definition files its citations resolve to, at the pinned commit); `verify
---record` stamps `verified: [{by: wikify-verify/<version>, at}]` once every load-bearing
-claim on a page holds, and a human review appends `{by: human:<id>, at}`; the silo
-`index.md` declares `okf_version: "0.2"` and the pinned snapshot. A reader derives the
-spec's trust tier from `verified` — unverified, machine-confirmed, or human-reviewed —
-without knowing anything wikify-specific. Symbol-level grounding stays inline in the
-prose, where the citation linter gates it; `sources` is its file-level projection, not a
-copy. wikify's own fields (`concept`, `concepts`, `aliases`, `provenance`) ride along as
-OKF extension fields.
+A separate **Karpathy-style wiki repo** carrying the skill, the agent conventions, and the committed
+`wiki/`: one `config/<slug>.md` per ingested repo, sources under `raw/code/<slug>` (submodule or
+clone), silos under `wiki/code/<slug>/`, and cross-repo concept pages on top (`wikify connect`).
 
+```bash
+git clone -b clean https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki   # empty template
+wikify setup --project my-wiki      # or any existing project: wikify setup --project <dir>
+```
+
+Open the project in your agent and say:
+
+> ingest https://github.com/owner/myrepo      (a local path works too)
+
+The agent runs the `wikify-ingest-repo` procedure — bootstrap config → index → symbol graph → write the
+concept pages → citation lint → assemble — and writes the wiki to `wiki/code/<slug>/`. Re-running is
+idempotent: only changed concepts rebuild. This slots into **any existing LLM-wiki project** as the
+*code* source type, next to prose pages, sharing one `index.md` / `log.md` (what the
+[demo](https://github.com/vlasenkoalexey/wikify-repo-demo) does).
+
+### Answer from a wiki — no install needed
+
+To let an agent answer from a wiki — one you built, or one someone else committed — you need **nothing
+installed**: no `wikify` CLI, no skill, no indexer. Commit the `wiki/` folder and tell the agent to
+retrieve from it (`wikify init` writes this block for you; for a host wiki, add it to **`CLAUDE.md`**,
+**`AGENTS.md`**, and/or **`GEMINI.md`**, or to a shared **`SCHEMA.md`** they all point at):
+
+```markdown
 ## Codebase wiki — source of truth
 A grounded wiki for <repo> lives at `wiki/code/<slug>/`. To answer questions about its internals,
 **retrieve from the wiki instead of reading source**:
@@ -243,29 +185,10 @@ A grounded wiki for <repo> lives at `wiki/code/<slug>/`. To answer questions abo
 
 The markdown *is* the interface — that's the whole integration.
 
-## Architecture (the Python ↔ LLM split is hard)
+## Architecture
 
-The hard rule behind the table: **the deterministic stages are pure Python — zero model calls** (SCIP
-parse, reconcile diff, packet build, dependency links, coverage, citation lint), and the LLM is invoked
-at exactly **one** step — concern *synthesis* (plus concept-link judgment). Synthesis never leaks into
-Python and linting never leaks into a prompt: the model proposes prose, Python decides what's true. That
-boundary is what keeps the wiki both grounded *and* cheap — the expensive, hallucination-prone work is
-fenced to a single file-handoff stage, while everything that has to be exact stays mechanical and
-testable. It's also why coverage is a deterministic *set-difference* over the SCIP symbol table rather
-than a model pass: enumeration can't miss a module, so the LLM is spent only where the truth is genuinely
-cross-symbol.
-
-| Stage | Module | Who |
-|---|---|---|
-| 0 acquire & pin | `acquire.py` | Python |
-| 1 SCIP index → graph | `scip_index.py`, `graph.py`, `monikers.py` | Python |
-| 2 reconcile diff | `diff.py`, `state.py`, `source.py` | Python |
-| 4 evidence (tests) | `evidence.py` | Python |
-| — packet build | `packet.py`, `slug.py`, `config.py` | Python |
-| 5 concern synthesis | `.agents/skills/…/SKILL.md` + `prompts/synthesis.md` | **LLM agent** |
-| 6 citation lint + assemble | `lint.py`, `assemble.py` | Python |
-
-The risky foundation is the **SCIP-occurrence → callers/callees** heuristic (SCIP
-has no "call" role); it's reference-scoped, not true call resolution, and is
-validated by `tests/test_callers_callees.py`.
-
+The deterministic stages are pure Python with zero model calls — SCIP parse, reconcile diff, packet
+build, coverage, citation lint — and the LLM is invoked at exactly one step, concept synthesis (plus
+concept-link judgment). The model proposes prose; Python decides what is true. The rationale and the
+decisions log are in [docs/design.md](docs/design.md); the stage-by-stage mechanics, config keys and
+CLI surface are in [docs/implementation.md](docs/implementation.md).

@@ -43,6 +43,21 @@ from .config import Concept, RepoConfig, load_config
 app = typer.Typer(add_completion=False, help="Ingest a repo into a grounded markdown wiki.")
 
 
+def _version_cb(value: bool) -> None:
+    if value:
+        from . import __version__
+        typer.echo(f"wikify {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False, "--version", callback=_version_cb, is_eager=True, help="Print the version and exit."),
+) -> None:
+    """Ingest a repo into a grounded markdown wiki."""
+
+
 # --------------------------------------------------------------------------- #
 # Layout helpers
 # --------------------------------------------------------------------------- #

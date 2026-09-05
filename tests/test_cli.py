@@ -350,3 +350,9 @@ def test_verify_worklist_record_and_cached_holds(project):
 
     res = runner.invoke(app, ["verify", SLUG, "--page", "compute-pipeline", "--all", "--root", str(project)])
     assert "3 to verify" in res.output
+
+
+def test_version_flag():
+    from wikify import __version__
+    res = runner.invoke(app, ["--version"])
+    assert res.exit_code == 0 and res.output.strip() == f"wikify {__version__}"

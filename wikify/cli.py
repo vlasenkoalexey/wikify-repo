@@ -145,10 +145,12 @@ class Agenda:
     """The DERIVED agenda for one run: concepts + how each is seeded and scoped."""
 
     def __init__(self, cfg: RepoConfig, seedmap: dict, scopes: dict, n_discovered: int,
-                 mode: str, subsystems: list, defaulted: bool) -> None:
+                 mode: str, subsystems: list, defaulted: bool,
+                 scope_sets: dict | None = None) -> None:
         self.cfg = cfg                  # RepoConfig with ``concepts`` = the full agenda
         self.seedmap = seedmap          # concept slug → seed monikers (discovered/subsystem)
         self.scopes = scopes            # concept slug → rendered ``## Scope`` block
+        self.scope_sets = scope_sets or {}  # concept slug → unit member monikers (budget scope)
         self.n_discovered = n_discovered
         self.mode = mode                # "subsystems" | "modules"
         self.subsystems = subsystems    # planned Subsystem objects (subsystems mode)
@@ -189,6 +191,7 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
     mode, defaulted = _agenda_mode(cfg, state, agenda_override)
     seedmap: dict[str, list[str]] = {}
     scopes: dict[str, str] = {}
+    scope_sets: dict[str, set[str]] = {}
     subs: list = []
     cfg_slugs = {c.slug for c in cfg.concepts}
     if mode == "subsystems":
@@ -205,6 +208,7 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
         for sub in subs:
             seedmap[sub.slug] = sub.seeds
             scopes[sub.slug] = subsystems_mod.render_scope(sub, graph)
+            scope_sets[sub.slug] = set(sub.symbols)
             discovered_slugs.append(sub.slug)
     else:
         discovered = discover.discover_concepts(
@@ -221,9 +225,10 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
                 continue
             seedmap[c.slug] = sub.seeds
             scopes[c.slug] = subsystems_mod.render_scope(sub, graph)
+            scope_sets[c.slug] = set(sub.symbols)
     agenda = [Concept(slug=s) for s in discovered_slugs if s not in cfg_slugs] + cfg.concepts
     return Agenda(replace(cfg, concepts=agenda), seedmap, scopes, len(discovered_slugs),
-                  mode, subs, defaulted)
+                  mode, subs, defaulted, scope_sets)
 
 
 def _covers(config_prefix: str, unit_prefix: str) -> bool:
@@ -439,6 +444,7 @@ def prepare(
             graph, acq.repo_dir, slug, acq.commit, concept, cfg.tests, _today(),
             seed_monikers=seedmap.get(concept.slug), focus=cfg.synthesis_focus, vocab=vocab,
             scope=ag.scopes.get(concept.slug, ""),
+            scope_symbols=ag.scope_sets.get(concept.slug),
         )
         pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
         typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")

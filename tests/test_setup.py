@@ -78,3 +78,35 @@ def test_wrapper_scripts_delegate_to_setup():
     root = Path(__file__).resolve().parents[1]
     assert "wikify setup" in (root / "scripts" / "setup-vendor.sh").read_text()
     assert "wikify setup" in (root / "scripts" / "install-skill.sh").read_text()
+
+
+def test_setup_project_injects_retrieval_block(tmp_path):
+    from wikify.cli import WIKIFY_BEGIN, WIKIFY_END
+    # a SCHEMA.md-routed project: the block goes into SCHEMA.md only
+    proj = tmp_path / "host"
+    proj.mkdir()
+    (proj / "SCHEMA.md").write_text("# schema\n\nrules\n")
+    (proj / "CLAUDE.md").write_text("@SCHEMA.md\n")
+    res = runner.invoke(app, ["setup", "--no-user", "--indexers", "none", "--project", str(proj)])
+    assert res.exit_code == 0, res.output
+    assert "SCHEMA.md: updated wikify block" in res.output
+    schema = (proj / "SCHEMA.md").read_text()
+    assert schema.startswith("# schema") and WIKIFY_BEGIN in schema and "`wiki/code/<slug>/`" in schema
+    assert WIKIFY_BEGIN not in (proj / "CLAUDE.md").read_text()
+    # idempotent
+    before = schema
+    runner.invoke(app, ["setup", "--no-user", "--indexers", "none", "--project", str(proj)])
+    assert (proj / "SCHEMA.md").read_text() == before
+    # no SCHEMA.md, no agent files: CLAUDE.md + AGENTS.md are created; wiki_dir honored
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    res = runner.invoke(app, ["setup", "--no-user", "--indexers", "none", "--project", str(bare),
+                              "--wiki-dir", "wiki/codebases"])
+    assert res.exit_code == 0, res.output
+    for f in ("CLAUDE.md", "AGENTS.md"):
+        text = (bare / f).read_text()
+        assert text.count(WIKIFY_END) == 1 and "`wiki/codebases/<slug>/`" in text
+    # explicit target list
+    res = runner.invoke(app, ["setup", "--no-user", "--indexers", "none", "--project", str(bare),
+                              "--instructions", "GEMINI.md"])
+    assert "GEMINI.md: created wikify block" in res.output

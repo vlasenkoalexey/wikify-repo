@@ -1057,6 +1057,9 @@ def setup(
                                                 "retrieval block into (default: SCHEMA.md if present, "
                                                 "else the CLAUDE.md/AGENTS.md/GEMINI.md that exist)."),
     no_instructions: bool = typer.Option(False, "--no-instructions", help="With --project: skip the block."),
+    skill: bool = typer.Option(True, "--skill/--no-skill", help="With --project: also copy the skill into the "
+                                                             "project's .agents/skills (default); --no-skill "
+                                                             "writes the retrieval block only."),
     wiki_dir: str = typer.Option("wiki/code", help="With --project: where silos live (wiki_subdir)."),
 ) -> None:
     """One-time setup after installing the CLI: indexers + the agent skill (§10.16).
@@ -1069,8 +1072,11 @@ def setup(
         typer.echo(f"skill (Claude Code, user): {status} {dest}")
     if project is not None:
         project = project.resolve()
-        dest, status = setup_cmd.install_skill_project(project)
-        typer.echo(f"skill (project): {status} {dest} (+ .claude/skills symlink, .gitignore)")
+        if skill:
+            dest, status = setup_cmd.install_skill_project(project)
+            typer.echo(f"skill (project): {status} {dest} (+ .claude/skills symlink, .gitignore)")
+        else:
+            typer.echo("skill (project): skipped (--no-skill; the user-level skill serves this project)")
         if not no_instructions:
             block = _host_instruction_block(wiki_dir)
             for f in _instruction_targets(project, instructions):

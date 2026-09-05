@@ -195,7 +195,7 @@ wikify doctor         # what is installed, and the fix for anything missing
 
 `wikify setup` is idempotent. The skill ships inside the package; `wikify setup --project <dir>`
 also installs it into a project's `.agents/skills/` (what **Codex** and **Antigravity** read) with
-a `.claude/skills/` symlink. Indexers (`scip-python`, `scip-clang`, TS/JS, Go, Rust) are installed
+a `.claude/skills/` symlink (`--no-skill` to write only the retrieval block). Indexers (`scip-python`, `scip-clang`, TS/JS, Go, Rust) are installed
 into `~/.wikify/vendor` on the first `wikify prepare` that needs them, announced and opt-out;
 `wikify setup --indexers python,cpp` prefetches them.
 

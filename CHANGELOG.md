@@ -13,7 +13,8 @@
   (`~/.claude/skills`) and/or into a project's `.agents/skills`; indexers install into a user
   prefix (`~/.wikify/vendor`) on demand at `prepare` or via `--indexers`; `init --with-skill`.
   The generated `scip_pb2.py` is committed with `protobuf>=5.29,<7`. `setup --project` also injects
-  the host-wiki retrieval block into `SCHEMA.md` or the agent instruction files, idempotently.
+  the host-wiki retrieval block into `SCHEMA.md` or the agent instruction files, idempotently;
+  `--no-skill` writes the block without copying the skill into the project.
 - **In-repo layout** (`wikify init`): the wiki can live inside the repository it documents —
   `wikify.md` at the root, the repo itself as the source pinned at HEAD, the silo flat at
   `wiki/`, the cache at `.wikify/`, and a marker-delimited block injected into `CLAUDE.md` /

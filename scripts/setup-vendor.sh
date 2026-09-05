@@ -1,48 +1,7 @@
 #!/usr/bin/env bash
-# Fetch the large vendored tools that are intentionally NOT committed to git
-# (the scip-clang binary is ~130 MB — over GitHub's 100 MB/file limit). Idempotent:
-# anything already present is skipped. Run once after cloning, before the C++ path.
-#
-#   scripts/setup-vendor.sh
-#
+# Kept for one release as a wrapper: `wikify setup` now installs the indexers (user prefix
+# ~/.wikify/vendor, no sudo) and the skill; `prepare` installs indexers on demand anyway.
+# Developers regenerating wikify/scip_pb2.py after a SCIP schema bump: see docs/implementation.md
+# §10.16 (grpcio-tools 1.71, `python -m grpc_tools.protoc`); the generated module is committed.
 set -euo pipefail
-
-SCIP_CLANG_VERSION="${SCIP_CLANG_VERSION:-v0.3.3}"   # pinned: see note below
-ARCH="$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"   # e.g. x86_64-linux
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="$HERE/vendor/bin"
-mkdir -p "$BIN"
-
-# 1) scip-clang — the C++ indexer (prebuilt release binary). v0.3.3 links against
-#    glibc 2.35; newer builds require glibc 2.38, so pin it deliberately. The CLI
-#    auto-selects vendor/bin/scip-clang* (see cli._scip_clang_bin).
-DEST="$BIN/scip-clang-033"
-if [[ ! -x "$DEST" ]]; then
-  URL="https://github.com/sourcegraph/scip-clang/releases/download/${SCIP_CLANG_VERSION}/scip-clang-${ARCH}"
-  echo "downloading scip-clang ${SCIP_CLANG_VERSION} (${ARCH}) ..."
-  curl -fSL "$URL" -o "$DEST"
-  chmod +x "$DEST"
-fi
-echo -n "scip-clang: "; "$DEST" --version | head -1
-
-# 2) scip-python — the Python indexer (npm package).
-if ! command -v scip-python >/dev/null 2>&1; then
-  echo "installing scip-python via npm ..."
-  npm i -g @sourcegraph/scip-python
-fi
-echo -n "scip-python: "; scip-python --version 2>/dev/null || echo "(installed)"
-
-# 3) scip_pb2.py — generated from the vendored proto (gitignored, regenerable).
-# Pin grpcio-tools 1.71 → protobuf-5.29 gencode: newer runtimes load old gencode
-# fine, but old runtimes (e.g. a conda env pinned by tensorflow) REJECT newer
-# gencode ("Detected incompatible Protobuf Gencode/Runtime versions").
-if [[ ! -f "$HERE/wikify/scip_pb2.py" ]]; then
-  echo "generating wikify/scip_pb2.py from vendor/scip.proto ..."
-  python -m pip install -q "grpcio-tools==1.71.0"
-  python -m grpc_tools.protoc -I "$HERE/vendor" --python_out="$HERE/wikify" "$HERE/vendor/scip.proto"
-fi
-
-echo "vendor setup complete."
-echo "note: TS/JS, Go, Rust indexers are installed ON DEMAND — when 'wikify prepare' finds"
-echo "      one of those languages it prints the install command (scip-typescript / scip-go /"
-echo "      rust-analyzer) and asks; they are intentionally not fetched here."
+exec wikify setup --indexers python,cpp "$@"

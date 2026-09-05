@@ -66,7 +66,7 @@ LANGS: dict[str, Lang] = {
 # Where language installers drop binaries; prepended to PATH after an install so the
 # fresh binary resolves in this process (e.g. `go install` → ~/go/bin, the rust-analyzer
 # fallback → ~/.local/bin) without requiring a shell restart.
-_INSTALL_BIN_DIRS = ("~/.local/bin", "~/go/bin", "~/.cargo/bin")
+_INSTALL_BIN_DIRS = ("~/.local/bin", "~/go/bin", "~/.cargo/bin", "~/.wikify/vendor/bin")
 
 # Languages ``prepare`` auto-runs from detection. Python has its own sharding/AST-fallback path
 # and C++ needs a compile DB, so both are handled specially in cli.py; these three are uniform

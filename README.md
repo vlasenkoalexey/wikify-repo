@@ -91,33 +91,55 @@ But it is important to note that wikify-repo can be integrated into any LLM wiki
 
 ## Install
 
-**Prerequisites:** Python ≥ 3.11, Node.js + npm (for the `scip-python` indexer), and `git`.
-The C++ indexer (`scip-clang`) is downloaded automatically, and only if you ingest C++.
+**Prerequisites:** Python ≥ 3.11 and `git`. Node.js + npm only if you index Python (for the
+`scip-python` indexer); the C++ indexer (`scip-clang`) is downloaded automatically, and only when
+a C++ repo is prepared.
+
+Two ways to get the CLI, then one command for the rest:
 
 ```bash
-git clone https://github.com/vlasenkoalexey/wikify-repo
-cd wikify-repo
-pip install -e .                  # 1. the `wikify` CLI (deps: protobuf, pyyaml, typer, gitpython)
-scripts/setup-vendor.sh           # 2. install scip-python + generate wikify/scip_pb2.py (one-time)
-scripts/install-skill.sh /proj    # 3. install the ingest skill into your wiki project
-wikify --help                     # verify the CLI is on PATH
+# A — no checkout (pipx / pip):
+pipx install git+https://github.com/vlasenkoalexey/wikify-repo
+
+# B — from a checkout (development):
+git clone https://github.com/vlasenkoalexey/wikify-repo && cd wikify-repo && pip install -e .
+
+wikify setup          # indexer check + the wikify-ingest-repo skill for Claude Code (~/.claude/skills)
+wikify doctor         # what is installed, and the fix for anything missing
 ```
 
-That's the whole install. **All three steps matter:** the CLI does the deterministic stages, but
-the page-writing (synthesis) stage is **LLM-in-the-loop**, so an agent must run the
-`wikify-ingest-repo` skill. The skill is one self-contained, **tool-neutral** markdown procedure
-(`SKILL.md` + `prompts/`); `install-skill.sh` installs it into your project's `.agents/skills/` —
-the folder **Codex** and **Antigravity** read project skills from — and soft-links it into
-`.claude/skills/` for **Claude Code**. One install, all three agents.
-Use any Python ≥3.11 env (conda, venv, or pipx-managed). Every script is idempotent, so re-running
-is harmless.
+`wikify setup` replaces the old `scripts/setup-vendor.sh` and `scripts/install-skill.sh` (kept as
+thin wrappers for one release). It is idempotent. What it does:
+
+- **Skill.** The `wikify-ingest-repo` skill ships *inside* the Python package, so it installs from a
+  pipx install with no checkout. By default it goes to `~/.claude/skills/` (Claude Code reads
+  user-level skills in every project). `wikify setup --project <dir>` additionally installs it into
+  that project's `.agents/skills/` — the folder **Codex** and **Antigravity** read — with a
+  `.claude/skills/` symlink and a `.gitignore` line for the mirror. `wikify init --with-skill` does
+  the same for an in-repo wiki.
+- **Indexers.** `scip-python` and `scip-clang` are installed into a user prefix
+  (`~/.wikify/vendor`, no sudo) on the first `wikify prepare` that needs them, announced and
+  opt-out (`--no-install-indexers`); `wikify setup --indexers python,cpp` prefetches them. TS/JS,
+  Go and Rust indexers install the same way. The generated protobuf module is committed, so no
+  codegen step remains.
+
+The CLI does the deterministic stages; the page-writing (synthesis) stage is **LLM-in-the-loop**, so
+an agent must run the `wikify-ingest-repo` skill. The skill is one self-contained, **tool-neutral**
+markdown procedure (`SKILL.md` + `prompts/`). One install, all three agents.
 
 ## Quick start
 
 wikify has a **producer** side (build/maintain the wiki — needs the install) and a **consumer** side
 (answer from it — needs nothing). Both work in **Claude Code, Codex, and Antigravity**.
 
-### Build a wiki
+**Inside a repository** (the wiki lives with the code; see [Two layouts](#two-layouts-a-host-wiki-or-the-wiki-inside-your-repo)):
+
+```bash
+cd my-repo && wikify init        # wikify.md, .gitignore, CLAUDE.md/AGENTS.md block
+# then, in your agent: "wikify this repo"
+```
+
+### Build a host wiki (many repos, one wiki)
 
 wikify writes into a **Karpathy-style wiki repo** — a project carrying the `wikify-ingest-repo` skill,
 the agent conventions, and the committed `wiki/`. Two ways to get one (after [Install](#install)):
@@ -127,14 +149,14 @@ the agent conventions, and the committed `wiki/`. Two ways to get one (after [In
 conventions pre-wired, with an empty `wiki/`:
 ```bash
 git clone -b clean https://github.com/vlasenkoalexey/wikify-repo-demo my-wiki
-scripts/install-skill.sh my-wiki   # wires the Claude Code symlink (Codex/Antigravity already see it)
+wikify setup --project my-wiki     # skill into .agents/skills + the Claude Code symlink
 ```
 
 **B — Add it to an existing repo.** Install the skill into a project you already have — it drops the
 self-contained skill into `.agents/skills/` (read natively by Codex + Antigravity) and soft-links it
 into `.claude/skills/` for Claude Code:
 ```bash
-scripts/install-skill.sh /path/to/your-project
+wikify setup --project /path/to/your-project
 ```
 
 Either way, open the project in your agent and say:

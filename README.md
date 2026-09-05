@@ -182,12 +182,11 @@ source type of any LLM wiki, next to its prose pages (what the
 ### Answer from a wiki — no install needed
 
 To let an agent answer from a wiki — one you built, or one someone else committed — you need **nothing
-installed**: no `wikify` CLI, no skill, no indexer. Commit the `wiki/` folder and tell the agent to
-retrieve from it. wikify writes that instruction for you: `wikify init` puts it in `CLAUDE.md` /
-`AGENTS.md` for an in-repo wiki, and `wikify setup --project` puts the host-wiki version into the
-project's shared `SCHEMA.md` (or its `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`), between
-`<!-- wikify:begin/end -->` markers, idempotently. If you are consuming a committed wiki without
-wikify at all, paste this (the same text `wikify setup --project` writes):
+installed**: no `wikify` CLI, no skill, no indexer. Commit the `wiki/` folder and add this block to
+**`CLAUDE.md`** (Claude Code), **`AGENTS.md`** (Codex), and/or **`GEMINI.md`** (Antigravity) — or to a
+shared **`SCHEMA.md`** they all point at. It is installed automatically by `wikify setup --project <dir>`
+for a host wiki and by `wikify init` for an in-repo wiki (between `<!-- wikify:begin/end -->` markers,
+idempotently); paste it by hand when you are consuming a committed wiki without wikify at all:
 
 ```markdown
 ## Code wikis (wikify)

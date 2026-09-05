@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- **Diagram checks** (`wikify/diagrams.py`): a Mermaid structural floor (diagram type, balanced
+  brackets, node band, non-empty) and a lint-checked `Legend:` under flowcharts mapping node ids
+  to catalog citations; warnings from `finalize` and `lint`, never a gate. Prompts now ask for
+  diagrams chosen by the question, nodes that are symbols, real edges, <= 20 nodes, and a legend.
 - **`wikify setup` / `wikify doctor`**: the two install scripts are folded into the CLI. The
   skills ship inside the package (`wikify/skills/`, `.agents/skills/` symlinks to them) so
   `pipx install git+…` works without a checkout; `setup` installs the skill at user level

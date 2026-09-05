@@ -517,3 +517,26 @@ def test_ref_bump_records_history_and_writes_change_page(project, tmp_path):
     res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
     assert res.exit_code == 0, res.output
     assert (silo / "log.md").read_text().count("## [") == 2
+
+
+def test_finalize_reports_diagrams(project):
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(
+        scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    silo = project / "wiki" / "code" / SLUG
+    (silo / "concepts").mkdir(parents=True)
+    (silo / "concepts" / "compute-pipeline.md").write_text(
+        "---\ntitle: t\n---\n\n# t\n\n## Diagram\n\n```mermaid\nflowchart TD\n  C[\"compute\"] --> OUT\n```\n"
+        f"Legend:\n- `C` — [`compute`]({ref})\n\n## Overview\nDriven by [`compute`]({ref}).\n", encoding="utf-8")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "warning: diagram: compute-pipeline.md:L" in res.output and "legend misses node(s): OUT" in res.output
+    assert "diagrams: 1 fence(s) on 1 page(s), 1 warning(s)" in res.output
+    # a dead legend link is a real citation error (rule 1), not a diagram warning
+    page = silo / "concepts" / "compute-pipeline.md"
+    page.write_text(page.read_text().replace(f"[`compute`]({ref})\n\n## Overview", "[`compute`](../catalog/mathlib.md#nope)\n\n## Overview"))
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 1 and "LINT FAILED" in res.output

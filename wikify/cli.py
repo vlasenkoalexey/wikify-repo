@@ -28,6 +28,7 @@ from . import (
     changes as changes_mod,
     connect as connect_mod,
     coverage as coverage_mod,
+    diagrams as diagrams_mod,
     diff,
     discover,
     docs as docs_mod,
@@ -690,6 +691,7 @@ def finalize(
     state_mod.save_state(p.state, state)
     for w in okf_warn:
         typer.echo(f"warning: okf: {w}", err=True)
+    _diagram_report(p.wiki_slug)
 
     report = coverage_mod.compute_report(graph, p.wiki_slug, catalogued=catalogued)
     typer.echo(report.render())
@@ -751,12 +753,23 @@ def lint_cmd(
         typer.echo(f"fix: applied {edits} repair(s)")
     else:
         report = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
+    _diagram_report(p.wiki_slug)
     if report.ok:
         typer.echo("lint: OK")
         return
     for e in report.errors:
         typer.echo(f"  {e}", err=True)
     raise typer.Exit(1)
+
+
+def _diagram_report(silo: Path) -> None:
+    """Mermaid structure + legend coverage (§10.17): warnings, never a gate."""
+    warns, pages, fences, no_legend = diagrams_mod.check_silo(silo)
+    for w in warns:
+        typer.echo(f"warning: diagram: {w}", err=True)
+    if fences:
+        typer.echo(f"diagrams: {fences} fence(s) on {pages} page(s), {len(warns)} warning(s)"
+                   + (f", {no_legend} flowchart(s) without a legend" if no_legend else ""))
 
 
 @app.command()

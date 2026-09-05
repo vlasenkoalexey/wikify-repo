@@ -347,6 +347,18 @@ The *how* lives in `implementation.md` §10.
   and Antigravity; indexers into a user prefix, no sudo, lazily on the first `prepare`
   that needs them; `wikify doctor` for the rest. The generated protobuf module is
   committed so no codegen step survives. The two scripts stay as wrappers for a release.
+- **A diagram is a claim; the legend is its citation.** Every concept page carries a
+  Mermaid diagram and nothing checked it — a scan of 613 fences across 35 silos found
+  1% syntactically broken and none navigable: node labels named symbols by convention
+  only. Two borrows from the diagram tools fix the consumer side without touching the
+  gate. From oh-my-mermaid (node id = the element it stands for) and archify
+  (evidence-backed nodes): a `Legend:` list under each flowchart mapping node ids to
+  catalog citations, so an agent follows the picture into the source and a human knows
+  which box is which symbol; the links ride the existing citation rules, and lint only
+  checks coverage. From oh-my-mermaid's validator: the four general rules (diagram type,
+  balanced brackets, node band, non-empty) as a heuristic floor in Python. Mermaid's real
+  parser is JavaScript-only; it stays an optional accelerator, never an npm dependency.
+  Pre-legend silos are counted, not warned, so nothing existing gets noisy. (§10.17)
 - **The ingest skill self-connects into the host wiki (register step).** The CLI
   never edits curated files (invariant 2), but a fresh silo that nothing links to is
   invisible. So the *skill's* final step registers the new `overview.md` into the host

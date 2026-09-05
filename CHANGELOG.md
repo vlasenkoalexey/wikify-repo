@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+- **Catalog cross-links** (`wikify/coverage.py`): `uses` / `used by` lists no longer link
+  namespace or macro monikers. They are not documentable symbols, so they have no catalog
+  anchor, and their "home" file (often a header with no other symbols) may have no catalog
+  page; on a C++ repo this left the same dead link on hundreds of pages.
+
 ### Added
 - **Diagram checks** (`wikify/diagrams.py`): a Mermaid structural floor (diagram type, balanced
   brackets, node band, non-empty) and a lint-checked `Legend:` under flowcharts mapping node ids

@@ -109,10 +109,12 @@ def flowchart_nodes(body: str) -> tuple[set[str], dict[str, str]]:
         defs_line = re.sub(r"\|[^|]*\|", " ", line)
         for m in _NODE_DEF_RE.finditer(defs_line):
             nid, label = m.group(1), m.group(3).strip()
-            if nid not in _KEYWORDS:
-                ids.add(nid)
-                if label:
-                    labels[nid] = label
+            # An explicit shape bracket disambiguates: `BT["backtest_weights"]` is a node
+            # even though a bare `BT` would be a direction. Directive lines are already
+            # skipped above, so no keyword filter is needed on this branch.
+            ids.add(nid)
+            if label:
+                labels[nid] = label
         stripped = _strip_quotes(line)
         stripped = re.sub(r"\|[^|]*\|", " ", stripped)                  # edge labels
         stripped = re.sub(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|>[^\]]*\]", " ", stripped)  # node labels

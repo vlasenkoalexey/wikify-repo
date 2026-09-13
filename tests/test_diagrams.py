@@ -119,3 +119,15 @@ classDiagram
     warnings, fences, _ = diagrams.check_page(page)
     assert fences == 1
     assert not [w for w in warnings if "unbalanced" in w], warnings
+
+
+def test_node_named_like_a_direction_keyword_is_a_node():
+    """`BT["backtest_weights"]` is a node, not the bottom-to-top direction keyword."""
+    from wikify import diagrams
+    body = """flowchart TD
+    MAIN --> BT["backtest_weights"]
+    BT --> CMP["compare"]
+"""
+    ids, labels = diagrams.flowchart_nodes(body)
+    assert "BT" in ids and labels["BT"] == "backtest_weights"
+    assert "TD" not in ids

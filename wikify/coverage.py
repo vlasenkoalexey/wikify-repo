@@ -559,7 +559,7 @@ def emit_catalogs(
             base = source_url
         elif repo_abs is not None:
             # relative path from THIS page's directory to the source repo root.
-            base = os.path.relpath(repo_abs, out.parent.resolve())
+            base = os.path.relpath(repo_abs, out.parent.resolve()).replace(os.sep, "/")
         else:
             base = None
         text = render_catalog(graph, module_path, monikers, covered, source_base=base,

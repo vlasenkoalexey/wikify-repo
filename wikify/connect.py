@@ -235,6 +235,21 @@ def _up_block(page_rel: str, keys: list[str], vocab_subdir: str) -> str:
     return f"{_UP_BEGIN}\n> **Cross-repo concept:** part of {links} across this wiki's repos.\n{_UP_END}"
 
 
+def _block_targets_vocab(text: str, page_rel: str, vocab_subdir: str) -> bool:
+    """Does the page's existing up-block link into ``vocab_subdir``?
+
+    A host wiki may keep its concept vocabulary in several directories and reach each with
+    ``--vocab``. A run scoped to one of them must not delete up-links another run wrote, so
+    removal is confined to blocks that point back at the vocabulary now being applied."""
+    start = text.find(_UP_BEGIN)
+    if start == -1:
+        return False
+    end = text.find(_UP_END, start)
+    block = text[start:end if end != -1 else len(text)]
+    prefix = _relpath(page_rel, f"{vocab_subdir}/x.md").rsplit("/", 1)[0]
+    return bool(prefix) and prefix in block
+
+
 def _insert_after_frontmatter_h1(text: str, block: str) -> str:
     """Insert ``block`` right after the frontmatter and the first ``# H1`` heading (so an
     up-link sits at the top of the readable body), else after frontmatter, else prepend."""
@@ -311,9 +326,16 @@ def apply_connections(
         )
         text = page.path.read_text(encoding="utf-8")
         if _UP_BEGIN in text:
-            text = _replace_block(text, _UP_BEGIN, _UP_END,
-                                  _up_block(page.rel_from_wiki, keys_here, vocab_subdir)
-                                  if keys_here else None)
+            if keys_here:
+                text = _replace_block(text, _UP_BEGIN, _UP_END,
+                                      _up_block(page.rel_from_wiki, keys_here, vocab_subdir))
+            elif _block_targets_vocab(text, page.rel_from_wiki, vocab_subdir):
+                # This page's block was written by a run over THIS vocabulary and the page no
+                # longer matches any connected key there — drop it.
+                text = _replace_block(text, _UP_BEGIN, _UP_END, None)
+            # Otherwise the block links into a different vocabulary directory (a host wiki may
+            # keep several, reached with --vocab). A run scoped to one vocabulary must not
+            # delete another's links, so leave it untouched.
         elif keys_here:
             text = _insert_after_frontmatter_h1(
                 text, _up_block(page.rel_from_wiki, keys_here, vocab_subdir))

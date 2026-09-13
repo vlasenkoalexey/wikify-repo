@@ -85,3 +85,37 @@ def test_check_silo_aggregates(tmp_path):
     (silo / "concepts" / "b.md").write_text(GOOD.split("Legend:")[0])
     warns, pages, fences, no_legend = diagrams.check_silo(silo)
     assert (pages, fences, no_legend) == (2, 2, 1) and warns == []
+
+
+def test_edge_label_prose_is_not_a_node_definition(tmp_path):
+    """`-->|"engine run per (ticker, day)"|` must not register `per` as a node."""
+    from wikify import diagrams
+    body = """flowchart TD
+    TP["target_positions"] -->|"engine run per (ticker, day)"| ENGINE["engine"]
+"""
+    ids, labels = diagrams.flowchart_nodes(body)
+    assert ids == {"TP", "ENGINE"}
+    assert "per" not in labels
+
+
+def test_classdiagram_braces_balance_across_lines(tmp_path):
+    """A classDiagram opens `class X {` on one line and closes it later: no per-line warning."""
+    from wikify import diagrams
+    page = tmp_path / "p.md"
+    page.write_text("""---
+title: t
+---
+# t
+
+```mermaid
+classDiagram
+    class Order {
+        +str id
+        +float qty
+    }
+    Order <|-- PaperOrder
+```
+""", encoding="utf-8")
+    warnings, fences, _ = diagrams.check_page(page)
+    assert fences == 1
+    assert not [w for w in warnings if "unbalanced" in w], warnings

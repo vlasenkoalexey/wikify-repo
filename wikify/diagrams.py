@@ -104,7 +104,10 @@ def flowchart_nodes(body: str) -> tuple[set[str], dict[str, str]]:
         head = line.split()[0] if line.split() else ""
         if head in ("subgraph", "end", "classDef", "class", "style", "linkStyle", "click", "direction"):
             continue
-        for m in _NODE_DEF_RE.finditer(line):
+        # Edge labels (`-->|"per (ticker, day)"|`) are prose, not node definitions: drop them
+        # before looking for `id[label]` shapes so a word followed by a paren is not a node.
+        defs_line = re.sub(r"\|[^|]*\|", " ", line)
+        for m in _NODE_DEF_RE.finditer(defs_line):
             nid, label = m.group(1), m.group(3).strip()
             if nid not in _KEYWORDS:
                 ids.add(nid)
@@ -161,11 +164,20 @@ def check_page(page_path: str | Path) -> tuple[list[str], int, int]:
         if not f.kind:
             warnings.append(f"{where}: no diagram type on the first line (got {content[0][:40]!r})")
             continue
-        for ln in content:
-            s = _strip_quotes(ln)
-            if s.count("[") != s.count("]") or s.count("(") != s.count(")") or s.count("{") != s.count("}"):
-                warnings.append(f"{where}: unbalanced brackets: {ln[:80]}")
-                break
+        # Brackets balance per line in flowcharts; class/state diagrams open a `{` block on
+        # one line and close it lines later, so those are checked over the whole fence.
+        blocky = f.kind in ("classDiagram", "stateDiagram", "stateDiagram-v2", "erDiagram")
+        if blocky:
+            joined = _strip_quotes(" ".join(content))
+            if (joined.count("[") != joined.count("]") or joined.count("(") != joined.count(")")
+                    or joined.count("{") != joined.count("}")):
+                warnings.append(f"{where}: unbalanced brackets across the {f.kind} block")
+        else:
+            for ln in content:
+                s = _strip_quotes(ln)
+                if s.count("[") != s.count("]") or s.count("(") != s.count(")") or s.count("{") != s.count("}"):
+                    warnings.append(f"{where}: unbalanced brackets: {ln[:80]}")
+                    break
         if f.kind in ("flowchart", "graph"):
             ids, labels = flowchart_nodes(f.body)
             if not ids:

@@ -199,6 +199,13 @@ a `.claude/skills/` symlink (`--no-skill` to write only the retrieval block). In
 into `~/.wikify/vendor` on the first `wikify prepare` that needs them, announced and opt-out;
 `wikify setup --indexers python,cpp` prefetches them.
 
+**Windows (native).** Works from Git Bash or PowerShell with three caveats: run with `PYTHONUTF8=1`
+(the console encoding is cp1252 and wikify prints `→`); `scip-python` refuses to index unless a `pip`
+is on PATH (any Python's `Scripts` dir will do); and `@sourcegraph/scip-python` 0.6.x crashes at
+startup on Windows (`new RegExp(path.sep)` is an invalid regex) until its bundled
+`dist/scip-python.js` is patched to escape the separator — an upstream bug, re-apply after upgrading.
+Docker or WSL avoid all three. Paths inside the wiki are always `/`-separated regardless of host.
+
 The CLI does the deterministic stages; the page-writing (synthesis) stage is **LLM-in-the-loop**, so
 an agent runs the `wikify-ingest-repo` skill — one self-contained, tool-neutral markdown procedure
 that works in Claude Code, Codex, and Antigravity.

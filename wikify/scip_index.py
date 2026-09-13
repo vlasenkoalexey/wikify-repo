@@ -72,7 +72,7 @@ def run_indexer(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     name = project_name or project_dir.name
     cmd = [
-        "scip-python", "index",
+        shutil.which("scip-python") or "scip-python", "index",
         "--project-name", name,
         "--project-version", project_version,
         "--output", str(output_path.resolve()),
@@ -376,6 +376,11 @@ def run_rust_analyzer(project_dir: str | Path, output_path: str | Path,
 def parse_index(scip_path: str | Path) -> "scip_pb2.Index":
     index = scip_pb2.Index()
     index.ParseFromString(Path(scip_path).read_bytes())
+    # scip-python on Windows emits ``relative_path`` with backslashes; every
+    # downstream consumer (slugs, cite links, packet paths) assumes ``/``.
+    for doc in index.documents:
+        if "\\" in doc.relative_path:
+            doc.relative_path = doc.relative_path.replace("\\", "/")
     return index
 
 

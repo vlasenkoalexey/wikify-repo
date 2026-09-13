@@ -663,7 +663,7 @@ def finalize(
         src_base_for = lambda page: cfg.source_url  # noqa: E731
     else:
         repo_abs = Path(acq.repo_dir).resolve()
-        src_base_for = lambda page: os.path.relpath(repo_abs, page.parent.resolve())  # noqa: E731
+        src_base_for = lambda page: os.path.relpath(repo_abs, page.parent.resolve()).replace(os.sep, "/")  # noqa: E731
     okf_warn: list[str] = []
     concept_status: list[tuple[str, str]] = []
     for page in sorted((p.wiki_slug / "concepts").glob("*.md")):
@@ -709,11 +709,11 @@ def finalize(
             changes_mod.append_log(p.wiki_slug, rec, slug, _today())
             if rec.old_ref and rec.old_ref != rec.new_ref:
                 cp = changes_mod.write_change_page(p.wiki_slug, rec, slug, cfg.source_url, now, gen_by)
-                typer.echo(f"changes: wrote {cp.relative_to(p.wiki_slug)} "
+                typer.echo(f"changes: wrote {cp.relative_to(p.wiki_slug).as_posix()} "
                            f"({len(rec.commits)} commit(s), {len(rec.rebuild)} rebuilt, {len(rec.relink)} relinked)")
     index_dir = p.wiki_slug.resolve()
     snapshot = okf_mod.snapshot_resource(
-        cfg.source_url, os.path.relpath(Path(acq.repo_dir).resolve(), index_dir))
+        cfg.source_url, os.path.relpath(Path(acq.repo_dir).resolve(), index_dir).replace(os.sep, "/"))
     assemble.write_repo_index(
         p.wiki_slug, slug, acq.commit, scip_tool, concept_status, _today(), report=report,
         snapshot=snapshot,
@@ -1068,13 +1068,15 @@ def setup(
     --project it also writes the marker-delimited retrieval block into the project's
     agent instructions (or its shared SCHEMA.md), so agents know to answer from the wiki."""
     if user:
-        dest, status = setup_cmd.install_skill_user(claude_dir)
-        typer.echo(f"skill (Claude Code, user): {status} {dest}")
+        for name in setup_cmd.SKILLS:
+            dest, status = setup_cmd.install_skill_user(claude_dir, name)
+            typer.echo(f"skill (Claude Code, user): {status} {dest}")
     if project is not None:
         project = project.resolve()
         if skill:
-            dest, status = setup_cmd.install_skill_project(project)
-            typer.echo(f"skill (project): {status} {dest} (+ .claude/skills symlink, .gitignore)")
+            for name in setup_cmd.SKILLS:
+                dest, status = setup_cmd.install_skill_project(project, name)
+                typer.echo(f"skill (project): {status} {dest} (+ .claude/skills symlink, .gitignore)")
         else:
             typer.echo("skill (project): skipped (--no-skill; the user-level skill serves this project)")
         if not no_instructions:

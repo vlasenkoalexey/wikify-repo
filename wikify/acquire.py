@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,14 @@ class Acquired:
     repo_dir: Path
     commit: str
 
+
+
+def _rmtree_force(path: Path) -> None:
+    """``shutil.rmtree`` that also removes read-only files (git pack files on Windows)."""
+    def _onerror(func, p, exc_info):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    shutil.rmtree(path, onerror=_onerror)
 
 def _git(args: list[str], cwd: str | Path) -> str:
     proc = subprocess.run(
@@ -116,7 +125,7 @@ def acquire(
             if dest.exists() and (dest / ".git").is_dir():
                 # A plain clone already sits at this slug (acquired before submodule mode
                 # was requested) — remove it and re-add as a submodule at the same path.
-                shutil.rmtree(dest)
+                _rmtree_force(dest)
             if not dest.exists():
                 rel = dest.resolve().relative_to(wiki_root.resolve())
                 # --force: wikify owns raw/code/, so don't let a gitignore line block the add.

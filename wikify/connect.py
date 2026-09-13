@@ -205,6 +205,8 @@ def _relpath(from_wiki_rel: str, to_wiki_rel: str) -> str:
     GitHub and Obsidian for vaults whose filenames contain spaces/parens; separators and
     anchor fragments are preserved."""
     rel = os.path.relpath(to_wiki_rel, str(Path(from_wiki_rel).parent))
+    # Markdown links are always ``/``-separated; os.path.relpath yields ``\`` on Windows.
+    rel = rel.replace(os.sep, "/")
     return quote(rel, safe="/#")
 
 

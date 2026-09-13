@@ -89,6 +89,9 @@ def body_sha(text: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
 
+LINE_SEP = chr(10)
+
+
 def frontmatter(text: str) -> dict:
     fm, _ = split(text)
     if fm is None:
@@ -98,6 +101,24 @@ def frontmatter(text: str) -> dict:
     except yaml.YAMLError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def frontmatter_error(text: str) -> str | None:
+    """The YAML error for front matter that does not parse, else None.
+
+    Every reader here degrades to an empty mapping on a parse error, which silently costs the
+    page its ``description`` in the assembled index, its ``concepts:`` tag for ``connect`` and
+    its ``aliases:`` for retrieval. The commonest cause is an unquoted plain scalar containing
+    a colon-space pair, as in ``description: turns a panel into {symbol: weight}``, so report
+    it instead of leaving it invisible."""
+    fm, _ = split(text)
+    if fm is None:
+        return None
+    try:
+        yaml.safe_load(LINE_SEP.join(fm))
+    except yaml.YAMLError as exc:
+        return " ".join(str(exc).split())
+    return None
 
 
 def set_keys(text: str, updates: dict[str, str | None]) -> str:
@@ -232,9 +253,14 @@ def strip_invalid_status(text: str) -> str:
 # Shape warnings (never a gate)
 # --------------------------------------------------------------------------- #
 def warnings(page_path: str | Path) -> list[str]:
-    fm = frontmatter(Path(page_path).read_text(encoding="utf-8", errors="replace"))
+    text = Path(page_path).read_text(encoding="utf-8", errors="replace")
+    fm = frontmatter(text)
     out: list[str] = []
     name = Path(page_path).name
+    err = frontmatter_error(text)
+    if err:
+        out.append(f"{name}: front matter does not parse as YAML, so description/aliases/"
+                   f"concepts are ignored — quote the offending value ({err[:160]})")
 
     def check_event(e, field: str) -> None:
         if not isinstance(e, dict) or not e.get("by"):

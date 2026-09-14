@@ -56,3 +56,34 @@ def test_slugs_are_unique_and_readable():
     slugs = [s.slug for s in specs]
     assert len(slugs) == len(set(slugs))
     assert "demo-core" in slugs  # demo/core.py → "demo-core" (no umbrella to drop)
+
+
+def test_exclude_patterns_match_on_path_segments_not_substrings():
+    """A directory pattern must not match a word that merely *ends* with it.
+
+    ``"test/"`` is a substring of ``agent/backtest/``, so a plain ``in`` test
+    classified an entire backtest tree as test code and dropped it from the
+    agenda. Directory patterns therefore anchor to a path-segment boundary;
+    file-prefix patterns like ``"/test_"`` keep substring semantics.
+    """
+    excluded = discover._excluded
+    D = discover.DEFAULT_EXCLUDES
+
+    # real source trees whose names merely contain an excluded word
+    assert not excluded("agent/backtest/factor_costs.py", D)
+    assert not excluded("agent/backtest/engines/options_portfolio.py", D)
+    assert not excluded("pkg/latest/snapshot.py", D)
+    assert not excluded("pkg/contest/entry.py", D)
+
+    # genuine test / vendored / example trees still excluded
+    assert excluded("test/foo.py", D)
+    assert excluded("tests/foo.py", D)
+    assert excluded("agent/tests/test_x.py", D)
+    assert excluded("pkg/examples/demo.py", D)
+    assert excluded("pkg/scripts/run.py", D)
+    assert excluded("pkg/third_party/x.py", D)
+    assert excluded("pkg/vendor/x.py", D)
+    assert excluded("pkg/node_modules/x.js", D)
+
+    # file-prefix pattern is not a directory pattern and still matches anywhere
+    assert excluded("src/test_helper.py", D)

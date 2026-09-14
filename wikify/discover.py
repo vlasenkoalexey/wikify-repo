@@ -40,7 +40,26 @@ class DiscoveredConcept:
 
 
 def _excluded(path: str, excludes: tuple[str, ...]) -> bool:
-    return any(e in path for e in excludes)
+    """True when ``path`` falls under an excluded directory.
+
+    A directory pattern (one ending in ``/``) matches only on a path-segment
+    boundary — at the start of the path, or right after a ``/``. A bare
+    substring test lets a *word ending* in the pattern swallow a real source
+    tree: ``"test/"`` is inside ``agent/backtest/``, so a repo that keeps its
+    backtest engines there had every one of them silently classified as test
+    code and dropped from the agenda. The same trap sits under ``latest/``,
+    ``contest/`` and ``vendor/`` vs ``revendor/``.
+
+    Non-directory patterns (``"/test_"``, matching a file *prefix*) keep plain
+    substring semantics — that is what they are for.
+    """
+    for e in excludes:
+        if e.endswith("/"):
+            if path.startswith(e) or ("/" + e) in path:
+                return True
+        elif e in path:
+            return True
+    return False
 
 
 def _concept_slug(module: str) -> str:

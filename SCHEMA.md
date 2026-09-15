@@ -134,3 +134,9 @@ invariant 7 keeps the anchor grammar but drops page front matter as the resoluti
 Until then the invariants above stand as written. Rationale in one line: 149 query sessions
 with zero catalog opens when source was on disk, and a 240-session test with no difference
 between full and collapsed pages when source is present.
+
+**Pending design change (2026-09-15): `docs/prose-budget.md`.** The agenda cap of 24 is
+replaced by a per-unit rule (a deep page for units with at least 5 modules or 20 external
+referrers; floor 8; `agenda_max` an opt-in ceiling) and a second prose tier, `areas/<area>.md`,
+one per top-level area, holding the small units as sections. `prepare` prints the bill next to
+the agenda. Reproduces torch_tpu's 27 pages; gives PyTorch's shards 124 instead of 24.

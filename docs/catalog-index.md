@@ -283,6 +283,7 @@ time plus verification, so 24 pages is the same bill for any repo. On PyTorch it
 pages across the eleven configured shards, about two per subtree. A budget per index shard
 (or per top-level directory) with the same default would scale the bill with the coverage
 the maintainer chose: PyTorch's configuration would yield on the order of a hundred
-pages and five to six hours of agent time per clean ingest, incremental afterwards. Whether
-to do that is a separate decision; it is recorded here because the size comparison above
-would otherwise mislead.
+pages and five to six hours of agent time per clean ingest, incremental afterwards. Resolved the same day
+in `prose-budget.md`: a per-unit rule (5 modules or 20 external referrers) with an area-page
+tier, a floor of 8, `agenda_max` as an opt-in ceiling, and the bill printed before synthesis.
+Recorded here because the size comparison above would otherwise mislead.

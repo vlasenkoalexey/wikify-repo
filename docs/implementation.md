@@ -942,3 +942,38 @@ thing that makes a diagram usable by a reader, a legend. All warnings, never a g
   edges are real relationships, ≤ 20 nodes, required legend); overview.md (legend to concept
   pages). Optional accelerator, not built: Mermaid's own `mermaid.parse` via Node when present —
   wikify never requires npm. Tests: `tests/test_diagrams.py`.
+
+### 10.18 Catalog index: `catalog/symbols/*.tsv`, `catalog/edges/*.tsv` (proposed 2026-09-15)
+Design and evidence: `catalog-index.md`. Not implemented yet; these are the contracts the
+implementation pins.
+- **Config** (`config.py`): `catalog: index | anchors | full`. Default `index` for new wikis;
+  `anchors` is today's collapsed page; `full` is today's page. `coverage_collapse` /
+  `coverage_exclude` keep their meaning inside `full`.
+- **Emitter** (`coverage.py`): `emit_symbol_index(graph, wiki_slug_dir, state, profile)` writes
+  one `symbols/<top-level-dir>.tsv` per top-level directory of definition paths, rows sorted by
+  path, five header comment lines (silo, pin, shard, columns, the three grep recipes). Columns:
+  `anchor path line kind rank hash callers pages`, plus `sig doc` in the full profile.
+  `anchor` = `catalog_rel_path(def_path)` without `.md`, then `#`, then
+  `qualified_name(moniker)`: the citation target with `catalog/` and `.md` stripped. `rank` =
+  `graph.importance`; `hash` = `state["symbols"][moniker]`; `pages` = the concept pages whose
+  `state["pages"][*]["cited"]` holds the moniker. `edges/<top-level-dir>.tsv` holds
+  `callee<TAB>caller` for every `graph.callers` edge, uncapped and unfiltered (filtering is a
+  rendering choice for `full`). `catalog/index.md` is the map: per module, symbol count, top
+  entry points by rank, citing concept pages.
+- **Lint** (`lint.py`): `_resolve_citation` resolves through the graph index
+  `(catalog_rel_path(def_path), qualified_name) -> moniker` that `covered_monikers` already
+  builds; page front matter is no longer read. Rule 1 semantics unchanged, in every tier.
+- **Citations**: grammar unchanged. Packets emit the link title `"<def_path>:L<line>"` on their
+  `cite:` lines so synthesized pages carry the source location; lint ignores titles.
+- **Retrieval block** (`cli.py`, host-wiki and in-repo blocks): reworded per the design page
+  (concept pages for mechanism; the citation path is the source path; the index by anchor for
+  existence and callers, grep and never read; the map for orientation; pages only under `full`).
+- **Content**: C++ signatures from the SCIP documentation (`scip_index._signature`, Python-only
+  in practice today); the implementation signature preferred over the first `@overload`; the
+  positional-only `/` restored from the empty line scip-python emits; enumerator doc lines that
+  are identical across every member of an enum dropped.
+- **Hygiene**: index only `git ls-files` paths; `index_shards` expand to directories only, or the
+  empty-`relative_path` document a file-level shard yields is repaired; `symbol_base` is cut at
+  the last `/` or `#`, never mid-name.
+- **Tests**: `test_coverage.py` (emitter, header, sharding, profiles), `test_lint.py` (graph
+  resolution in every tier), one golden fixture in `index` mode.

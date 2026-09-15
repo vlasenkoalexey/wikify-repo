@@ -125,3 +125,12 @@ The risky foundation remains the **SCIP-occurrence → callers/callees derivatio
 keep its focused pytest green — it now runs offline against a checked-in
 `.scip` fixture, plus CI (`.github/workflows/tests.yml`). New mechanisms each
 ship with a pinning test (`uv run pytest`, 132 tests).
+
+**Pending design change (2026-09-15): `docs/catalog-index.md`.** The module catalog becomes
+a shipped symbol index (`catalog/symbols/*.tsv`, `catalog/edges/*.tsv`, a map page); per-module
+pages become an opt-in rendering; lint resolves through the graph. When it lands, invariant 1
+reads "plain text (markdown pages plus TSV index files) is the only shipped product" and
+invariant 7 keeps the anchor grammar but drops page front matter as the resolution table.
+Until then the invariants above stand as written. Rationale in one line: 149 query sessions
+with zero catalog opens when source was on disk, and a 240-session test with no difference
+between full and collapsed pages when source is present.

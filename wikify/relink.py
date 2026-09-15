@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import verify as verify_mod
 from .coverage import catalog_rel_path, qualified_name
-from .lint import _LINK, _is_symbol_link
+from .lint import _LINK, _is_symbol_link, strip_title
 
 LinkMap = dict[tuple[str, str], tuple[str, str]]   # (old rel .md, old anchor) → (new rel .md, new anchor)
 
@@ -40,8 +40,9 @@ def _split_target(target: str) -> tuple[str, str, str] | None:
     i = target.find("catalog/")
     if i < 0 or "#" not in target:
         return None
-    path, _, anchor = target.partition("#")
-    return target[:i], path[i + len("catalog/"):], anchor
+    title = target[len(strip_title(target)):]          # '' or ' "path:Lnn"' (kept verbatim)
+    path, _, anchor = strip_title(target).partition("#")
+    return target[:i], path[i + len("catalog/"):], anchor + title
 
 
 def relink_text(text: str, lmap: LinkMap) -> tuple[str, int]:
@@ -55,10 +56,12 @@ def relink_text(text: str, lmap: LinkMap) -> tuple[str, int]:
         label, target = m.group(1), m.group(2)
         if _is_symbol_link(target):
             parts = _split_target(target)
-            if parts and (parts[1], parts[2]) in lmap:
-                rel, anchor = lmap[(parts[1], parts[2])]
-                n += 1
-                return f"[{label}]({parts[0]}catalog/{rel}#{anchor})"
+            if parts:
+                anchor_only, _, title = parts[2].partition(" ")
+                if (parts[1], anchor_only) in lmap:
+                    rel, anchor = lmap[(parts[1], anchor_only)]
+                    n += 1
+                    return f"[{label}]({parts[0]}catalog/{rel}#{anchor})"   # title dropped: stale line
         return m.group(0)
 
     return _LINK.sub(sub, text), n

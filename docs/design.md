@@ -207,9 +207,9 @@ The *how* lives in `implementation.md` §10.
   `uses`/`used by` are the only capped lists (unbounded cross-refs), test-filtered
   and importance-ranked. The `symbols/` per-symbol stubs are gone — folded into the
   module catalog (one home per symbol).
-- **The catalog is an index first; pages are a rendering.** *(Proposed 2026-09-15;
-  supersedes the entry above when it lands. Rationale, evidence and contracts in
-  `catalog-index.md`.)* Measured over 149 query sessions, agents opened catalog pages
+- **The catalog is an index first; pages are a rendering.** *(Realized in 0.3.0,
+  2026-09-15; supersedes the entry above. Rationale, evidence and contracts in
+  `catalog-index.md`; mechanics in implementation.md §10.18.)* Measured over 149 query sessions, agents opened catalog pages
   zero times when the source was on disk; a 240-session controlled test found no
   difference between full and collapsed pages with source present and a 4.5-point gain
   without it, concentrated on entries that carry a signature. The catalog's value is at
@@ -218,8 +218,9 @@ The *how* lives in `implementation.md` §10.
   `catalog/edges/<dir>.tsv` plus a map page, resolve citations through the graph, and
   make per-module pages an opt-in rendering (`catalog: full`) for source-absent repos.
   No database, no query tool, no consumer-side skill: the files stay the interface.
-- **Prose volume is a per-unit rule with two tiers, not a per-repo cap.** *(Decided
-  2026-09-15, not yet implemented; logic and numbers in `prose-budget.md`.)* The agenda cap
+- **Prose volume is a per-unit rule with two tiers, not a per-repo cap.** *(Realized in
+  0.3.0, 2026-09-15; logic and numbers in `prose-budget.md`, mechanics in
+  implementation.md §10.19.)* The agenda cap
   of 24 gave torch_tpu (13k symbols) and PyTorch (193k) the same 24 to 27 pages, 5.7 vs
   0.2 percent of symbols cited. Uncapped, the planner finds 80 and 145 units. A unit gets
   a deep page when it has at least 5 modules or at least 20 external referrers (floor 8,
@@ -648,10 +649,11 @@ Catalogs are `extracted` (generated straight from SCIP, correct by construction)
 and are not run through the citation linter. They represent and *internally*
 connect modules; they do not bridge dynamic-dispatch seams (see decision 7).
 
-Planned change (`catalog-index.md`, 2026-09-15): the same computation ships as a symbol
-index (`catalog/symbols/*.tsv`, `catalog/edges/*.tsv`) plus a map page; per-module pages
-become an opt-in rendering; the linter resolves citations through the graph instead of
-page front matter. The coverage report and the set-difference are unchanged.
+Since 0.3.0 (`catalog-index.md`): the same computation ships as the symbol index
+(`catalog/symbols/*.tsv`, `catalog/edges/*.tsv`) plus the module map `catalog/index.md`;
+per-module pages are an opt-in rendering (`catalog: anchors | full`); the linter resolves
+citations through the graph instead of page front matter. The coverage report and the
+set-difference are unchanged.
 
 ---
 
@@ -815,7 +817,7 @@ parse TOML would give, with tooling already in the build.
 ## Distribution
 
 - Ship the `wiki/` markdown tree + the `commit` pins. Nothing else.
-- *Planned (`catalog-index.md`):* the tree also carries the TSV symbol index under
+- Since 0.3.0 (`catalog-index.md`) the tree also carries the TSV symbol index under
   `catalog/`. Still plain text, still diffable per version, still nothing to install on
   the consumer side.
 - **Two shippable forms**: a single **standalone silo** (pre-connect, link-free)

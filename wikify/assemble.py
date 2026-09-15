@@ -100,25 +100,30 @@ def write_repo_index(
     date: str,
     report=None,  # coverage.CoverageReport | None
     snapshot: str | None = None,   # OKF bundle-level provenance: the pinned tree (URL or path)
+    catalog_mode: str = "full",    # "index" | "anchors" | "full" (catalog-index.md)
 ) -> Path:
     wiki_slug_dir = Path(wiki_slug_dir)
     wiki_slug_dir.mkdir(parents=True, exist_ok=True)
 
-    # Light tier (decision 8 mid-band): surface any areas/ community-annotation
-    # pages, so a light-tier ingest (e.g. xla) isn't misrepresented as "0 concepts".
+    # Area pages (prose-budget.md): the middle prose tier — one page per top-level area,
+    # listing its units, with the small units as sections. Listed before the concept
+    # table since an area is the hop between the overview and a mechanism page.
     area_pages = sorted((wiki_slug_dir / "areas").glob("*.md"))
     concepts_section = ""
-    if concept_status:
-        concepts_section = _concepts_table(wiki_slug_dir, concept_status)
     if area_pages:
-        rows_a = "\n".join(f"- [{p.stem}](areas/{p.name})" for p in area_pages)
+        def _area_row(pg: Path) -> str:
+            d = page_description(pg)
+            return f"- [{pg.stem}](areas/{pg.name})" + (f" — {d}" if d else "")
+        rows_a = "\n".join(_area_row(p) for p in area_pages)
         concepts_section += (
-            "\n## Areas (light tier — community annotation)\n"
-            "Cluster-level orientation over the library (cheaper than deep concept "
-            "pages; diagrams optional).\n" + rows_a + "\n"
+            "## Areas\n"
+            "One page per top-level area: what it is for, the units inside it with their entry "
+            "points, and the small units that have no page of their own.\n" + rows_a + "\n\n"
         )
+    if concept_status:
+        concepts_section += _concepts_table(wiki_slug_dir, concept_status)
     if not concept_status and not area_pages:
-        concepts_section = "## Concepts\n_(none synthesized; see `catalog/` for the structural index)_\n"
+        concepts_section = "## Concepts\n_(none synthesized; see `catalog/index.md` for the module map)_\n"
 
     # Doc-derived concepts (from the doc-ingest step) — extracted from the project's
     # own docs and grounded to the catalog; kept separate from code concepts.
@@ -161,20 +166,29 @@ def write_repo_index(
 
     coverage_section = ""
     if report is not None:
+        if catalog_mode == "index":
+            where = ("The catalog is the **symbol index**: [`catalog/index.md`](catalog/index.md) maps "
+                     "every module; `catalog/symbols/*.tsv` holds one row per symbol (anchor, path, "
+                     "line, kind, rank, hash, callers, citing pages) and `catalog/edges/*.tsv` the "
+                     "caller edges — grep them by anchor, never read them whole.")
+        else:
+            where = ("[`catalog/index.md`](catalog/index.md) maps every module; `catalog/symbols/*.tsv` "
+                     "and `catalog/edges/*.tsv` are the greppable symbol index; per-module pages under "
+                     f"`catalog/` are a rendering of it (tier `{catalog_mode}`).")
         coverage_section = f"""
 ## Coverage
-Two tiers: **concept pages** explain mechanisms deeply (selective); **module
-catalogs** represent the rest so the whole repo is navigable. Coverage is a
+Two tiers: **concept pages** explain mechanisms deeply (selective); the **symbol
+index** represents the rest so the whole repo is navigable. Coverage is a
 set-difference over the SCIP symbol table, not a graph walk — every documentable
 symbol is enumerated and represented.
 
 - documentable symbols: **{report.total}** across {report.modules} modules
 - deep (concept pages): **{report.covered}** ({report.pct_deep:.1f}%)
-- catalog-only: **{report.catalog_only}**
+- index-only: **{report.catalog_only}**
 - represented total: **{report.represented}** ({report.pct_represented:.1f}%)
 - classes represented: **{report.classes_represented}/{report.classes_total}**
 
-See [`catalog/`](catalog/) for the generated per-module structural index.
+{where}
 """
     okf = f'okf_version: "0.2"\n'
     if snapshot:

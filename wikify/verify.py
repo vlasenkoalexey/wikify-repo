@@ -174,13 +174,15 @@ def save_cache(path: str | Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def claim_evidence(page_path: str | Path, claim: Claim, hashes: dict[str, str]) -> dict[str, str]:
+def claim_evidence(page_path: str | Path, claim: Claim, hashes: dict[str, str],
+                   graph=None) -> dict[str, str]:
     """``{moniker: body_sha}`` for the symbols the claim cites. A cited symbol that no
     longer has a hash (removed) maps to '' so the comparison fails and the claim is
-    re-verified. Unresolvable citations (no catalog yet) are simply absent."""
+    re-verified. Unresolvable citations (no catalog yet) are simply absent. ``graph``
+    resolves through the symbol index (any catalog tier); without it, catalog front matter."""
     ev: dict[str, str] = {}
     for target in claim.citations:
-        m = _resolve_citation(Path(page_path), target)
+        m = _resolve_citation(Path(page_path), target, graph)
         if m:
             ev[m] = hashes.get(m, "")
     return ev
@@ -210,12 +212,13 @@ def plan_worklist(
     hashes: dict[str, str],
     ref: str,
     force: bool = False,
+    graph=None,
 ) -> Worklist:
     """Split a page's claims into what a reviewer must check now and what carries over."""
     wl = Worklist()
     entries = cache.get("claims", {})
     for c in claims:
-        ev = claim_evidence(page_path, c, hashes)
+        ev = claim_evidence(page_path, c, hashes, graph)
         entry = entries.get(c.key)
         cacheable = not c.citations or bool(ev)   # cited but unresolvable → never cache
         if force or entry is None or not cacheable:
@@ -249,6 +252,7 @@ def record_verdicts(
     hashes: dict[str, str],
     ref: str,
     date: str,
+    graph=None,
 ) -> tuple[int, list[int]]:
     """Store the reviewer's verdicts (the STRICT JSON of prompts/verify.md, matched by
     ``claim_line``) under each claim's content key with its current evidence.
@@ -270,7 +274,7 @@ def record_verdicts(
             "line": c.line,
             "section": c.section,
             "text": " ".join(c.text.split())[:200],
-            "evidence": claim_evidence(page_path, c, hashes),
+            "evidence": claim_evidence(page_path, c, hashes, graph),
             "refuted": bool(v.get("refuted")),
             "note": str(v.get("note", ""))[:200],
             "ref": ref,

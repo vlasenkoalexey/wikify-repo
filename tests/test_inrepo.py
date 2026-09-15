@@ -93,15 +93,19 @@ def test_pipeline_without_slug_builds_a_flat_silo(repo):
     assert res.exit_code == 0, res.output
     assert "lint: OK" in res.output and "assembled wiki/index.md" in res.output
     wiki = repo / "wiki"
-    assert (wiki / "catalog" / "mathlib.md").exists() and (wiki / "log.md").exists()
+    # fresh silo → catalog tier `index`: the symbol index + module map, no per-module pages
+    assert (wiki / "catalog" / "symbols" / "root.tsv").exists() and (wiki / "log.md").exists()
+    assert (wiki / "catalog" / "index.md").exists() and not (wiki / "catalog" / "mathlib.md").exists()
     assert not (wiki / "code").exists() and not (wiki / "mathlib").exists()
     idx = (wiki / "index.md").read_text()
     assert "# mathlib internals wiki" in idx and 'okf_version: "0.2"' in idx   # the silo index, not a top catalog
-    # catalog source links are relative into the repo itself and resolve
-    cat = (wiki / "catalog" / "mathlib.md").read_text()
+    # the module map's source links are relative into the repo itself and resolve
+    cat = (wiki / "catalog" / "index.md").read_text()
     import re
-    m = re.search(r"\]\(([^)]*mathlib\.py)#L\d+\)", cat)
+    m = re.search(r"\]\(([^)]*mathlib\.py)\)", cat)
     assert m and (wiki / "catalog" / m.group(1)).resolve() == (repo / "mathlib.py").resolve()
+    rows = [l for l in (wiki / "catalog" / "symbols" / "root.tsv").read_text().splitlines() if not l.startswith("#")]
+    assert any(l.startswith("mathlib#compute\t") for l in rows)
     assert "generated: {by: wikify/" in (wiki / "concepts" / "core.md").read_text()
 
     # slug given must match; a wrong one is refused

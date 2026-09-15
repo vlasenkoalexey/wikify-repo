@@ -216,7 +216,7 @@ def cited_files(page_path: str | Path, graph) -> list[tuple[str, int]]:
         for _label, target in _LINK.findall(line):
             if not _is_symbol_link(target):
                 continue
-            m = _resolve_citation(page_path, target)
+            m = _resolve_citation(page_path, target, graph)
             if m and m in graph.symbols and graph.symbols[m].def_path:
                 counts[graph.symbols[m].def_path] += 1
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))

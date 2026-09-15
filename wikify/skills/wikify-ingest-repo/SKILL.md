@@ -83,13 +83,16 @@ never grounding.
 
    **Confirm the agenda before synthesizing (interactive; skip in batch).** In subsystem
    mode `prepare` prints the **proposed agenda** — a ranked table of units (slug, directory,
-   modules, symbols, external fan-in, entry points) — and writes it to
-   `.cache/plan/<slug>.agenda.md` (`wikify agenda <slug>` re-emits it alone). Show it to the
-   user and ask what to drop, merge or add: drop with `agenda_exclude:` globs in
-   `config/<slug>.md` (`dir` drops a unit, `dir/*` its children — e.g. fold per-op kernel
-   directories back into their parent), cap with `agenda_max`, add or rename with
-   `- **<slug>** — seeds: (subsystem: <dir prefix>)`. Then re-run `prepare` (cheap: the index
-   is cached). With no user present, proceed with the proposal as printed.
+   modules, symbols, external fan-in, entry points, **tier** and the clause that decided it)
+   and the **bill** (deep pages + area pages at the measured per-page rate) — and writes it to
+   `.cache/plan/<slug>.agenda.md` (`wikify agenda <slug>` re-emits it alone). A unit is `deep`
+   (its own mechanism page) when it has at least 5 modules or at least 20 outside referrers;
+   the rest are `area` (a section of their area page, `areas/<area>.md`). Show the table and
+   the bill to the user and ask what to drop, merge or add: drop with `agenda_exclude:` globs
+   in `config/<slug>.md` (`dir` drops a unit, `dir/*` its children), cap deep pages with
+   `agenda_max`, move the thresholds with `agenda_deep_modules` / `agenda_deep_fanin`, add or
+   rename with `- **<slug>** — seeds: (subsystem: <dir prefix>)`. Then re-run `prepare` (cheap:
+   the index is cached). With no user present, proceed with the proposal as printed.
 
    **Name the pages now, not later.** The agenda file ends with a paste-ready `## Concepts`
    block (one `(subsystem: ...)` line per unit). Slugs are permanent — page filenames, state
@@ -142,15 +145,24 @@ never grounding.
    `- **<slug>** — seeds: (subsystem: <dir prefix>)` to the `## Concepts` list in
    `config/<slug>.md` and **re-run from step 1** (`prepare` builds only the new packet). This is
    the derived, ranked agenda — offer real candidates, never free-form (a concept with no packet
-   symbols cannot be grounded). With no user present, proceed with the planned set.
+   symbols cannot be grounded). Small units already have a section on their area page; promoting
+   one to a deep page is exactly this step. With no user present, proceed with the planned set.
 
-3. **Overview (after all concepts exist).** Follow
+3. **Area pages (after the concept pages, before the overview).** `prepare` wrote one
+   `wiki/code/<slug>/areas/<area>.md` per top-level area with placeholders in `## Purpose` and
+   `## How the units connect` and a regenerated block (between the `area:auto` markers) listing
+   the area's units, their entry points and the small units that have no page of their own.
+   For each area page, follow `prompts/area.md`: fill the two prose sections (two or three
+   paragraphs, citing entry points from the block), never edit inside the markers. Cheap:
+   about a fifth of a mechanism page.
+
+4. **Overview (after concepts and areas exist).** Follow
    `prompts/overview.md` to write `wiki/code/<slug>/overview.md` —
-   the highest-level page: the main concepts, core system-level Mermaid diagrams,
-   and a map of which concept answers which question. It is synthesis over the
-   concept pages (no new grounding).
+   the highest-level page: the main concepts, the areas, core system-level Mermaid diagrams,
+   and a map of which page answers which question. It is synthesis over the
+   concept and area pages (no new grounding).
 
-4. **Doc concepts (LAST synthesis step).** `prepare` wrote a doc worklist at
+5. **Doc concepts (LAST synthesis step).** `prepare` wrote a doc worklist at
    `.cache/docs/<slug>.txt` (the project's own README / `docs/`, globbed from
    `config.docs`). For each doc, follow `prompts/ingest-docs.md`:
    read the doc, extract its concepts, and write **one grounded page per concept**
@@ -158,27 +170,29 @@ never grounding.
    names to their **catalog** entries and cross-linking sibling doc-concepts + code
    concepts. The doc stays in place (never moved). Skip if the worklist is empty.
 
-5. **Finalize (deterministic gate).** Run:
+6. **Finalize (deterministic gate).** Run:
    ```
    wikify finalize <slug>
    ```
-   The citation linter is a hard gate over `concepts/`: every catalog citation must
-   resolve to a real SCIP symbol, every Entry-points/Mechanism item must be cited,
-   and no symbol outside the packet subgraph may appear. `doc-concepts/` get a
-   lighter gate (citations must resolve — rule 1 — no subgraph/uncited gates). On
-   success it also runs **Stage 6b coverage**: it emits a `catalog/<module>.md` page
-   for every module (deterministic, no model) so the *whole repo* is represented,
-   prints a coverage report, assembles `wiki/code/<slug>/index.md` (concepts + areas +
-   **doc-derived concepts**), and updates reconcile state. It warns (exit 0) if
-   `overview.md` is missing — the front door the host index and `connect` rely on; go back
-   to step 3 and re-run finalize.
+   The citation linter is a hard gate over `concepts/`: every citation must resolve to a
+   real SCIP symbol (through the symbol index — no catalog page has to exist), every
+   Entry-points/Mechanism item must be cited, and no symbol outside the packet subgraph may
+   appear. `doc-concepts/` and `areas/` get a lighter gate (citations must resolve — rule 1).
+   On success it also runs **Stage 6b coverage**: it writes the **symbol index**
+   (`catalog/symbols/<dir>.tsv`, `catalog/edges/<dir>.tsv`) and the module map
+   (`catalog/index.md`) for every module (deterministic, no model) so the *whole repo* is
+   represented, renders per-module `catalog/<module>.md` pages only when the config says
+   `catalog: anchors` or `catalog: full`, refreshes the area pages' auto blocks, prints a
+   coverage report, assembles `wiki/code/<slug>/index.md` (areas + concepts + **doc-derived
+   concepts**), and updates reconcile state. It warns (exit 0) if `overview.md` is missing —
+   the front door the host index and `connect` rely on; go back to step 4 and re-run finalize.
 
-6. **Repair loop.** If `finalize` exits non-zero, it lists each failing
+7. **Repair loop.** If `finalize` exits non-zero, it lists each failing
    `page:line [rule N]`. Fix those pages (add the missing citation or move the
    claim into an `[!inferred]` block) and run `wikify finalize <slug>` again.
    Repeat until it exits 0.
 
-7. **Adversarial verify (after the gate is green; skip only if the user declines).** The
+8. **Adversarial verify (after the gate is green; skip only if the user declines).** The
    linter proves every claim *cites* a real symbol — not that the claim is *true*. Run:
    ```
    wikify verify <slug>            # per-page count of load-bearing claims (no model)
@@ -193,7 +207,7 @@ never grounding.
    changed, and a small deterministic re-sample come back; recorded holds carry forward across
    `--ref` bumps too. `--all` forces the full list when you want a clean sweep.
 
-8. **Register in the host wiki (REQUIRED; host layout only).** In-repo: re-run `wikify init`
+9. **Register in the host wiki (REQUIRED; host layout only).** In-repo: re-run `wikify init`
    so the instruction block is current, and stop here. The ingest is not done until the repo is
    reachable from the host's read-first index and recorded in its log, **following the host
    wiki's own conventions** (read its `SCHEMA.md` / `index.md` for the exact format):
@@ -207,7 +221,7 @@ never grounding.
    (wikify's CLI never edits the curated `index.md` / `log.md`; that's deliberate — this
    step does, per the host's format.)
 
-9. **Connect to the other repos (from the 2nd silo on).** If the host wiki has other
+10. **Connect to the other repos (from the 2nd silo on).** If the host wiki has other
    ingested silos **and** a concept vocabulary (`wiki/concepts/*.md`), hand off to the
    **`wikify-connect-repo`** skill and let it drive: it proposes candidates (`wikify connect`),
    **asks the human which concepts to connect** (selective — not everything), applies them, and

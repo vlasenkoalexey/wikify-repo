@@ -151,3 +151,13 @@ def acquire(
             except (RuntimeError, ValueError):
                 pass
     return Acquired(slug=slug, repo_dir=repo_dir, commit=commit_of(repo_dir))
+
+
+def tracked_files(repo_dir: str | Path) -> set[str] | None:
+    """Repo-relative paths git tracks in ``repo_dir``, or None when it is not a git checkout
+    (a plain directory source is indexed as-is)."""
+    try:
+        out = _git(["ls-files", "-z"], repo_dir)
+    except Exception:
+        return None
+    return {p for p in out.split("\0") if p}

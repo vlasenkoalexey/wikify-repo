@@ -16,7 +16,7 @@ updated: 2026-07-04
 # t
 
 ## Overview
-Calls [`run`](../catalog/m.md#run) and [`run`](../catalog/m.md#run) then [`Tab`](../catalog/n.md#Tab).
+Calls [`run`](../catalog/src/a.md#run) and [`run`](../catalog/src/a.md#run) then [`Tab`](../catalog/src/b.md#Tab).
 """
 
 
@@ -61,15 +61,14 @@ def test_strip_invalid_status_keeps_okf_values():
 
 
 def test_cited_files_counts_occurrences_and_sources_capped(tmp_path):
-    (tmp_path / "catalog").mkdir()
-    (tmp_path / "catalog" / "m.md").write_text("---\nsymbol_base: 'p '\nsymbols:\n  run: 'run().'\n---\n")
-    (tmp_path / "catalog" / "n.md").write_text("---\nsymbol_base: 'p '\nsymbols:\n  Tab: 'Tab#'\n---\n")
     (tmp_path / "concepts").mkdir()
     page = tmp_path / "concepts" / "c.md"
     page.write_text(PAGE)
     g = SymbolGraph()
-    g.add_symbol(Symbol(moniker="p run().", kind="Function", suffix="Method", name="run", def_path="src/a.py"))
-    g.add_symbol(Symbol(moniker="p Tab#", kind="Class", suffix="Type", name="Tab", def_path="src/b.py"))
+    g.add_symbol(Symbol(moniker="scip-python python p 0.0.0 `src.a`/run().", kind="Function",
+                        suffix="Method", name="run", def_path="src/a.py"))
+    g.add_symbol(Symbol(moniker="scip-python python p 0.0.0 `src.b`/Tab#", kind="Class",
+                        suffix="Type", name="Tab", def_path="src/b.py"))
     files = okf.cited_files(page, g)
     assert files == [("src/a.py", 2), ("src/b.py", 1)]
     entries = okf.source_entries(files, "https://x/blob/sha")

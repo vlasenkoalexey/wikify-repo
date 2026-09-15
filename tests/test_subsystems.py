@@ -88,7 +88,11 @@ def test_exclude_globs_and_cap():
     assert "ops" not in {s.slug for s in subs}
     subs = subsystems.discover_subsystems(g, min_symbols=1, exclude_globs=["demo/o*"])
     assert "ops" not in {s.slug for s in subs}
-    assert len(subsystems.discover_subsystems(g, min_symbols=1, max_subsystems=2)) == 2
+    # max_subsystems is a ceiling on DEEP pages, never a truncation: every unit stays in the
+    # plan, the ones past the ceiling become sections of their area page.
+    subs = subsystems.discover_subsystems(g, min_symbols=1, max_subsystems=2)
+    assert len(subs) == 3 and len(subsystems.deep_units(subs)) == 2
+    assert [s.reason for s in subs if s.tier == "area"] == ["ceiling"]
 
 
 def test_subsystem_for_prefix_is_the_config_seed_form():
@@ -171,3 +175,70 @@ def test_render_agenda_ends_with_concepts_block():
     block = text[text.index("## Concepts\n"):]
     assert "- **core** — seeds: (subsystem: demo/core)" in block
     assert "- **ops** — seeds: (subsystem: demo/ops)" in block
+
+
+# --------------------------------------------------------------------------- #
+# Prose budget (docs/prose-budget.md): tiers, floor, ceiling, areas, bill, area pages
+# --------------------------------------------------------------------------- #
+def test_tiers_by_modules_or_fanin_with_floor():
+    g, _ = _g()
+    subs = subsystems.discover_subsystems(g, min_symbols=1, floor=0)
+    by = {s.slug: s for s in subs}
+    assert by["ops"].tier == "deep" and by["ops"].reason == "modules>=5"      # 31 modules
+    assert by["core"].tier == "deep" and by["core"].reason == "fanin>=20"     # 2 modules, 31 referrers
+    assert by["util"].tier == "area" and by["util"].reason == "small unit"
+    # the floor promotes the top-ranked small units when too few qualify
+    subs = subsystems.discover_subsystems(g, min_symbols=1, floor=3)
+    assert {s.slug: (s.tier, s.reason) for s in subs}["util"] == ("deep", "floor")
+    # thresholds are parameters
+    subs = subsystems.discover_subsystems(g, min_symbols=1, floor=0, deep_min_modules=2, deep_min_fanin=10**6)
+    assert all(s.tier == "deep" and s.reason == "modules>=2" for s in subs)
+
+
+def test_areas_and_bill():
+    g, _ = _g()
+    subs = subsystems.discover_subsystems(g, min_symbols=1, floor=0)
+    areas = subsystems.areas_of(subs)
+    assert set(areas) == {"demo/core", "demo/util", "demo/ops"}
+    assert subsystems.area_slug("demo/ops", "demo") == "ops" and subsystems.area_slug("demo", "demo") == "root"
+    n_deep, n_area, minutes, tokens = subsystems.estimate_bill(subs)
+    assert (n_deep, n_area) == (2, 3)
+    assert abs(minutes - (2 + 3 * 0.2) * subsystems.DEEP_PAGE_MINUTES) < 1e-6
+    assert tokens == int((2 + 3 * 0.2) * subsystems.DEEP_PAGE_TOKENS)
+
+
+def test_render_agenda_shows_tier_reason_and_bill():
+    g, _ = _g()
+    subs = subsystems.discover_subsystems(g, min_symbols=1, floor=0)
+    text = subsystems.render_agenda(subs, g, "demo")
+    assert "| tier | why |" in text and "| deep | fanin>=20 |" in text and "| area | small unit |" in text
+    assert "**Bill**" in text and "deep page(s) + 3 area page(s)" in text
+    block = text[text.index("## Concepts\n"):]
+    assert "- **core**" in block and "- **ops**" in block and "- **util**" not in block   # deep only
+    assert "## Areas (one page each" in text
+
+
+def test_area_pages_scaffold_and_regenerable_block(tmp_path):
+    g, s = _g()
+    subs = subsystems.discover_subsystems(g, min_symbols=1, floor=0)
+    paths, created = subsystems.write_area_pages(tmp_path, subs, g, "demo", "2026-09-15", "demo")
+    assert created == 3 and sorted(p.name for p in paths) == ["core.md", "ops.md", "util.md"]
+    util = (tmp_path / "areas" / "util.md").read_text()
+    assert util.startswith("---\ntitle: 'Area: demo/util'\ntype: area\n")
+    assert "## Purpose\n" + subsystems.AREA_PROSE_PLACEHOLDER in util
+    assert subsystems.AREA_AUTO_BEGIN in util and "## Small units" in util and "### `demo/util`" in util
+    # entry points are catalog citations with the source location as the link title
+    assert '[`fmt`](../catalog/demo/util/fmt.md#fmt "demo/util/fmt.py:L1")' in util
+    core = (tmp_path / "areas" / "core.md").read_text()
+    assert "[core](../concepts/core.md)" in core           # deep unit links its page
+    # prose survives a rewrite; the block is regenerated
+    edited = util.replace(subsystems.AREA_PROSE_PLACEHOLDER, "Formatting helpers.", 1)
+    edited = edited.replace("### `demo/util`", "### GARBAGE")
+    (tmp_path / "areas" / "util.md").write_text(edited)
+    paths, created = subsystems.write_area_pages(tmp_path, subs, g, "demo", "2026-09-16", "demo")
+    again = (tmp_path / "areas" / "util.md").read_text()
+    assert created == 0 and "Formatting helpers." in again and "GARBAGE" not in again
+    # idempotent
+    before = again
+    subsystems.write_area_pages(tmp_path, subs, g, "demo", "2026-09-17", "demo")
+    assert (tmp_path / "areas" / "util.md").read_text() == before

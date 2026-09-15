@@ -153,9 +153,10 @@ Do not write `generated`, `verified`, `sources` or `status`: `wikify finalize` s
 `generated` and file-level `sources` (OKF v0.2), `wikify verify --record` stamps
 `verified`. Anything you put there is overwritten.
 
-## Citations resolve into the catalog (no stubs)
-You write ONE file: the concept page. Every symbol already lives in its module
-catalog (`wiki/code/<slug>/catalog/<module>.md`), whose frontmatter holds an
-anchor→moniker map. Paste the packet's `cite:` link for a symbol verbatim; the
-linter resolves the anchor there and checks it is in the SCIP index and this
-packet's subgraph.
+## Citations resolve into the symbol index (no stubs)
+You write ONE file: the concept page. Every symbol already has a row in the symbol
+index (`catalog/symbols/*.tsv`; per-module `catalog/<module>.md` pages exist only when the
+config renders them). Paste the packet's `cite:` link for a symbol verbatim, including its
+title — `[\`Sym\`](../catalog/<module>.md#Sym "path:Lnn")`, the source location a reader
+can open without a hop; the linter resolves the anchor against the index and checks it is
+in the SCIP index and this packet's subgraph.

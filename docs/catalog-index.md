@@ -1,9 +1,10 @@
 # Catalog as an index: design change and rationale
 
-Status: proposed 2026-09-15, not yet implemented. When it lands it amends SCHEMA.md
-invariants 1 and 7, supersedes the decisions-log entry "The catalog is a navigation
-surface, not a symbol dump" in `design.md`, and adds `implementation.md` section 10.18.
-Nothing in the prose pipeline (packets, synthesis, verify, changes) is touched.
+Status: realized in wikify-repo 0.3.0 (2026-09-15). It amends SCHEMA.md invariants 1
+and 7, supersedes the decisions-log entry "The catalog is a navigation surface, not a
+symbol dump" in `design.md`, and is specified in `implementation.md` section 10.18 (with
+the small deviations recorded there). Nothing in the prose pipeline (packets, synthesis,
+verify, changes) was touched.
 
 ## Summary
 

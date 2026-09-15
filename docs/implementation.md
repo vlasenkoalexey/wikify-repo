@@ -977,3 +977,27 @@ implementation pins.
   the last `/` or `#`, never mid-name.
 - **Tests**: `test_coverage.py` (emitter, header, sharding, profiles), `test_lint.py` (graph
   resolution in every tier), one golden fixture in `index` mode.
+
+### 10.19 Prose budget: deep-page rule and area tier (decided 2026-09-15, not implemented)
+Design and evidence: `prose-budget.md`. Contracts:
+- **Constants** (`subsystems.py`): `DEEP_MIN_MODULES = 5`, `DEEP_MIN_FANIN = 20`, `DEEP_FLOOR = 8`.
+  `DEFAULT_MAX_SUBSYSTEMS` stops being the default cap for `agenda: subsystems`; it stays the
+  cap for the legacy `agenda: modules`.
+- **Config** (`config.py`): `agenda_deep_modules`, `agenda_deep_fanin` override the two
+  thresholds; `agenda_max` becomes an opt-in ceiling applied after ranking; `agenda_exclude`
+  unchanged.
+- **Planner** (`subsystems.discover_subsystems`): returns every unit; each carries `tier`
+  (`deep` or `area`) and `reason` (the clause that decided it, or `floor`). `render_agenda`
+  shows tier and reason per unit and a bill line: deep pages x 55k output tokens / 2.5 min,
+  area pages x a fifth of that (constants, stated as "at the measured torch_tpu rate").
+- **Areas**: one `areas/<area>.md` per top-level area of the planner tree (the umbrella's
+  children after the split). Scaffold from the planner (`subsystems.render_area`: purpose slot,
+  unit list with entry points as catalog citations, fan-in, module count); synthesis prompt
+  `prompts/area.md` fills two or three paragraphs and one section per area-tier unit.
+  `overview.md` links the areas; `assemble` lists them under a `## Areas` section; lint applies
+  rule 1 only (citations resolve), like doc-concepts, since the citations come from the scaffold.
+- **Packets**: unchanged for deep units. Area pages get no packet; the scaffold is their input.
+- **Incremental**: area pages rebuild when a unit in the area changes tier or when a cited entry
+  point moves or changes body; deep pages as today.
+- **Tests**: `tests/test_subsystems.py` (rule, floor, ceiling, tier and reason on the fixture
+  graph), `test_assemble.py` (areas section), one golden fixture with an area page.

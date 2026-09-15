@@ -218,6 +218,15 @@ The *how* lives in `implementation.md` §10.
   `catalog/edges/<dir>.tsv` plus a map page, resolve citations through the graph, and
   make per-module pages an opt-in rendering (`catalog: full`) for source-absent repos.
   No database, no query tool, no consumer-side skill: the files stay the interface.
+- **Prose volume is a per-unit rule with two tiers, not a per-repo cap.** *(Decided
+  2026-09-15, not yet implemented; logic and numbers in `prose-budget.md`.)* The agenda cap
+  of 24 gave torch_tpu (13k symbols) and PyTorch (193k) the same 24 to 27 pages, 5.7 vs
+  0.2 percent of symbols cited. Uncapped, the planner finds 80 and 145 units. A unit gets
+  a deep page when it has at least 5 modules or at least 20 external referrers (floor 8,
+  `agenda_max` as an opt-in ceiling); every other unit becomes a section of a new
+  `areas/<area>.md` page, one per top-level area, mostly deterministic and a fifth of the
+  cost. The rule reproduces torch_tpu's 27 and gives PyTorch's shards 124. `prepare`
+  prints the bill next to the agenda so trimming is a priced decision.
 - **Source links are relative and local, never absolute, never github-by-default.**
   An absolute `/…` path is a broken link in markdown (reads as repo-root); a github
   URL isn't local. Default: a path relative to the catalog page into the indexed

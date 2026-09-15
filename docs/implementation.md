@@ -943,9 +943,12 @@ thing that makes a diagram usable by a reader, a legend. All warnings, never a g
   pages). Optional accelerator, not built: Mermaid's own `mermaid.parse` via Node when present —
   wikify never requires npm. Tests: `tests/test_diagrams.py`.
 
-### 10.18 Catalog index: `catalog/symbols/*.tsv`, `catalog/edges/*.tsv` (proposed 2026-09-15)
-Design and evidence: `catalog-index.md`. Not implemented yet; these are the contracts the
-implementation pins.
+### 10.18 Catalog index: `catalog/symbols/*.tsv`, `catalog/edges/*.tsv` (realized 0.3.0, 2026-09-15)
+Design and evidence: `catalog-index.md`. Contracts as realized (deviations from the proposal:
+shards are keyed by TWO directory levels, since a single umbrella package would be one shard;
+one row per anchor with overload callers unioned; `catalog` unset keeps `full` on a silo whose
+state already has pages; a pinned config concept keeps its unit in the plan as deep/`config`;
+`build_graph(repair_root=)` repairs empty document paths in indexes built before the fix).
 - **Config** (`config.py`): `catalog: index | anchors | full`. Default `index` for new wikis;
   `anchors` is today's collapsed page; `full` is today's page. `coverage_collapse` /
   `coverage_exclude` keep their meaning inside `full`.
@@ -978,8 +981,10 @@ implementation pins.
 - **Tests**: `test_coverage.py` (emitter, header, sharding, profiles), `test_lint.py` (graph
   resolution in every tier), one golden fixture in `index` mode.
 
-### 10.19 Prose budget: deep-page rule and area tier (decided 2026-09-15, not implemented)
-Design and evidence: `prose-budget.md`. Contracts:
+### 10.19 Prose budget: deep-page rule and area tier (realized 0.3.0, 2026-09-15)
+Design and evidence: `prose-budget.md`. Contracts as realized (`prepare` writes the area pages
+with placeholders and refreshes their auto block; `finalize` refreshes it again and lints
+`areas/` on rule 1; the bill is a line in the agenda render):
 - **Constants** (`subsystems.py`): `DEEP_MIN_MODULES = 5`, `DEEP_MIN_FANIN = 20`, `DEEP_FLOOR = 8`.
   `DEFAULT_MAX_SUBSYSTEMS` stops being the default cap for `agenda: subsystems`; it stays the
   cap for the legacy `agenda: modules`.

@@ -212,10 +212,14 @@ def _scip_indexes(p: Paths) -> list[Path]:
     return sorted(set(d.glob(f"{p.slug}.scip")) | set(d.glob(f"{p.slug}.*.scip")))
 
 
-def _graph(p: Paths):
-    """Build the graph, merging every language's SCIP index present in the cache."""
+def _graph(p: Paths, repo_dir: str | Path | None = None):
+    """Build the graph, merging every language's SCIP index present in the cache.
+
+    With ``repo_dir`` (a git checkout), only git-tracked files enter the graph: untracked
+    junk on a working copy (``.ipynb_checkpoints/``, scratch files) is never catalogued."""
     indexes = [scip_index.parse_index(f) for f in _scip_indexes(p)]
-    return scip_index.build_graph(*indexes)
+    only = acquire.tracked_files(repo_dir) if repo_dir is not None else None
+    return scip_index.build_graph(*indexes, only_paths=only, repair_root=repo_dir)
 
 
 class Agenda:
@@ -223,24 +227,30 @@ class Agenda:
 
     def __init__(self, cfg: RepoConfig, seedmap: dict, scopes: dict, n_discovered: int,
                  mode: str, subsystems: list, defaulted: bool,
-                 scope_sets: dict | None = None) -> None:
+                 scope_sets: dict | None = None, umbrella: str = "") -> None:
         self.cfg = cfg                  # RepoConfig with ``concepts`` = the full agenda
         self.seedmap = seedmap          # concept slug → seed monikers (discovered/subsystem)
         self.scopes = scopes            # concept slug → rendered ``## Scope`` block
         self.scope_sets = scope_sets or {}  # concept slug → unit member monikers (budget scope)
         self.n_discovered = n_discovered
         self.mode = mode                # "subsystems" | "modules"
-        self.subsystems = subsystems    # planned Subsystem objects (subsystems mode)
+        self.subsystems = subsystems    # EVERY planned unit, tiered (subsystems mode)
         self.defaulted = defaulted      # mode came from the fresh/existing rule, not config
+        self.umbrella = umbrella        # the planner's umbrella package (area page naming)
 
     @property
     def concepts(self):
         return self.cfg.concepts
 
     def summary(self) -> str:
+        tiers = ""
+        if self.mode == "subsystems" and self.subsystems:
+            n_area_units = len(self.subsystems) - len(subsystems_mod.deep_units(self.subsystems))
+            n_areas = len(subsystems_mod.areas_of(self.subsystems))
+            tiers = f"; {n_area_units} small unit(s) folded into {n_areas} area page(s)"
         return (f"agenda: {self.n_discovered} discovered + "
                 f"{len(self.cfg.concepts) - self.n_discovered} config = "
-                f"{len(self.cfg.concepts)} concepts ({self.mode})")
+                f"{len(self.cfg.concepts)} concepts ({self.mode}){tiers}")
 
 
 def _agenda_mode(cfg: RepoConfig, state: dict | None, override: str | None = None) -> tuple[str, bool]:
@@ -271,18 +281,32 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
     scope_sets: dict[str, set[str]] = {}
     subs: list = []
     cfg_slugs = {c.slug for c in cfg.concepts}
+    umbrella = ""
     if mode == "subsystems":
         subs = subsystems_mod.discover_subsystems(
             graph,
-            max_subsystems=cfg.agenda_max or subsystems_mod.DEFAULT_MAX_SUBSYSTEMS,
+            max_subsystems=cfg.agenda_max,               # opt-in ceiling on deep pages
             exclude_globs=cfg.agenda_exclude,
+            deep_min_modules=(cfg.agenda_deep_modules if cfg.agenda_deep_modules is not None
+                              else subsystems_mod.DEEP_MIN_MODULES),
+            deep_min_fanin=(cfg.agenda_deep_fanin if cfg.agenda_deep_fanin is not None
+                            else subsystems_mod.DEEP_MIN_FANIN),
         )
+        umbrella = subsystems_mod.umbrella_of(graph)
         # A config concept seeded from a directory REPLACES the planned unit(s) at or
-        # under that prefix (renaming a unit must never build it twice).
-        pinned = [c.subsystem for c in cfg.concepts if c.subsystem is not None]
-        subs = [u for u in subs if not any(_covers(pfx, u.prefix) for pfx in pinned)]
+        # under that prefix (renaming a unit must never build it twice). The unit stays in
+        # the plan as a deep unit carrying the config slug, so area pages link its page.
+        pinned = [c for c in cfg.concepts if c.subsystem is not None]
         discovered_slugs = []
-        for sub in subs:
+        for u in subs:
+            owner = next((c for c in pinned if _covers(c.subsystem, u.prefix)), None)
+            if owner is not None:
+                u.tier, u.reason, u.slug = subsystems_mod.TIER_DEEP, "config", owner.slug
+        # Only DEEP units become concept pages; the rest are sections of their area page
+        # (prose-budget.md). Every unit stays in ``subs`` for the agenda file + area pages.
+        for sub in subsystems_mod.deep_units(subs):
+            if sub.reason == "config":
+                continue                      # the config concept itself is in cfg.concepts
             seedmap[sub.slug] = sub.seeds
             scopes[sub.slug] = subsystems_mod.render_scope(sub, graph)
             scope_sets[sub.slug] = set(sub.symbols)
@@ -305,7 +329,28 @@ def _derive_agenda(graph, cfg: RepoConfig, state: dict | None = None,
             scope_sets[c.slug] = set(sub.symbols)
     agenda = [Concept(slug=s) for s in discovered_slugs if s not in cfg_slugs] + cfg.concepts
     return Agenda(replace(cfg, concepts=agenda), seedmap, scopes, len(discovered_slugs),
-                  mode, subs, defaulted, scope_sets)
+                  mode, subs, defaulted, scope_sets, umbrella)
+
+
+def _catalog_mode(cfg: RepoConfig, state: dict | None) -> tuple[str, bool]:
+    """Resolve the catalog tier (catalog-index.md): explicit config wins; else a fresh silo
+    ships the symbol index alone and an existing silo keeps full pages (no surprise
+    deletion of pages other consumers may link)."""
+    if cfg.catalog:
+        return cfg.catalog, False
+    fresh = not state or not state.get("pages")
+    return ("index" if fresh else "full"), True
+
+
+def _write_areas(p: Paths, ag: Agenda, graph, note: str) -> None:
+    """Area pages (prose-budget.md): create missing ones with placeholders, refresh the
+    regenerable block of existing ones. Subsystems mode only."""
+    if ag.mode != "subsystems" or not ag.subsystems:
+        return
+    paths, created = subsystems_mod.write_area_pages(
+        p.wiki_slug, ag.subsystems, graph, p.slug, _today(), ag.umbrella)
+    typer.echo(f"areas: {len(paths)} area page(s){f', {created} new' if created else ''} "
+               f"under {p.wiki_rel}/areas/ {note}")
 
 
 def _covers(config_prefix: str, unit_prefix: str) -> bool:
@@ -501,7 +546,7 @@ def prepare(
             lang.run(acq.repo_dir, out)
         except Exception as e:  # one language failing shouldn't abort the others
             typer.echo(f"  {lang.label} indexing failed: {e}", err=True)
-    graph = _graph(p)
+    graph = _graph(p, acq.repo_dir)
     typer.echo(f"graph: {len(graph)} symbols")
 
     state = state_mod.load_state(p.state)
@@ -515,8 +560,10 @@ def prepare(
     if agenda_file:
         typer.echo(subsystems_mod.render_agenda(ag.subsystems, graph, slug))
         typer.echo(f"proposed agenda written → {agenda_file}. Review it before synthesizing: "
-                   f"drop entries with `agenda_exclude:`, add/rename with "
-                   f"`- **<slug>** — seeds: (subsystem: <prefix>)`, then re-run prepare.")
+                   f"drop entries with `agenda_exclude:`, cap deep pages with `agenda_max`, "
+                   f"add/rename with `- **<slug>** — seeds: (subsystem: <prefix>)`, then re-run prepare.")
+        _write_areas(p, ag, graph, "(placeholders to fill per prompts/area.md; the block "
+                                   "between the area:auto markers is regenerated)")
 
     hashes = diff.current_hashes(graph, acq.repo_dir)
     plan = diff.compute_plan(graph, acq.repo_dir, state, agenda_cfg, hashes)
@@ -615,19 +662,46 @@ def finalize(
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
     acq = _acquire(p, cfg, repo, cfg.ref)
-    graph = _graph(p)
+    graph = _graph(p, acq.repo_dir)
+    from . import source as source_mod
+    n_sig = source_mod.fill_signatures(graph, acq.repo_dir)
+    state = state_mod.load_state(p.state)
+    hashes = diff.current_hashes(graph, acq.repo_dir)
 
-    # Stage 6b FIRST — emit module catalogs (the symbol homes). Citations resolve
-    # against their frontmatter `symbols` map, so catalogs must exist before lint.
-    # Source links default to a path relative to each catalog page (local repo);
-    # cfg.source_url overrides with a base URL, or "" disables them.
+    # Stage 6b FIRST — the catalog. Since 0.3 (catalog-index.md) the catalog is the symbol
+    # index: `catalog/symbols/*.tsv` + `catalog/edges/*.tsv` + the module map, shipped in
+    # every tier; per-module pages are a rendering (`catalog: anchors | full`). Citations
+    # resolve through the graph, so lint no longer depends on pages existing.
+    mode, mode_defaulted = _catalog_mode(cfg, state)
+    indexed, index_paths = coverage_mod.emit_symbol_index(
+        graph, p.wiki_slug, hashes=hashes, profile=cfg.index_profile, slug=slug, ref=acq.commit)
+    n_sym = sum(1 for f in index_paths if f.parent.name == "symbols")
+    typer.echo(f"catalog: symbol index — {len(indexed)} rows in {n_sym} shard(s) "
+               f"({cfg.index_profile} profile){f', {n_sig} C++ signatures read from source' if n_sig else ''}")
     catalogued, catalog_paths = coverage_mod.emit_catalogs(
         graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url,
-        collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude)
-    typer.echo(f"catalog: wrote {len(catalog_paths)} module page(s)")
+        collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude, mode=mode)
+    catalogued |= indexed
+    if mode == "index":
+        typer.echo(f"catalog: tier `index` — no per-module pages"
+                   + (" (default for a fresh silo; set `catalog: full` to render pages)" if mode_defaulted else ""))
+    else:
+        typer.echo(f"catalog: tier `{mode}` — wrote {len(catalog_paths)} module page(s)"
+                   + (" (existing silo keeps pages; set `catalog: index` to drop them)" if mode_defaulted else ""))
+    if cfg.source_url == "":
+        map_base = None
+    elif cfg.source_url:
+        map_base = cfg.source_url
+    else:
+        map_base = os.path.relpath(Path(acq.repo_dir).resolve(), (p.wiki_slug / "catalog").resolve())
+    (p.wiki_slug / "catalog").mkdir(parents=True, exist_ok=True)
+    (p.wiki_slug / "catalog" / "index.md").write_text(
+        coverage_mod.render_map(graph, p.wiki_slug, source_base=map_base, pages=(mode != "index"),
+                                slug=slug, ref=acq.commit), encoding="utf-8")
     pruned = relink_mod.prune_catalogs(p.wiki_slug / "catalog", catalog_paths)
     if pruned:
-        typer.echo(f"catalog: removed {pruned} stale page(s) for modules that no longer exist")
+        typer.echo(f"catalog: removed {pruned} page(s)"
+                   + (" (tier `index`)" if mode == "index" else " for modules that no longer exist"))
 
     if fix:
         edits, report_lint = fix_mod.fix_silo(p.wiki_slug, graph, p.cache, slug)
@@ -635,10 +709,15 @@ def finalize(
                    f"{len(report_lint.errors)} error(s) remain")
     else:
         report_lint = lint.lint_silo(p.wiki_slug, graph, p.cache, slug)
+    # Area pages (prose-budget.md): refresh the regenerable block now that concept pages
+    # exist (unit rows link them), then gate them on rule 1 like doc-concepts.
+    ag = _derive_agenda(graph, cfg, state)
+    _write_areas(p, ag, graph, "(auto block refreshed)")
     # Doc-derived concepts (doc-concepts/, from the doc-ingest step) — light gate:
     # their catalog citations must resolve (rule 1), no subgraph/uncited gates.
     doc_report = lint.lint_doc_concepts(p.wiki_slug, graph)
-    report_lint = lint.LintReport(report_lint.errors + doc_report.errors)
+    area_report = lint.lint_areas(p.wiki_slug, graph)
+    report_lint = lint.LintReport(report_lint.errors + doc_report.errors + area_report.errors)
     if not report_lint.ok:
         typer.echo(f"\nLINT FAILED ({len(report_lint.errors)} error(s)):", err=True)
         for e in report_lint.errors:
@@ -647,9 +726,8 @@ def finalize(
     typer.echo("lint: OK — every citation resolves.")
 
     # Update reconcile state from the actual concept pages on disk.
-    state = state_mod.load_state(p.state)
     state_mod.set_ref(state, acq.commit)
-    state_mod.set_symbols(state, diff.current_hashes(graph, acq.repo_dir))
+    state_mod.set_symbols(state, hashes)
     state_mod.set_paths(state, diff.current_paths(graph))
     # OKF stamps (wikify/okf.py): generated + file-level sources on concept pages,
     # generated on doc-concepts and the overview, `status: fresh` dropped. Key-scoped
@@ -667,7 +745,7 @@ def finalize(
     okf_warn: list[str] = []
     concept_status: list[tuple[str, str]] = []
     for page in sorted((p.wiki_slug / "concepts").glob("*.md")):
-        cited = sorted(lint.page_citations(page))
+        cited = sorted(lint.page_citations(page, graph))
         text = page.read_text(encoding="utf-8")
         sha = okf_mod.body_sha(text)
         refresh = state_mod.page_body_sha(state, page.stem) != sha
@@ -680,7 +758,8 @@ def finalize(
         okf_warn += okf_mod.warnings(page)
         state_mod.record_page(state, page.stem, cited, acq.commit, body_sha=sha)
         concept_status.append((page.stem, "fresh"))
-    for page in list((p.wiki_slug / "doc-concepts").glob("*.md")) + [p.wiki_slug / "overview.md"]:
+    for page in (list((p.wiki_slug / "doc-concepts").glob("*.md"))
+                 + list((p.wiki_slug / "areas").glob("*.md")) + [p.wiki_slug / "overview.md"]):
         if not page.exists():
             continue
         text = page.read_text(encoding="utf-8")
@@ -716,7 +795,7 @@ def finalize(
         cfg.source_url, os.path.relpath(Path(acq.repo_dir).resolve(), index_dir).replace(os.sep, "/"))
     assemble.write_repo_index(
         p.wiki_slug, slug, acq.commit, scip_tool, concept_status, _today(), report=report,
-        snapshot=snapshot,
+        snapshot=snapshot, catalog_mode=mode,
     )
     # Top catalog of code wikis, written into the configured base (wiki/code/ by default,
     # or wiki/ when wiki_subdir=""). Leaves a curated wiki/index.md untouched when subdir'd.
@@ -779,16 +858,21 @@ def coverage(
     emit: bool = typer.Option(False, help="Write/refresh catalog pages."),
 ) -> None:
     """Report whole-repo coverage (set-difference over the SCIP symbol table)."""
-    p, _cfg = _load(root, slug)
+    p, cfg = _load(root, slug)
     slug = p.slug
-    if not p.scip.exists():
-        typer.echo(f"error: no SCIP index at {p.scip}; run `wikify prepare {slug}` first", err=True)
+    if not _scip_indexes(p):
+        typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
     graph = _graph(p)
     catalogued: set[str] = set()
     if emit:
-        catalogued, paths = coverage_mod.emit_catalogs(graph, p.wiki_slug)
-        typer.echo(f"catalog: wrote {len(paths)} module page(s)")
+        mode, _ = _catalog_mode(cfg, state_mod.load_state(p.state))
+        catalogued, ipaths = coverage_mod.emit_symbol_index(graph, p.wiki_slug, profile=cfg.index_profile, slug=slug)
+        typer.echo(f"catalog: symbol index — {len(catalogued)} rows, {len(ipaths)} file(s)")
+        pages_set, paths = coverage_mod.emit_catalogs(graph, p.wiki_slug, mode=mode,
+                                                      collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude)
+        catalogued |= pages_set
+        typer.echo(f"catalog: tier `{mode}` — wrote {len(paths)} module page(s)")
     else:
         # Treat already-written catalog pages' documentable set as represented.
         catalogued = set(coverage_mod.documentable_symbols(graph)) if (p.wiki_slug / "catalog").is_dir() else set()
@@ -824,11 +908,13 @@ def verify(
 
     # Evidence hashes for the cache: the current graph's symbol body-shas at the pin.
     hashes: dict[str, str] | None = None
+    graph = None
     ref = cfg.ref or ""
     if _scip_indexes(p):
         acq = _acquire(p, cfg, repo, cfg.ref)
         ref = acq.commit
-        hashes = diff.current_hashes(_graph(p), acq.repo_dir)
+        graph = _graph(p, acq.repo_dir)
+        hashes = diff.current_hashes(graph, acq.repo_dir)
     else:
         typer.echo("note: no SCIP index cached; verdict cache bypassed (run `wikify prepare` "
                    "to enable incremental verify)", err=True)
@@ -843,14 +929,15 @@ def verify(
         if record:
             data = json.loads(Path(record).read_text(encoding="utf-8"))
             n, unmatched = verify_mod.record_verdicts(
-                cache, pg, claims, data.get("verdicts", []), hashes or {}, ref, _today())
+                cache, pg, claims, data.get("verdicts", []), hashes or {}, ref, _today(),
+                graph=graph)
             verify_mod.save_cache(cpath, cache)
             n_ref = sum(1 for v in data.get("verdicts", []) if v.get("refuted"))
             typer.echo(f"{pg.stem}: recorded {n} verdict(s) ({n_ref} refuted) → {cpath}")
             # OKF `verified`: stamp the tool entry only when EVERY claim holds at current
             # evidence; otherwise drop the tool entry (human entries always survive).
             if hashes is not None:
-                wl = verify_mod.plan_worklist(pg, claims, cache, hashes, ref)
+                wl = verify_mod.plan_worklist(pg, claims, cache, hashes, ref, graph=graph)
                 all_hold = not wl.to_verify or (
                     len(wl.to_verify) == len(wl.resampled) and not wl.refuted and not wl.invalid)
                 from . import __version__
@@ -869,7 +956,7 @@ def verify(
             wl = verify_mod.Worklist(to_verify=list(claims))
             wl.reason = {c.id: "no cache" for c in claims}
         else:
-            wl = verify_mod.plan_worklist(pg, claims, cache, hashes, ref, force=all_claims)
+            wl = verify_mod.plan_worklist(pg, claims, cache, hashes, ref, force=all_claims, graph=graph)
         to_verify_total += len(wl.to_verify)
         parts = [f"{len(wl.to_verify)} to verify"]
         if wl.cached:
@@ -902,19 +989,27 @@ def _host_instruction_block(wiki_dir: str = "wiki/code") -> str:
     return f"""{WIKIFY_BEGIN}
 ## Code wikis (wikify)
 Grounded internals wikis for ingested repositories live under `{w}/<slug>/`; `{w}/index.md` lists
-them. Every claim on a concept page cites a real symbol (a citation linter fails the build otherwise),
-so for questions about a repository's internals **retrieve from its wiki instead of reading source**:
-- Start at `{w}/<slug>/overview.md`: it maps questions and tasks to pages. Then `grep` the silo for
-  the `concepts/` (mechanism) or `catalog/` (per-symbol) page and read only that section; `index.md`
-  rows carry one-line descriptions and pages carry `aliases:` (the authors' terms), so grep those.
-- Cite the catalog anchor `catalog/<module>.md#<Symbol>`; follow its source link only when you need
-  the exact line. Diagram legends map nodes to the same anchors.
+them. Every claim on a concept page cites a real symbol (a citation linter fails the build otherwise).
+What each part is for, in the order agents actually use them:
+- **Mechanism and orientation:** `{w}/<slug>/overview.md` maps questions and tasks to pages;
+  `areas/<area>.md` says what a top-level area is for and which units it holds; `concepts/<unit>.md`
+  explains how a subsystem works, with citations. `index.md` rows carry one-line descriptions and
+  pages carry `aliases:` (the authors' terms), so grep those to pick a page, then read only it.
+- **Source:** a citation `catalog/<module>.md#<Symbol> "path:Lnn"` names the file and line. Read the
+  source there at the pinned commit for bodies and exact signatures; the wiki gets you to the right
+  ten lines, the source confirms them.
+- **Existence, location, callers:** the symbol index. `grep -P '^<path>#<Symbol>\\t' {w}/<slug>/catalog/symbols/*.tsv`
+  returns one row (path, line, kind, rank, hash, caller count, citing pages); `catalog/edges/*.tsv` holds
+  `callee<TAB>caller` for who-calls-what; `catalog/index.md` is the module map for choosing an area
+  first. Grep the index by anchor, sort by the rank column for a bare name, and never read a shard whole.
+- **Catalog pages** (`catalog/<module>.md`) exist only in silos built with `catalog: full`; use them
+  when the source is not on disk.
 - Trust is in the front matter: `verified:` says who checked a page (`human:<id>` or a tool);
   treat a page with no `verified:` as agent-generated and say so when you rely on it.
 - What changed between versions is in `{w}/<slug>/changes/<ref>.md` and `log.md`; the silo's pin is
   the `commit:` in its `index.md`.
-- Never bulk-read pages, never guess, and never hand-edit `catalog/`, `index.md`, `log.md` or
-  `changes/` inside a silo (regenerated by `wikify finalize`).
+- Never bulk-read pages, never guess, and never hand-edit `catalog/`, `index.md`, `log.md`,
+  `changes/` or the block between `area:auto` markers (regenerated by `wikify finalize`).
 To ingest or update a repository, invoke the `wikify-ingest-repo` skill: "wikify <repo url or path>".
 {WIKIFY_END}"""
 
@@ -937,19 +1032,23 @@ def _instruction_block(wiki_dir: str) -> str:
     return f"""{WIKIFY_BEGIN}
 ## Codebase wiki (wikify)
 A grounded internals wiki for this repository lives at `{w}/`. Every claim on a concept page cites a
-real symbol (a citation linter fails the build otherwise), so for questions about how this code works
-**retrieve from the wiki instead of reading source**:
-- Start at `{w}/overview.md`: it maps questions and tasks to pages. Then `grep` the wiki for the
-  `concepts/` (mechanism) or `catalog/` (per-symbol) page and read only that section; `index.md` rows
-  carry one-line descriptions and pages carry `aliases:` (the authors' terms), so grep those.
-- Cite the catalog anchor `{w}/catalog/<module>.md#<Symbol>`; follow its source link only when you
-  need the exact line. Diagram legends map nodes to the same anchors.
+real symbol (a citation linter fails the build otherwise). What each part is for:
+- **Mechanism and orientation:** `{w}/overview.md` maps questions and tasks to pages;
+  `{w}/areas/<area>.md` says what a top-level area is for and which units it holds;
+  `{w}/concepts/<unit>.md` explains how a subsystem works, with citations. `{w}/index.md` rows carry
+  one-line descriptions and pages carry `aliases:` (the authors' terms), so grep those to pick a page.
+- **Source:** a citation `catalog/<module>.md#<Symbol> "path:Lnn"` names the file and line; read the
+  source there for bodies and exact signatures.
+- **Existence, location, callers:** the symbol index. `grep -P '^<path>#<Symbol>\\t' {w}/catalog/symbols/*.tsv`
+  returns one row (path, line, kind, rank, hash, caller count, citing pages); `{w}/catalog/edges/*.tsv`
+  holds `callee<TAB>caller`; `{w}/catalog/index.md` is the module map. Grep by anchor, sort by the
+  rank column for a bare name, never read a shard whole.
 - Trust is in the front matter: `verified:` says who checked a page (`human:<id>` or a tool); treat a
   page with no `verified:` as agent-generated and say so when you rely on it.
 - What changed between versions is in `{w}/changes/<ref>.md` and `{w}/log.md`; the wiki's pin is the
   `commit:` in `{w}/index.md`.
-- Never bulk-read pages, never guess, and never hand-edit `{w}/catalog/`, `{w}/index.md`, `{w}/log.md`
-  or `{w}/changes/` (regenerated by `wikify finalize`).
+- Never bulk-read pages, never guess, and never hand-edit `{w}/catalog/`, `{w}/index.md`, `{w}/log.md`,
+  `{w}/changes/` or the block between `area:auto` markers (regenerated by `wikify finalize`).
 To build or update the wiki, invoke the `wikify-ingest-repo` skill from the repo root ("wikify this
 repo"); `wikify plan` previews what is stale. Config: `wikify.md`.
 {WIKIFY_END}"""
@@ -1164,7 +1263,7 @@ def plan(
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
-    graph = _graph(p)
+    graph = _graph(p, acq.repo_dir)
     state = state_mod.load_state(p.state)
     ag = _derive_agenda(graph, cfg, state)
     typer.echo(ag.summary())
@@ -1176,7 +1275,7 @@ def plan(
 def agenda(
     slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
     root: Path = typer.Option(Path("."), help="Project root."),
-    max_subsystems: int = typer.Option(0, "--max", help="Cap the proposal (0 = config/default)."),
+    max_subsystems: int = typer.Option(0, "--max", help="Ceiling on deep pages (0 = config/none)."),
     write: bool = typer.Option(True, help="Write .cache/plan/<slug>.agenda.md."),
 ) -> None:
     """Propose the subsystem agenda (table of contents) from the cached index; no packets.
@@ -1192,8 +1291,12 @@ def agenda(
     graph = _graph(p)
     subs = subsystems_mod.discover_subsystems(
         graph,
-        max_subsystems=max_subsystems or cfg.agenda_max or subsystems_mod.DEFAULT_MAX_SUBSYSTEMS,
+        max_subsystems=max_subsystems or cfg.agenda_max or None,
         exclude_globs=cfg.agenda_exclude,
+        deep_min_modules=(cfg.agenda_deep_modules if cfg.agenda_deep_modules is not None
+                          else subsystems_mod.DEEP_MIN_MODULES),
+        deep_min_fanin=(cfg.agenda_deep_fanin if cfg.agenda_deep_fanin is not None
+                        else subsystems_mod.DEEP_MIN_FANIN),
     )
     text = subsystems_mod.render_agenda(subs, graph, slug)
     typer.echo(text)

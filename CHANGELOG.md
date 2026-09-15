@@ -1,14 +1,64 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-09-15
+
+### Changed
+- **The catalog is a symbol index; pages are a rendering** (`docs/catalog-index.md`).
+  `finalize` now writes `catalog/symbols/<dir>.tsv` (one row per documentable symbol:
+  anchor, path, line, kind, rank, body hash, caller count, citing concept pages; `sig` and
+  `doc` in the `full` profile), `catalog/edges/<dir>.tsv` (one caller edge per line,
+  complete, unfiltered) and `catalog/index.md` (the module map), sharded by two directory
+  levels, each shard headed by the columns and the three grep recipes. A new config key
+  `catalog: index | anchors | full` decides whether per-module pages are rendered on top;
+  a fresh silo defaults to `index`, a silo that already has pages in state keeps `full`
+  until its config says otherwise. `index_profile: nav | full` picks the column set.
+  Measured over 149 query sessions, agents opened catalog pages zero times when the source
+  was on disk; a 240-session controlled test found no difference between full and
+  collapsed pages with source present.
+- **Lint resolves citations through the graph** (`coverage.symbol_index`), not through
+  catalog front matter, so every tier lints the same; front matter remains a fallback for
+  callers without a graph. Citations may carry the source location as their link title
+  (`[Sym](../catalog/m.md#Sym "path:L12")`); packets now emit it, lint strips it.
+- **Prose budget: a per-unit rule and an area tier instead of the 24-page cap**
+  (`docs/prose-budget.md`). A planned unit gets a deep mechanism page when it has at
+  least 5 modules or at least 20 outside referrers (`agenda_deep_modules`,
+  `agenda_deep_fanin`; floor 8); every other unit becomes a section of a new
+  `areas/<area>.md` page, one per top-level area, with placeholders for two short prose
+  sections and a regenerated block (units, entry points, small units). `agenda_max` is now
+  an opt-in ceiling on deep pages, never a truncation of the plan. The agenda render shows
+  each unit's tier and the clause that decided it, plus the bill at the measured per-page
+  rate. On torch_tpu the rule reproduces the 27 pages of the capped plan; on PyTorch's
+  shards it plans 124 instead of 24. New prompt `prompts/area.md`; skill steps renumbered.
+- **Retrieval block** (`wikify setup` / `wikify init`) rewritten to describe the measured
+  routing: concept and area pages for mechanism, the citation path for source, the symbol
+  index by anchor for existence and callers, the map for orientation; grep, never read.
+- The silo `index.md` lists area pages first and points the coverage section at the index;
+  `wikify agenda --max` is the deep-page ceiling.
 
 ### Fixed
+- **Empty-path shard documents** (`scip_index._repair_doc_path`): a file-level
+  `--target-only` shard emits its own file with an empty `relative_path`; the repair
+  returned early because `project_dir / ""` exists, filing the module's functions under
+  module `""` (a `catalog/.md` page). Repaired at merge time and, for indexes built before
+  the fix, at graph build (`build_graph(repair_root=...)`).
+- **Only git-tracked files are indexed** (`build_graph(only_paths=...)`): untracked
+  `.ipynb_checkpoints/` and scratch files on a working copy no longer become modules.
+- **`symbol_base` cut at a descriptor boundary**: when every symbol on a page started with
+  `_` the common prefix swallowed the underscore (`INTERNAL_PREFIX` for `_INTERNAL_PREFIX`).
+- **Signatures**: the implementation's signature is preferred over the first `@overload`
+  stub (scip-python emits one SymbolInformation per `def`; they are now merged, docstring
+  included); the positional-only `/` marker is restored (it flattened to `fn=None,, *`);
+  C++ declarations are read from the source when the indexer emits none
+  (`source.read_signature`, display-only so recorded hashes stay valid).
+- **Inherited enumerator comments**: scip-clang attaches the comment before an enum's
+  first enumerator to every undocumented enumerator (`go/keep-sorted start` on 643 rows);
+  documentation identical across three or more members of one type is dropped.
 - **Catalog cross-links** (`wikify/coverage.py`): `uses` / `used by` lists no longer link
   namespace or macro monikers. They are not documentable symbols, so they have no catalog
   anchor, and their "home" file (often a header with no other symbols) may have no catalog
   page; on a C++ repo this left the same dead link on hundreds of pages.
 
-### Added
+### Added (from the unreleased line)
 - **Diagram checks** (`wikify/diagrams.py`): a Mermaid structural floor (diagram type, balanced
   brackets, node band, non-empty) and a lint-checked `Legend:` under flowcharts mapping node ids
   to catalog citations; warnings from `finalize` and `lint`, never a gate. Prompts now ask for

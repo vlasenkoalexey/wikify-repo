@@ -1,8 +1,8 @@
 # Prose budget: two tiers and a per-unit rule, not a per-repo cap
 
-Status: decided 2026-09-15 at the design level, not yet implemented. Companion to
-`catalog-index.md` (which records the open item this page resolves). Adds `design.md`
-decisions-log entry "Prose volume is a per-unit rule" and `implementation.md` section 10.19.
+Status: realized in wikify-repo 0.3.0 (2026-09-15). Companion to `catalog-index.md`
+(which records the open item this page resolves). Decisions-log entry "Prose volume is a
+per-unit rule" in `design.md`; mechanics in `implementation.md` section 10.19.
 The subsystem planner (section 10.11) is unchanged in how it forms and ranks units; this page
 changes how many of them become pages, and adds a second, cheaper page tier.
 

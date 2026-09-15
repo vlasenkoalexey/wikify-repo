@@ -25,7 +25,15 @@ _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
                  "acquire", "wiki_subdir", "source_type", "doc_globs",
                  "coverage_collapse", "coverage_exclude", "synthesis_focus",
-                 "agenda", "agenda_max", "agenda_exclude", "in_repo", "wiki_dir"}
+                 "agenda", "agenda_max", "agenda_exclude", "in_repo", "wiki_dir",
+                 "catalog", "index_profile", "agenda_deep_modules", "agenda_deep_fanin"}
+
+# ``catalog:`` — what the catalog ships as (catalog-index.md): the symbol index alone
+# (``index``), anchor-only pages on top of it (``anchors``), or full per-module pages
+# (``full``). ``index_profile``: ``nav`` (anchor, path, line, kind, rank, hash, callers,
+# pages) or ``full`` (adds signature + doc line, for repos whose source is not on disk).
+_CATALOG_MODES = ("index", "anchors", "full")
+_INDEX_PROFILES = ("nav", "full")
 
 # ``agenda:`` — how the derived agenda is planned (implementation.md §10.11).
 _AGENDA_MODES = ("subsystems", "modules")
@@ -118,6 +126,17 @@ class RepoConfig:
     agenda: str | None = None
     agenda_max: int | None = None
     agenda_exclude: list[str] = field(default_factory=list)
+    # Prose budget (prose-budget.md, §10.19): a planned unit gets a deep mechanism page when it
+    # has at least ``agenda_deep_modules`` modules OR at least ``agenda_deep_fanin`` distinct
+    # outside symbols reference into it; every other unit is a section of its area page.
+    # ``agenda_max`` is the opt-in ceiling on deep pages, applied after ranking. Unset → the
+    # planner defaults (5 modules, 20 referrers).
+    agenda_deep_modules: int | None = None
+    agenda_deep_fanin: int | None = None
+    # Catalog tier (catalog-index.md, §10.18). Unset → ``index`` for a fresh silo; a silo
+    # that already has pages in state keeps ``full`` until its config says otherwise.
+    catalog: str | None = None
+    index_profile: str = "nav"
     # In-repo layout (§10.15): the config is ``<repo>/wikify.md``, the source is the repo
     # itself (no raw/), the wiki lives at ``<repo>/<wiki_dir>/`` (flat, no slug level) and
     # the cache at ``<repo>/.wikify/``. Set by ``wikify init``; host-wiki projects never set it.
@@ -248,6 +267,16 @@ def validate_config(cfg: RepoConfig) -> None:
             f"agenda: must be one of {', '.join(_AGENDA_MODES)} (got {cfg.agenda!r})")
     if cfg.agenda_max is not None and cfg.agenda_max < 1:
         raise ValueError("agenda_max: must be a positive integer")
+    for key in ("agenda_deep_modules", "agenda_deep_fanin"):
+        v = getattr(cfg, key)
+        if v is not None and v < 0:
+            raise ValueError(f"{key}: must be a non-negative integer")
+    if cfg.catalog is not None and cfg.catalog not in _CATALOG_MODES:
+        raise ValueError(
+            f"catalog: must be one of {', '.join(_CATALOG_MODES)} (got {cfg.catalog!r})")
+    if cfg.index_profile not in _INDEX_PROFILES:
+        raise ValueError(
+            f"index_profile: must be one of {', '.join(_INDEX_PROFILES)} (got {cfg.index_profile!r})")
 
 
 def load_config(path: str | Path) -> RepoConfig:
@@ -279,6 +308,9 @@ def load_config(path: str | Path) -> RepoConfig:
     stype = fm.get("source_type")
     agenda = fm.get("agenda")
     amax = fm.get("agenda_max")
+    adm = fm.get("agenda_deep_modules")
+    adf = fm.get("agenda_deep_fanin")
+    cat = fm.get("catalog")
     cfg = RepoConfig(
         slug=str(fm["slug"]),
         languages=_as_list(fm.get("languages")),
@@ -298,6 +330,10 @@ def load_config(path: str | Path) -> RepoConfig:
         agenda=None if agenda is None else str(agenda).strip().lower(),
         agenda_max=None if amax is None else int(amax),
         agenda_exclude=_as_list(fm.get("agenda_exclude")),
+        agenda_deep_modules=None if adm is None else int(adm),
+        agenda_deep_fanin=None if adf is None else int(adf),
+        catalog=None if cat is None else str(cat).strip().lower(),
+        index_profile=str(fm.get("index_profile") or "nav").strip().lower(),
         in_repo=bool(fm.get("in_repo", False)),
         wiki_dir=str(fm.get("wiki_dir") or "wiki").strip("/") or "wiki",
         index_shards=_as_list(fm.get("index_shards")),

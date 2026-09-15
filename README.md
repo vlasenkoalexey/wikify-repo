@@ -39,8 +39,12 @@ Many repos in one wiki instead? See [Two ways to run it](#two-ways-to-run-it).
 - **Diagrams that are claims, not decoration** — a system-level architecture diagram in the overview
   and a Mermaid mechanism diagram on every page (flowchart, sequence, state or class, chosen by the
   question), each with a legend mapping every node to a catalog symbol, checked at build time.
-- **A catalog page for every module** — signature, docstring, source line, ranked callers — so the whole
-  repo is represented, by set-difference over the symbol table, not by what the model chose to visit.
+- **A symbol index for every symbol** — one greppable row per symbol (anchor, path, line, kind, rank, body
+  hash, callers, citing pages) plus a complete caller-edge list and a module map — so the whole repo is
+  represented, by set-difference over the symbol table, not by what the model chose to visit. Per-module
+  catalog pages are an opt-in rendering of it for repos whose source is not on disk.
+- **Area pages** — one per top-level area, saying what it is for and which units it holds — the hop between
+  the overview and a mechanism page; the prose budget is a per-unit rule, not a page cap.
 - **An overview** that maps questions and tasks to pages: the front door for agents and humans.
 - **A hard gate**: the citation linter fails the build on any claim that does not resolve to a real
   symbol; **adversarial verify** then tries to refute every load-bearing claim against the source.
@@ -85,7 +89,7 @@ Measured on a 150k-line PyTorch TPU backend (C++ via Bazel plus Python) and in t
 
 | | |
 |---|---|
-| Symbols represented | 11,536 of 11,536 — every module has a catalog page |
+| Symbols represented | 11,536 of 11,536 — every symbol has an index row |
 | Mechanism pages / citations | 27 pages, 691 citations, all resolving to pinned source lines |
 | Adversarial verify | 39 of 329 load-bearing claims refuted and fixed before the wiki shipped |
 | Head-to-head with openwiki on the same repo | wikify pages named 111–183 symbols each; openwiki's code pages named 1–8 ([analysis](https://github.com/vlasenkoalexey/codebase-cartography-wiki/blob/main/wiki/notes/torch-tpu-ingest-tool-choice.md)) |
@@ -169,10 +173,11 @@ interface.** Drop `wiki/` into a repo and any agent (Claude Code, Codex, Antigra
 with zero adapter.
 
 Honest tradeoff: a graph DB wins at arbitrary transitive queries ("every transitive caller of `X`").
-wikify's answer is to **materialize** the common ones into the pages — per-symbol uses-by lists,
-per-module catalogs — so the frequent questions are already answered as text, and the rare deep query
-drops to the pinned source. For *agent retrieval of internals knowledge*, materialized markdown beats
-a live graph you have to query.
+wikify's answer is to **materialize** the common ones as plain text — a symbol index with a row per
+symbol and a complete caller-edge list, both greppable by anchor — so the frequent questions are already
+answered in one grep, and the rare deep query drops to the pinned source. Measured over 149 agent
+sessions, catalog *pages* were never opened when the source was on disk; the index is what the grep
+habit actually reaches for.
 
 Pages carry [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 front matter (`generated`, `verified`, file-level `sources`), so a reader can tell agent-generated from
@@ -229,7 +234,8 @@ Then, in your agent session (Claude Code, Codex, or Antigravity), type:
 ```
 my-repo/
   wikify.md        config (slug, wiki_dir, docs/tests globs, synthesis_focus, agenda tuning)
-  wiki/            overview.md, index.md, log.md, concepts/, catalog/, doc-concepts/, changes/
+  wiki/            overview.md, index.md, log.md, areas/, concepts/, doc-concepts/, changes/,
+                   catalog/ (index.md, symbols/*.tsv, edges/*.tsv; per-module pages only with catalog: full)
   .wikify/         cache: packets, SCIP index, state, verify holds (gitignored)
   CLAUDE.md        <!-- wikify:begin --> ... <!-- wikify:end -->   (same block in AGENTS.md)
 ```
@@ -283,19 +289,27 @@ idempotently); paste it by hand when you are consuming a committed wiki without 
 ```markdown
 ## Code wikis (wikify)
 Grounded internals wikis for ingested repositories live under `wiki/code/<slug>/`; `wiki/code/index.md` lists
-them. Every claim on a concept page cites a real symbol (a citation linter fails the build otherwise),
-so for questions about a repository's internals **retrieve from its wiki instead of reading source**:
-- Start at `wiki/code/<slug>/overview.md`: it maps questions and tasks to pages. Then `grep` the silo for
-  the `concepts/` (mechanism) or `catalog/` (per-symbol) page and read only that section; `index.md`
-  rows carry one-line descriptions and pages carry `aliases:` (the authors' terms), so grep those.
-- Cite the catalog anchor `catalog/<module>.md#<Symbol>`; follow its source link only when you need
-  the exact line. Diagram legends map nodes to the same anchors.
+them. Every claim on a concept page cites a real symbol (a citation linter fails the build otherwise).
+What each part is for, in the order agents actually use them:
+- **Mechanism and orientation:** `wiki/code/<slug>/overview.md` maps questions and tasks to pages;
+  `areas/<area>.md` says what a top-level area is for and which units it holds; `concepts/<unit>.md`
+  explains how a subsystem works, with citations. `index.md` rows carry one-line descriptions and
+  pages carry `aliases:` (the authors' terms), so grep those to pick a page, then read only it.
+- **Source:** a citation `catalog/<module>.md#<Symbol> "path:Lnn"` names the file and line. Read the
+  source there at the pinned commit for bodies and exact signatures; the wiki gets you to the right
+  ten lines, the source confirms them.
+- **Existence, location, callers:** the symbol index. `grep -P '^<path>#<Symbol>\t' wiki/code/<slug>/catalog/symbols/*.tsv`
+  returns one row (path, line, kind, rank, hash, caller count, citing pages); `catalog/edges/*.tsv` holds
+  `callee<TAB>caller` for who-calls-what; `catalog/index.md` is the module map for choosing an area
+  first. Grep the index by anchor, sort by the rank column for a bare name, and never read a shard whole.
+- **Catalog pages** (`catalog/<module>.md`) exist only in silos built with `catalog: full`; use them
+  when the source is not on disk.
 - Trust is in the front matter: `verified:` says who checked a page (`human:<id>` or a tool);
   treat a page with no `verified:` as agent-generated and say so when you rely on it.
 - What changed between versions is in `wiki/code/<slug>/changes/<ref>.md` and `log.md`; the silo's pin is
   the `commit:` in its `index.md`.
-- Never bulk-read pages, never guess, and never hand-edit `catalog/`, `index.md`, `log.md` or
-  `changes/` inside a silo (regenerated by `wikify finalize`).
+- Never bulk-read pages, never guess, and never hand-edit `catalog/`, `index.md`, `log.md`,
+  `changes/` or the block between `area:auto` markers (regenerated by `wikify finalize`).
 To ingest or update a repository, invoke the `wikify-ingest-repo` skill: "wikify <repo url or path>".
 ```
 
@@ -311,7 +325,7 @@ and wikify-repo itself) plus prose pages, all grounded, cited, and cross-linked.
 
 It plays two roles:
 
-- **Showcase** — browse a finished wiki end to end (`overview.md` → `concepts/` → `catalog/` → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
+- **Showcase** — browse a finished wiki end to end (`overview.md` → `areas/` → `concepts/` → the symbol index → the pinned source) to see exactly what wikify-repo emits and how an agent answers from it.
 - **Template** — the repo's [`main`](https://github.com/vlasenkoalexey/wikify-repo-demo) branch is the empty template (the populated showcase is the [`demo`](https://github.com/vlasenkoalexey/wikify-repo-demo/tree/demo) branch): click **"Use this template"** or clone it to get a new wiki repo with the `wikify-ingest-repo` skill and the `SCHEMA.md` / `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` agent conventions already wired in — then, in your agent, `wikify <repo url>`.
 
 A second, larger showcase: **[codebase-cartography-wiki](https://github.com/vlasenkoalexey/codebase-cartography-wiki)**

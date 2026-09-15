@@ -222,3 +222,23 @@ def test_agenda_mode_validated(tmp_path):
     text = FIXTURE.replace("slug: torch_tpu\n", "slug: torch_tpu\nagenda: bogus\n")
     with pytest.raises(ValueError, match="agenda"):
         load_config(_write(tmp_path, text))
+
+
+def test_catalog_and_prose_budget_keys(tmp_path):
+    from wikify.config import load_config
+    import pytest
+    p = tmp_path / "c.md"
+    p.write_text("---\nslug: x\ncatalog: anchors\nindex_profile: full\nagenda_deep_modules: 3\n"
+                 "agenda_deep_fanin: 0\nagenda_max: 5\n---\n## Concepts\n")
+    cfg = load_config(p)
+    assert (cfg.catalog, cfg.index_profile, cfg.agenda_deep_modules, cfg.agenda_deep_fanin, cfg.agenda_max) == \
+        ("anchors", "full", 3, 0, 5)
+    p.write_text("---\nslug: x\n---\n## Concepts\n")
+    cfg = load_config(p)
+    assert cfg.catalog is None and cfg.index_profile == "nav" and cfg.agenda_deep_modules is None
+    p.write_text("---\nslug: x\ncatalog: pages\n---\n## Concepts\n")
+    with pytest.raises(ValueError):
+        load_config(p)
+    p.write_text("---\nslug: x\nindex_profile: wide\n---\n## Concepts\n")
+    with pytest.raises(ValueError):
+        load_config(p)

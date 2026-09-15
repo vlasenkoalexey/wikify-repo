@@ -77,7 +77,23 @@ def class_symbols(graph: SymbolGraph) -> dict[str, Symbol]:
     }
 
 
-_CATALOG_LINK = re.compile(r"\]\(\.\./catalog/([^)#]+\.md)#([^)\s]+)\)")
+# ``../catalog/<module>.md#<anchor>`` with an optional link title (``"path:Lnn"``, the
+# source location packets add since 0.3) — the title is display metadata, never resolved.
+_CATALOG_LINK = re.compile(r"\]\(\.\./catalog/([^)#\s]+\.md)#([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+
+
+def symbol_index(graph: SymbolGraph) -> dict[tuple[str, str], str]:
+    """``(catalog page path, anchor) -> moniker`` for every documentable symbol: the
+    citation resolution table, derived from the graph alone (language-agnostic — the
+    link IS ``catalog_rel_path(def_path)``). The linter, coverage, relink and the OKF
+    stamper all resolve through this; catalog pages are a rendering of it, not its source.
+    On an anchor collision inside one module the higher-importance symbol wins, matching
+    ``symbol_anchor_map``."""
+    index: dict[tuple[str, str], str] = {}
+    docs = documentable_symbols(graph)
+    for m in sorted(docs, key=lambda x: graph.importance(x)):   # low first: high overwrites
+        index[(catalog_rel_path(docs[m].def_path), qualified_name(m))] = m
+    return index
 
 
 def covered_monikers(graph: SymbolGraph, wiki_slug_dir: str | Path) -> dict[str, str]:
@@ -86,11 +102,7 @@ def covered_monikers(graph: SymbolGraph, wiki_slug_dir: str | Path) -> dict[str,
     Resolves citations against the GRAPH (module from the link path + qualified-name
     match), not the catalog files — so it works while catalogs are being generated.
     """
-    # reverse index keyed by the catalog page path (language-agnostic: works for
-    # .py/.h/.cpp alike, since the link IS catalog_rel_path(def_path)).
-    index: dict[tuple[str, str], str] = {}
-    for m, s in documentable_symbols(graph).items():
-        index[(catalog_rel_path(s.def_path), qualified_name(m))] = m
+    index = symbol_index(graph)
 
     covered: dict[str, str] = {}
     concepts = Path(wiki_slug_dir) / "concepts"
@@ -245,11 +257,16 @@ def _clean_sig(sym: Symbol) -> str:
     """The real `def …`/`class …` line — decorator lines stripped, collapsed to one
     line (scip-python stores the signature as a multi-line fenced block whose first
     line is often a `@decorator`, which is why catalogs used to show `@…`)."""
-    if not sym.signature:
+    raw = sym.display_signature
+    if not raw:
         return ""
-    body = [ln for ln in sym.signature.splitlines() if not ln.strip().startswith("@")]
+    body = [ln for ln in raw.splitlines() if not ln.strip().startswith("@")]
+    # scip-python renders the positional-only marker ``/`` as a bare ``,`` line; restore it
+    # (it used to flatten to ``fn=None,, *``).
+    body = ["/," if ln.strip() == "," else ln for ln in body]
     s = re.sub(r"\s+", " ", " ".join(ln.strip() for ln in body)).strip()
-    return s.replace("( ", "(").replace(" )", ")").replace(" ,", ",")
+    s = s.replace("( ", "(").replace(" )", ")").replace(" ,", ",")
+    return s.replace(",,", ", /,")
 
 
 def _params(sym: Symbol) -> str:
@@ -338,6 +355,11 @@ def _compress_anchor_map(anchor_map: dict[str, str]) -> tuple[str, dict[str, str
     if not monikers:
         return "", {}
     base = os.path.commonprefix(monikers)
+    # commonprefix is character-wise: when every symbol on a page starts with ``_`` the
+    # underscore joins the base and the map shows ``INTERNAL_PREFIX`` for ``_INTERNAL_PREFIX``.
+    # Cut back to the last descriptor boundary so a suffix always starts at a name.
+    cut = max(base.rfind("/"), base.rfind("#"), base.rfind(" "))
+    base = base[:cut + 1] if cut >= 0 else ""
     return base, {a: m[len(base):] for a, m in anchor_map.items()}
 
 
@@ -519,6 +541,9 @@ def _glob_any(path: str, patterns) -> bool:
     return any(fnmatch.fnmatch(path, p) for p in (patterns or ()))
 
 
+CATALOG_MODES = ("index", "anchors", "full")
+
+
 def emit_catalogs(
     graph: SymbolGraph,
     wiki_slug_dir: str | Path,
@@ -526,21 +551,31 @@ def emit_catalogs(
     source_url: str | None = None,
     collapse: list[str] | None = None,
     exclude: list[str] | None = None,
+    mode: str = "full",
 ) -> tuple[set[str], list[Path]]:
     """Write one catalog page per in-repo module. Returns (catalogued monikers, paths).
 
     Every documentable symbol ends up on its module's catalog page, so the
     returned set is exactly the documentable set — the whole-repo guarantee.
 
+    ``mode`` (config ``catalog:``, ``catalog-index.md``): ``full`` renders today's pages;
+    ``anchors`` renders every page collapsed (front-matter map + source link, no body);
+    ``index`` writes no pages at all — the symbol index (``emit_symbol_index``) is the
+    catalog, and every documentable symbol counts as represented by it.
+
     Source links: ``source_url`` (a base URL, e.g. github ``…/blob/<commit>``) is
     used verbatim; otherwise, if ``repo_dir`` is given, each page links to the local
     source via a path **relative to that page** (never an absolute path — a leading
     ``/`` in markdown means repo-root, which would be a broken link). ``source_url=""``
     disables links."""
+    if mode not in CATALOG_MODES:
+        raise ValueError(f"catalog mode must be one of {CATALOG_MODES}, got {mode!r}")
     wiki_slug_dir = Path(wiki_slug_dir)
     catalog_dir = wiki_slug_dir / "catalog"
     repo_abs = Path(repo_dir).resolve() if repo_dir else None
     docs = documentable_symbols(graph)
+    if mode == "index":
+        return set(docs), []
     covered = covered_monikers(graph, wiki_slug_dir)
     modules = by_module(docs)
 
@@ -563,9 +598,204 @@ def emit_catalogs(
         else:
             base = None
         text = render_catalog(graph, module_path, monikers, covered, source_base=base,
-                              collapse=_glob_any(module_path, collapse))
+                              collapse=(mode == "anchors") or _glob_any(module_path, collapse))
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")
         written.append(out)
         catalogued.update(monikers)
     return catalogued, written
+
+
+# --------------------------------------------------------------------------- #
+# The symbol index (catalog-index.md): the catalog as data, pages as a rendering
+# --------------------------------------------------------------------------- #
+INDEX_COLUMNS = ("anchor", "path", "line", "kind", "rank", "hash", "callers", "pages")
+INDEX_FULL_COLUMNS = INDEX_COLUMNS + ("sig", "doc")
+INDEX_PROFILES = ("nav", "full")
+
+
+def index_anchor(module_path: str, moniker: str) -> str:
+    """The row key of the symbol index: the citation target with ``catalog/`` and ``.md``
+    stripped — ``torch_tpu/eager/op_dispatcher.h#DispatchOp``. Same anchor grammar as
+    ``catalog_ref``, so a citation and a row agree by construction."""
+    return f"{catalog_rel_path(module_path)[:-3]}#{qualified_name(moniker)}"
+
+
+SHARD_DEPTH = 2
+
+
+def _shard_of(def_path: str) -> str:
+    """Shard key of a definition path: its first ``SHARD_DEPTH`` directory components
+    (``torch_tpu/eager``), fewer when the file sits higher; ``(root)`` for a bare file. A
+    single umbrella package (``torch/``, ``torch_tpu/``) would otherwise be one shard."""
+    parts = def_path.split("/")
+    dirs = parts[:-1]
+    if not dirs:
+        return "(root)"
+    return "/".join(dirs[:SHARD_DEPTH])
+
+
+def _shard_file(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "root"
+
+
+def _kind_label(sym: Symbol, moniker: str) -> str:
+    if sym.suffix == "Type":
+        return "class"
+    owner = _owner_class(moniker)
+    if sym.suffix == "Method":
+        return "method" if owner else "function"
+    return "member" if owner else "value"
+
+
+def _cell(text: str) -> str:
+    """One TSV cell: no tabs, no newlines."""
+    return " ".join(str(text).split())
+
+
+def emit_symbol_index(
+    graph: SymbolGraph,
+    wiki_slug_dir: str | Path,
+    hashes: dict[str, str] | None = None,
+    profile: str = "nav",
+    slug: str = "",
+    ref: str = "",
+) -> tuple[set[str], list[Path]]:
+    """Write the symbol index: ``catalog/symbols/<top-level-dir>.tsv`` (one row per
+    documentable symbol, sorted by path) and ``catalog/edges/<top-level-dir>.tsv`` (one
+    caller edge per line, complete, unfiltered), each with a header that teaches the
+    columns and the three grep recipes. Returns (indexed monikers, written paths).
+
+    Columns: ``anchor path line kind rank hash callers pages`` and, in the ``full``
+    profile, ``sig doc``. ``rank`` is ``graph.importance``; ``hash`` is the body hash from
+    ``hashes`` (state or ``diff.current_hashes``); ``pages`` are the concept pages citing the
+    symbol. Sharded so a scoped grep is the normal query and an accidental Read is bounded.
+    Deterministic, no model; linear in symbols."""
+    if profile not in INDEX_PROFILES:
+        raise ValueError(f"index profile must be one of {INDEX_PROFILES}, got {profile!r}")
+    wiki_slug_dir = Path(wiki_slug_dir)
+    docs = documentable_symbols(graph)
+    covered = covered_monikers(graph, wiki_slug_dir)
+    pages_of: dict[str, list[str]] = defaultdict(list)
+    for m, page in covered.items():
+        pages_of[m].append(page)
+    hashes = hashes or {}
+    cols = INDEX_FULL_COLUMNS if profile == "full" else INDEX_COLUMNS
+
+    # One row per ANCHOR. C++ overloads (and any same-named symbols in one module) share a
+    # qualified name; the row belongs to the highest-importance moniker — the same rule the
+    # citation resolver (``symbol_index``) applies — and its callers are the union over the
+    # group, so nothing that calls any overload goes missing.
+    groups: dict[str, list[str]] = defaultdict(list)
+    for m, sym in docs.items():
+        groups[index_anchor(sym.def_path, m)].append(m)
+    rows_by_shard: dict[str, list[tuple]] = defaultdict(list)
+    edges_by_shard: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for anchor, ms in groups.items():
+        ms.sort(key=lambda x: (-graph.importance(x), x))
+        winner = ms[0]
+        sym = docs[winner]
+        callers = {c for m in ms for c in graph.callers(m) if c in docs}
+        pages = {pg for m in ms for pg in pages_of.get(m, [])}
+        row = [anchor, sym.def_path, str((sym.def_line or 0) + 1),
+               _kind_label(sym, winner), str(max(graph.importance(m) for m in ms)),
+               hashes.get(winner, ""), str(len(callers)), ";".join(sorted(pages))]
+        if profile == "full":
+            row += [_cell(_clean_sig(sym)), _cell(sym.doc_summary)]
+        shard = _shard_of(sym.def_path)
+        rows_by_shard[shard].append((sym.def_path, sym.def_line or 0, row))
+        for c in callers:
+            edges_by_shard[shard].add((anchor, index_anchor(docs[c].def_path, c)))
+
+    written: list[Path] = []
+    sym_dir = wiki_slug_dir / "catalog" / "symbols"
+    edge_dir = wiki_slug_dir / "catalog" / "edges"
+    for d in (sym_dir, edge_dir):
+        d.mkdir(parents=True, exist_ok=True)
+        for stale in d.glob("*.tsv"):
+            stale.unlink()
+    at = f"{slug or 'repo'}" + (f" @ {ref[:10]}" if ref else "")
+    for shard, rows in sorted(rows_by_shard.items()):
+        rows.sort(key=lambda r: (r[0], r[1]))
+        example = max(rows, key=lambda r: (int(r[2][4]), r[2][0]))[2][0]
+        name = example.split("#", 1)[1]
+        head = [
+            f"# wikify symbol index: {at}, shard {shard}, {len(rows)} symbols",
+            "# columns: " + "\t".join(cols),
+            f"# one symbol:  grep -P '^{example}\\t' catalog/symbols/*.tsv",
+            f"# its callers: grep -P '^{example}\\t' catalog/edges/*.tsv",
+            f"# by name:     grep -P '#{name}\\t' catalog/symbols/*.tsv | sort -t$'\\t' -k5 -nr | head",
+        ]
+        out = sym_dir / f"{_shard_file(shard)}.tsv"
+        out.write_text("\n".join(head + ["\t".join(r[2]) for r in rows]) + "\n", encoding="utf-8")
+        written.append(out)
+    for shard, edge_set in sorted(edges_by_shard.items()):
+        edges = sorted(edge_set)
+        head = [
+            f"# wikify edge list: {at}, shard {shard}, {len(edges)} caller edges",
+            "# columns: callee\tcaller   (one edge per line; grep the callee column for who calls it,"
+            " the caller column for what it calls)",
+        ]
+        out = edge_dir / f"{_shard_file(shard)}.tsv"
+        out.write_text("\n".join(head + [f"{a}\t{b}" for a, b in edges]) + "\n", encoding="utf-8")
+        written.append(out)
+    return set(docs), written
+
+
+def render_map(
+    graph: SymbolGraph,
+    wiki_slug_dir: str | Path,
+    source_base: str | None = None,
+    pages: bool = False,
+    slug: str = "",
+    ref: str = "",
+    purposes: dict[str, str] | None = None,
+) -> str:
+    """The module map, ``catalog/index.md``: every module with its symbol count, its top
+    entry points by rank, and the concept pages that cite into it, grouped by top-level
+    directory. Deterministic; ``purposes`` (module -> one line) is an optional synthesized
+    layer merged in when present. ``pages=True`` links each module to its catalog page."""
+    wiki_slug_dir = Path(wiki_slug_dir)
+    docs = documentable_symbols(graph)
+    covered = covered_monikers(graph, wiki_slug_dir)
+    modules = by_module(docs)
+    purposes = purposes or {}
+    by_top: dict[str, list[str]] = defaultdict(list)
+    for mp in modules:
+        by_top[_shard_of(mp)].append(mp)
+    lines: list[str] = []
+    a = lines.append
+    a("---")
+    a(f"title: 'Module map: {slug or 'repo'}'")
+    a("type: catalog-map")
+    a("provenance: extracted")
+    a("---")
+    a(f"# Module map: {slug or 'repo'}" + (f" @ {ref[:10]}" if ref else ""))
+    a("")
+    a(f"{len(modules)} modules, {len(docs)} documentable symbols. One row per module: entry "
+      "points are the symbols with the most callers; *cited by* lists the concept pages that "
+      "cite into the module. Look up any symbol by anchor in `symbols/*.tsv` "
+      "(`grep -P '^<path>#<Name>\\t' catalog/symbols/*.tsv`); callers are in `edges/*.tsv`.")
+    a("")
+    for top in sorted(by_top):
+        a(f"## `{top}`")
+        a("")
+        a("| Module | Symbols | Entry points | Cited by |")
+        a("|---|---|---|---|")
+        for mp in sorted(by_top[top]):
+            ms = modules[mp]
+            ranked = sorted(ms, key=lambda m: (-len(graph.callers(m)), -graph.importance(m), m))
+            eps = ", ".join(f"`{graph.symbols[m].name}`" for m in ranked[:3])
+            cited = sorted({covered[m] for m in ms if m in covered})
+            cite_txt = ", ".join(f"[{c}](../concepts/{c}.md)" for c in cited)
+            if pages:
+                link = f"[`{mp}`]({catalog_rel_path(mp)})"
+            elif source_base:
+                link = f"[`{mp}`]({_src_link(source_base, mp)})"
+            else:
+                link = f"`{mp}`"
+            purpose = purposes.get(mp, "")
+            cell = f"{link} — {purpose}" if purpose else link
+            a(f"| {cell} | {len(ms)} | {eps} | {cite_txt} |")
+        a("")
+    return "\n".join(lines) + "\n"

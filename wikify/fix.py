@@ -82,7 +82,7 @@ def fix_page(
         for label, target in _LINK.findall(line):
             if not _is_symbol_link(target):
                 continue
-            moniker = _resolve_citation(page_path, target)
+            moniker = _resolve_citation(page_path, target, graph)
             # Mirror the linter's validity test EXACTLY: a citation is fine if it
             # resolves and is either in this subgraph or this page has no subgraph
             # to check against (rule 3 is skipped when subgraph is empty). Without

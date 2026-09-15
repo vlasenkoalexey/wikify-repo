@@ -50,3 +50,67 @@ def body_hash(repo_root: str | Path, sym: Symbol) -> str:
     snippet = read_snippet(repo_root, sym, max_lines=10_000)
     payload = f"{sym.signature}\n{snippet}".encode("utf-8", errors="replace")
     return hashlib.sha256(payload).hexdigest()[:16]
+
+
+_SIG_MAX_LINES = 12
+
+
+def read_signature(repo_root: str | Path, sym: Symbol) -> str:
+    """A one-line declaration read from the source at the definition line.
+
+    For languages whose indexer emits no signature (scip-clang for C++): take the definition
+    line and the lines after it up to the first ``{`` or ``;`` (or a balanced ``)`` once the
+    parameter list opened), prepend an immediately preceding ``template <...>`` line, drop
+    trailing ``{``/``;``, collapse whitespace. Bounded to ``_SIG_MAX_LINES`` lines; returns
+    '' when the file or line is missing. Deterministic, no model."""
+    if sym.def_path is None or sym.def_line is None:
+        return ""
+    lines = _read_lines(Path(repo_root), sym.def_path)
+    if lines is None or sym.def_line >= len(lines):
+        return ""
+    start = sym.def_line
+    if sym.suffix == "Term":                        # a field / enumerator / constant: its own line
+        text = lines[start].split("//", 1)[0].strip()
+        return " ".join(text.rstrip(",;{").split())
+    if start > 0 and lines[start - 1].strip().startswith("template"):
+        start -= 1
+    out: list[str] = []
+    depth = 0
+    opened = False
+    done = False
+    for ln in lines[start:start + _SIG_MAX_LINES]:
+        text = ln.split("//", 1)[0].rstrip()
+        for ch in text:
+            if ch == "(":
+                depth += 1
+                opened = True
+            elif ch == ")":
+                depth -= 1
+            elif ch in "{;" and depth <= 0:
+                text = text[:text.index(ch)]
+                done = True
+                break
+        out.append(text.strip())
+        if done or (opened and depth <= 0 and text.rstrip().endswith(")")):
+            break
+    sig = " ".join(x for x in out if x)
+    sig = " ".join(sig.split())
+    return sig.replace("( ", "(").replace(" )", ")").replace(" ,", ",").strip()
+
+
+def fill_signatures(graph, repo_root: str | Path, suffixes: tuple[str, ...] = (".h", ".hpp", ".hh", ".cc", ".cpp", ".cxx", ".c", ".cu")) -> int:
+    """Set ``sig_from_source`` on every symbol that has no indexer signature and is defined in
+    a file with one of ``suffixes``. Returns the number filled. Never touches ``signature``."""
+    n = 0
+    for sym in graph.symbols.values():
+        if sym.signature or sym.sig_from_source or not sym.def_path:
+            continue
+        if sym.suffix not in ("Type", "Method", "Term"):    # namespaces, macros: no row
+            continue
+        if not sym.def_path.endswith(suffixes):
+            continue
+        sig = read_signature(repo_root, sym)
+        if sig:
+            sym.sig_from_source = sig
+            n += 1
+    return n

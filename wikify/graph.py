@@ -27,12 +27,21 @@ class Symbol:
     enclosing: tuple[int, int, int, int] | None = None  # def's enclosing range
     signature: str = ""
     documentation: str = ""
+    # A signature read from the source text when the indexer emitted none (scip-clang emits no
+    # signature for C++). Display-only: ``body_hash`` keys on ``signature``, so filling this
+    # field never invalidates recorded state. Set by ``source.fill_signatures``.
+    sig_from_source: str = ""
     relationships: list[tuple[str, str]] = field(default_factory=list)
     # ^ (target_moniker, rel_kind) for is_implementation / is_type_definition
 
     @property
     def is_callable(self) -> bool:
         return self.kind in _CALLABLE_KINDS or self.suffix == "Method"
+
+    @property
+    def display_signature(self) -> str:
+        """The indexer's signature, else the one read from source (C++)."""
+        return self.signature or self.sig_from_source
 
     @property
     def docstring(self) -> str:

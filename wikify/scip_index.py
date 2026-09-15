@@ -212,11 +212,15 @@ def _repair_doc_path(doc, project_dir: Path, base: str) -> None:
     authoritative module path encoded in a symbol's moniker (``\`a.b.c\`/X#`` →
     ``a/b/c.py``). Without this, an unrepaired ``../fx/node.py`` becomes a second,
     broken-keyed copy of ``torch/fx/node.py`` and pollutes discovery."""
-    if (project_dir / doc.relative_path).exists() and not doc.relative_path.startswith(".."):
+    # An empty path (a file-level ``--target-only`` shard emits its own file as "") or a
+    # directory is not a repaired document: ``project_dir / ""`` exists, so the old test
+    # returned early and the module's symbols were filed under module "".
+    if (doc.relative_path and (project_dir / doc.relative_path).is_file()
+            and not doc.relative_path.startswith("..")):
         return
-    if base not in ("", "."):
+    if base not in ("", ".") and doc.relative_path:
         cand = os.path.normpath(os.path.join(base, doc.relative_path))
-        if (project_dir / cand).exists():
+        if (project_dir / cand).is_file():
             doc.relative_path = cand
             return
     moniker_path = _path_from_moniker(doc, project_dir)
@@ -432,7 +436,12 @@ def _span_size(span: Range) -> tuple[int, int]:
 
 
 def _signature(si) -> str:
-    """Best-effort signature: first fenced code block in the documentation."""
+    """Best-effort signature: a fenced code block in the documentation.
+
+    scip-python emits one block per ``@overload`` plus one for the implementation; the
+    first block is an overload whose types are one case of many (``fn: None = None``), so
+    prefer the first block that is NOT an overload, and fall back to the first block."""
+    blocks: list[str] = []
     for doc in si.documentation:
         if "```" in doc:
             inside = doc.split("```", 2)
@@ -440,27 +449,54 @@ def _signature(si) -> str:
                 body = inside[1]
                 if "\n" in body:
                     body = body.split("\n", 1)[1]
-                return body.strip()
-    return ""
+                blocks.append(body.strip())
+    for b in blocks:
+        if not any(ln.strip().startswith("@overload") for ln in b.splitlines()):
+            return b
+    return blocks[0] if blocks else ""
 
 
 # --------------------------------------------------------------------------- #
 # Graph construction
 # --------------------------------------------------------------------------- #
-def build_graph(*indexes) -> SymbolGraph:
+def build_graph(*indexes, only_paths: set[str] | None = None,
+                repair_root: str | Path | None = None) -> SymbolGraph:
     """Build one SymbolGraph from one OR MORE SCIP indexes.
+
+    ``only_paths`` (repo-relative) restricts the graph to those documents: pass the set of
+    git-tracked files so untracked junk on a working copy (``.ipynb_checkpoints/``, scratch
+    files) never becomes a catalogued module. ``repair_root`` (the repo directory) repairs
+    documents whose ``relative_path`` is empty or not a file — a file-level shard's own
+    document, in indexes built before the merge-time fix — from their monikers.
 
     Multiple indexes (e.g. a scip-python index + a scip-clang index for a mixed
     Python/C++ repo) are **unioned** into a single graph — SCIP's stable monikers
     keep symbols distinct across languages, and the two-pass node/occurrence build
     is per-document, so it works uniformly regardless of source language."""
     g = SymbolGraph()
+    if repair_root is not None:
+        root = Path(repair_root)
+        for index in indexes:
+            for doc in index.documents:
+                if not doc.relative_path or not (root / doc.relative_path).is_file():
+                    fixed = _path_from_moniker(doc, root)
+                    if fixed is not None:
+                        doc.relative_path = fixed
+    if only_paths is not None:
+        for index in indexes:
+            kept = [d for d in index.documents if d.relative_path in only_paths]
+            if len(kept) != len(index.documents):
+                del index.documents[:]
+                index.documents.extend(kept)
 
     # 1) Nodes: every global SymbolInformation across all documents of all indexes.
     for index in indexes:
         for doc in index.documents:
             for si in doc.symbols:
-                if si.symbol.startswith("local ") or si.symbol in g.symbols:
+                if si.symbol.startswith("local "):
+                    continue
+                if si.symbol in g.symbols:
+                    _merge_symbol_info(g.symbols[si.symbol], si)
                     continue
                 ps = parse_symbol(si.symbol)
                 if not ps.descriptors:
@@ -512,7 +548,56 @@ def build_graph(*indexes) -> SymbolGraph:
     # 3) Devirtualization (CHA): add base→override / class→subclass edges from
     # SCIP is_implementation relationships, so traversal crosses dynamic dispatch.
     devirtualize(g)
+    _drop_inherited_member_docs(g)
     return g
+
+
+_INHERITED_DOC_MIN = 3
+
+
+def _drop_inherited_member_docs(g: SymbolGraph) -> int:
+    """scip-clang attaches the one comment before an enum's first enumerator (``// go/keep-sorted
+    start``) to every undocumented enumerator. When ``_INHERITED_DOC_MIN`` or more members of
+    one type carry the identical non-empty documentation, it is inherited noise, not authored
+    intent: clear it. Members with their own distinct comment keep it. Returns the count."""
+    from collections import defaultdict
+    groups: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
+    for sym in g.symbols.values():
+        if sym.suffix != "Term" or not sym.documentation:
+            continue
+        ps = parse_symbol(sym.moniker)
+        owner = None
+        for name, suf in ps.descriptors[:-1]:
+            if suf == "Type":
+                owner = name
+        if owner is None:
+            continue
+        groups[(owner, sym.documentation)].append(sym)
+    n = 0
+    for members in groups.values():
+        if len(members) >= _INHERITED_DOC_MIN:
+            for sym in members:
+                sym.documentation = ""
+                n += 1
+    return n
+
+
+def _is_overload_block(sig: str) -> bool:
+    return any(ln.strip().startswith("@overload") for ln in sig.splitlines())
+
+
+def _merge_symbol_info(sym: Symbol, si) -> None:
+    """scip-python emits one SymbolInformation per ``def`` of an overloaded function, all
+    with the same symbol; the first is an ``@overload`` stub with no docstring. Merge the
+    later entries in: the implementation's signature replaces an overload stub's, and its
+    docstring prose is kept when the stored documentation has none."""
+    sig = _signature(si)
+    if sig and (not sym.signature or (_is_overload_block(sym.signature) and not _is_overload_block(sig))):
+        sym.signature = sig
+    if not sym.docstring:
+        extra = "\n".join(si.documentation)
+        if extra and extra not in sym.documentation:
+            sym.documentation = (sym.documentation + "\n" + extra) if sym.documentation else extra
 
 
 def _synth_symbol(moniker: str) -> Symbol | None:

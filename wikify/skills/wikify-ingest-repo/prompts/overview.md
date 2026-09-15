@@ -15,7 +15,8 @@ hand-written perf page). With no lens, keep the overview neutral.
 
 ## Method
 1. Read every page in `wiki/code/<slug>/concepts/` (their Overview + Design rationale
-   sections are the raw material — that's where each subsystem's essence lives).
+   sections are the raw material — that's where each subsystem's essence lives) and every
+   `areas/<area>.md` (the area's purpose and its small units, which have no concept page).
 2. Identify the 5–10 **main concepts** of the whole repo and how they relate.
 3. Write the page below. Link concepts to their concept pages; do not re-explain
    mechanism depth — point to the concept page for that.
@@ -54,8 +55,10 @@ If there's a single spine (e.g. config → construct → train loop → step), t
 in a few sentences linking the concepts in order.
 
 ## Map of the wiki
-A short guide: which concept to read for which question; pointer to `catalog/` for
-the exhaustive per-module index; pointer to `index.md` for the concept table.
+A short guide: which area page to start from for which part of the repo, which concept
+to read for which question; pointer to `catalog/index.md` (the module map) and the symbol
+index (`catalog/symbols/*.tsv`, grep by anchor) for "where is X / who calls X"; pointer to
+`index.md` for the concept table.
 
 ## Where to go for a given task
 Agents arrive with a job, not a question. A table of 5–8 rows, each a **verb-shaped

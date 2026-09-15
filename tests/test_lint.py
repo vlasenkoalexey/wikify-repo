@@ -57,18 +57,38 @@ def test_clean_page_passes(tmp_path):
     assert lint.lint_page(page, _graph(), subgraph={MONIKER}) == []
 
 
-def test_rule1_anchor_not_in_catalog(tmp_path):
-    _write_catalog(tmp_path, {"bar": OTHER})  # 'foo' anchor missing
-    page = _page(tmp_path, CLEAN)
+def test_rule1_anchor_not_in_index(tmp_path):
+    """Resolution is through the graph's symbol index: an anchor naming no symbol in the
+    module is dead, whatever a catalog page on disk says (there need not be one)."""
+    page = _page(tmp_path, CLEAN.replace("#foo", "#ghost"))
+    errors = lint.lint_page(page, _graph(), subgraph={MONIKER})
+    assert any(e.rule == 1 and "ghost" in e.message for e in errors)
+
+
+def test_rule1_wrong_module_path_is_dead(tmp_path):
+    """The module comes from the link path: a real symbol cited under another module's
+    catalog path does not resolve."""
+    page = _page(tmp_path, CLEAN.replace("../catalog/demo.md#foo", "../catalog/other.md#foo"))
     errors = lint.lint_page(page, _graph(), subgraph={MONIKER})
     assert any(e.rule == 1 for e in errors)
 
 
-def test_rule1_resolves_to_unknown_moniker(tmp_path):
-    _write_catalog(tmp_path, {"foo": "scip-python python demo 0.0.0 `demo`/ghost()."})
+def test_citations_resolve_without_any_catalog_page(tmp_path):
+    """Catalog tier ``index``: no ``catalog/*.md`` exists; lint still resolves."""
     page = _page(tmp_path, CLEAN)
-    errors = lint.lint_page(page, _graph(), subgraph={MONIKER})
-    assert any(e.rule == 1 for e in errors)
+    assert not (tmp_path / "catalog").exists()
+    assert lint.lint_page(page, _graph(), subgraph={MONIKER}) == []
+    assert lint.page_citations(page, _graph()) == {MONIKER}
+
+
+def test_link_title_is_tolerated_and_stripped(tmp_path):
+    """A citation may carry the source location as its link title (packets add it);
+    it is display metadata and never part of the anchor."""
+    titled = CLEAN.replace("(../catalog/demo.md#foo)", '(../catalog/demo.md#foo "demo.py:L2")')
+    page = _page(tmp_path, titled)
+    assert lint.lint_page(page, _graph(), subgraph={MONIKER}) == []
+    assert lint.page_citations(page, _graph()) == {MONIKER}
+    assert lint.strip_title('../catalog/demo.md#foo "demo.py:L2"') == "../catalog/demo.md#foo"
 
 
 def test_rule2_uncited_mechanism_item(tmp_path):
@@ -91,7 +111,7 @@ def test_rule3_out_of_subgraph(tmp_path):
     assert any(e.rule == 3 for e in errors)
 
 
-def test_page_citations_resolves_via_catalog(tmp_path):
+def test_page_citations_falls_back_to_catalog_front_matter_without_graph(tmp_path):
     _write_catalog(tmp_path, {"foo": MONIKER})
     page = _page(tmp_path, CLEAN)
     assert lint.page_citations(page) == {MONIKER}

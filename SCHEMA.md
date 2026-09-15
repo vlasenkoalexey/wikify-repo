@@ -18,9 +18,9 @@ If anything here conflicts with the docs, the docs win. If the docs are silent o
 ambiguous, ask — do not guess and invent.
 
 ## Non-negotiable invariants
-1. **Markdown is the only shipped product.** No SQLite / JSONL / graph DB in
-   output. SCIP indexes and build artifacts live in gitignored `.cache/`, never
-   in `raw/` (raw = immutable inputs only).
+1. **Plain text is the only shipped product: markdown pages plus the TSV symbol index.**
+   No SQLite / JSONL / graph DB in output. SCIP indexes and build artifacts live in
+   gitignored `.cache/`, never in `raw/` (raw = immutable inputs only).
 2. **The Python/LLM split is hard.** Deterministic stages (SCIP parse, diff,
    dispatch, lint, dependency-links, **coverage/catalogs**) are pure Python — zero
    model calls. Only concern *synthesis* and concept-link *judgment* are LLM,
@@ -59,13 +59,15 @@ ambiguous, ask — do not guess and invent.
    in — never a citation-per-clause trace. A per-repo **overview page**
    (`.agents/skills/wikify-ingest-repo/prompts/overview.md`) is synthesized last: main concepts + core
    system diagrams + a map of the wiki.
-7. **Symbols live in their module catalog, not in per-symbol stubs.** A citation
-   is a catalog anchor `../catalog/<module>.md#<QualifiedName>`; the catalog's
-   frontmatter `symbols:` map (anchor→moniker) is the linter's resolution table.
-   There is no `wiki/<slug>/symbols/` directory — it was folded into `catalog/`
-   (one home per symbol, source-tree organized). `coverage.catalog_ref` /
-   `qualified_name` are the single source of the anchor format, shared by the
-   packet (what to cite) and the catalog (what resolves).
+7. **Symbols live in the symbol index, not in per-symbol stubs.** A citation is a
+   catalog anchor `../catalog/<module>.md#<QualifiedName>` (optionally titled with the
+   source location); the linter resolves it through the graph (`coverage.symbol_index`:
+   module from the link path + qualified name), the same table the shipped
+   `catalog/symbols/*.tsv` rows are keyed by. Per-module `catalog/<module>.md` pages are a
+   rendering (`catalog: anchors | full`), never the resolution table; their front-matter
+   map is only a fallback for callers with no graph. `coverage.catalog_ref` /
+   `qualified_name` / `index_anchor` are the single source of the anchor format, shared by
+   the packet (what to cite), the linter (what resolves) and the index (what ships).
 
 ## Why coverage is a set-difference (read before touching ingestion)
 The first torchtitan ingest covered the 3 hand-authored Trainer concerns and
@@ -126,17 +128,8 @@ keep its focused pytest green — it now runs offline against a checked-in
 `.scip` fixture, plus CI (`.github/workflows/tests.yml`). New mechanisms each
 ship with a pinning test (`uv run pytest`, 132 tests).
 
-**Pending design change (2026-09-15): `docs/catalog-index.md`.** The module catalog becomes
-a shipped symbol index (`catalog/symbols/*.tsv`, `catalog/edges/*.tsv`, a map page); per-module
-pages become an opt-in rendering; lint resolves through the graph. When it lands, invariant 1
-reads "plain text (markdown pages plus TSV index files) is the only shipped product" and
-invariant 7 keeps the anchor grammar but drops page front matter as the resolution table.
-Until then the invariants above stand as written. Rationale in one line: 149 query sessions
-with zero catalog opens when source was on disk, and a 240-session test with no difference
-between full and collapsed pages when source is present.
-
-**Pending design change (2026-09-15): `docs/prose-budget.md`.** The agenda cap of 24 is
-replaced by a per-unit rule (a deep page for units with at least 5 modules or 20 external
-referrers; floor 8; `agenda_max` an opt-in ceiling) and a second prose tier, `areas/<area>.md`,
-one per top-level area, holding the small units as sections. `prepare` prints the bill next to
-the agenda. Reproduces torch_tpu's 27 pages; gives PyTorch's shards 124 instead of 24.
+**Realized in 0.3.0 (2026-09-15):** `docs/catalog-index.md` (the catalog as a symbol index;
+`catalog:` tiers; lint through the graph; C++ signatures from source; tracked files only) and
+`docs/prose-budget.md` (a per-unit deep-page rule with floor and ceiling; `areas/<area>.md`
+pages; the bill printed with the agenda). Invariants 1 and 7 above are the amended text.
+See `implementation.md` §10.18 and §10.19.

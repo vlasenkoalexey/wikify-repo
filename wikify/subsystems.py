@@ -18,7 +18,12 @@ page at all. This module derives **subsystems** instead:
 3. **Entry points** are the inside symbols ranked by distinct external callers (the
    API surface the rest of the repo enters through); **hubs** are the inside symbols
    by importance. Seeds are entry points first, then hubs, capped.
-4. Rank by ``fanin_external * 2 + internal_edges`` and cap the agenda.
+4. Rank by ``fanin_external * 2 + internal_edges``. Then the **prose budget**
+   (``prose-budget.md``): a unit gets a deep mechanism page when it has at least
+   ``DEEP_MIN_MODULES`` modules or at least ``DEEP_MIN_FANIN`` outside referrers; every
+   other unit is a section of its top-level **area page**. A floor keeps the top
+   ``DEEP_FLOOR`` units deep on tiny repos; ``agenda_max`` is an opt-in ceiling. The
+   agenda render prints the bill so trimming is a priced decision.
 
 Pure Python, deterministic, no model. Synthesis (LLM) still writes one page per
 packet; the packet is built around the subsystem's seeds by ``packet.gather_subgraph``
@@ -47,9 +52,20 @@ PLANNER_EXCLUDES = DEFAULT_EXCLUDES + ("_test.", "_tests.", "conftest.py")
 DEFAULT_MAX_MODULES = 20      # split a directory whose subtree holds more modules than this
 DEFAULT_MIN_MODULES = 2       # a child smaller than this folds into its parent's group
 DEFAULT_MIN_SYMBOLS = 8       # drop subsystems with fewer documentable symbols (keep >= 1)
-DEFAULT_MAX_SUBSYSTEMS = 24   # agenda cap (parity with discover.discover_concepts max_deep)
+DEFAULT_MAX_SUBSYSTEMS = 24   # legacy cap (``agenda: modules`` parity); an opt-in ceiling here
 DEFAULT_SEEDS = 8             # seeds per subsystem handed to packet.gather_subgraph
 FLAT_SPLIT_MIN_MODULES = 3    # a reference community must span this many modules to be a unit
+
+# Prose budget (prose-budget.md): the per-unit deep-page rule, its floor, and the rate the
+# bill is printed at (measured on the torch_tpu clean ingest, 2026-09-05).
+DEEP_MIN_MODULES = 5          # a quarter of the split bucket: enough files to hold a mechanism
+DEEP_MIN_FANIN = 20           # distinct outside referrers: an API surface the repo enters through
+DEEP_FLOOR = 8                # tiny repos still get their top units as deep pages
+DEEP_PAGE_MINUTES = 2.5       # agent time per deep page, synthesis + verification share
+DEEP_PAGE_TOKENS = 55_000     # output tokens per deep page
+AREA_PAGE_FRACTION = 0.2      # an area page costs about a fifth of a deep page
+TIER_DEEP = "deep"
+TIER_AREA = "area"
 
 
 @dataclass
@@ -67,6 +83,9 @@ class Subsystem:
     entry_points: list[str] = field(default_factory=list) # monikers, most external callers first
     hubs: list[str] = field(default_factory=list)         # monikers, by importance
     seeds: list[str] = field(default_factory=list)        # entry points then hubs, capped
+    tier: str = TIER_DEEP                                 # "deep" (own page) | "area" (section)
+    reason: str = ""                                      # the clause that decided the tier
+    area: str = ""                                        # top-level area prefix ("" = root)
 
     @property
     def symbol_count(self) -> int:
@@ -256,17 +275,107 @@ def _modules(graph: SymbolGraph, excludes: tuple[str, ...]) -> dict[str, list[st
     return mods
 
 
+def _area_of(prefix: str, umbrella: str) -> str:
+    """The top-level area a unit belongs to: the first path component under the umbrella
+    (a community unit ``dir::stem`` belongs to ``dir``'s area). The umbrella's own direct
+    group is the root area (``umbrella`` itself)."""
+    d = prefix.split("::", 1)[0]
+    if umbrella and (d == umbrella or d.startswith(umbrella + "/")):
+        rel = d[len(umbrella):].strip("/")
+    else:
+        rel = d
+    first = rel.split("/", 1)[0] if rel else ""
+    if not first:
+        return umbrella
+    return f"{umbrella}/{first}" if umbrella else first
+
+
+def area_slug(area: str, umbrella: str) -> str:
+    """File stem of an area page: the area's path under the umbrella, ``root`` for the
+    umbrella itself."""
+    rel = area[len(umbrella):].strip("/") if umbrella and area.startswith(umbrella) else area
+    parts = [p.strip("_").replace(".", "-").lower() for p in rel.split("/") if p]
+    return "-".join(p for p in parts if p) or "root"
+
+
+def assign_tiers(
+    subs: list[Subsystem],
+    deep_min_modules: int = DEEP_MIN_MODULES,
+    deep_min_fanin: int = DEEP_MIN_FANIN,
+    floor: int = DEEP_FLOOR,
+    ceiling: int | None = None,
+) -> list[Subsystem]:
+    """The prose-budget rule, in place. ``subs`` must be ranked (best first).
+
+    deep  = at least ``deep_min_modules`` modules OR at least ``deep_min_fanin`` outside
+            referrers; else area. Fewer than ``floor`` deep → the top-ranked area units are
+            promoted (reason ``floor``). ``ceiling`` (``agenda_max``) demotes deep units past
+            it in rank order (reason ``ceiling``). Every unit keeps its ``reason``."""
+    for s in subs:
+        if len(s.modules) >= deep_min_modules:
+            s.tier, s.reason = TIER_DEEP, f"modules>={deep_min_modules}"
+        elif s.fanin_external >= deep_min_fanin:
+            s.tier, s.reason = TIER_DEEP, f"fanin>={deep_min_fanin}"
+        else:
+            s.tier, s.reason = TIER_AREA, "small unit"
+    n_deep = sum(1 for s in subs if s.tier == TIER_DEEP)
+    if n_deep < floor:
+        for s in subs:
+            if n_deep >= floor:
+                break
+            if s.tier == TIER_AREA:
+                s.tier, s.reason = TIER_DEEP, "floor"
+                n_deep += 1
+    if ceiling is not None:
+        seen = 0
+        for s in subs:
+            if s.tier != TIER_DEEP:
+                continue
+            seen += 1
+            if seen > ceiling:
+                s.tier, s.reason = TIER_AREA, "ceiling"
+    return subs
+
+
+def deep_units(subs: list[Subsystem]) -> list[Subsystem]:
+    return [s for s in subs if s.tier == TIER_DEEP]
+
+
+def areas_of(subs: list[Subsystem]) -> dict[str, list[Subsystem]]:
+    """Units grouped by area prefix, each group in rank order."""
+    out: dict[str, list[Subsystem]] = defaultdict(list)
+    for s in subs:
+        out[s.area].append(s)
+    return dict(out)
+
+
+def estimate_bill(subs: list[Subsystem]) -> tuple[int, int, float, int]:
+    """(deep pages, area pages, agent minutes, output tokens) at the measured rate."""
+    n_deep = len(deep_units(subs))
+    n_area = len(areas_of(subs)) if subs else 0
+    units = n_deep + n_area * AREA_PAGE_FRACTION
+    return n_deep, n_area, units * DEEP_PAGE_MINUTES, int(units * DEEP_PAGE_TOKENS)
+
+
 def discover_subsystems(
     graph: SymbolGraph,
     max_modules: int = DEFAULT_MAX_MODULES,
     min_modules: int = DEFAULT_MIN_MODULES,
     min_symbols: int = DEFAULT_MIN_SYMBOLS,
-    max_subsystems: int = DEFAULT_MAX_SUBSYSTEMS,
+    max_subsystems: int | None = None,
     seeds_per: int = DEFAULT_SEEDS,
     excludes: tuple[str, ...] = PLANNER_EXCLUDES,
     exclude_globs: list[str] | None = None,
+    deep_min_modules: int = DEEP_MIN_MODULES,
+    deep_min_fanin: int = DEEP_MIN_FANIN,
+    floor: int = DEEP_FLOOR,
 ) -> list[Subsystem]:
-    """Plan the agenda: directory-shaped subsystems, ranked, seeded. Deterministic."""
+    """Plan the agenda: directory-shaped subsystems, ranked, seeded, tiered. Deterministic.
+
+    Returns EVERY unit (ranked best first) with ``tier`` set by ``assign_tiers``:
+    ``deep`` units get their own mechanism page, ``area`` units become sections of their
+    area page. ``max_subsystems`` is the opt-in ceiling on deep pages (config
+    ``agenda_max``), never a truncation of the list."""
     mods = _modules(graph, excludes)
     if not mods:
         return []
@@ -294,8 +403,9 @@ def discover_subsystems(
             n += 1
         s.slug = slug
         seen.add(slug)
+        s.area = _area_of(s.prefix, umbrella)
         out.append(s)
-    return out[:max_subsystems]
+    return assign_tiers(out, deep_min_modules, deep_min_fanin, floor, max_subsystems)
 
 
 def subsystem_for_prefix(
@@ -313,7 +423,7 @@ def subsystem_for_prefix(
     if prefix == ".":          # "." names the repo root, like ""
         prefix = ""
     if "::" in prefix:         # a community unit (``dir::stem``): re-derive the split
-        for s in discover_subsystems(graph, max_subsystems=10**6, min_symbols=1, excludes=excludes,
+        for s in discover_subsystems(graph, min_symbols=1, excludes=excludes,
                                      seeds_per=seeds_per):
             if s.prefix == prefix:
                 if slug:
@@ -355,23 +465,38 @@ def render_agenda(subs: list[Subsystem], graph: SymbolGraph, slug: str = "") -> 
     a(f"# Proposed agenda: {slug or 'repo'} (subsystem planner)")
     a("")
     n_mod = sum(len(s.modules) for s in subs)
+    n_deep, n_area, minutes, tokens = estimate_bill(subs)
     a(f"{len(subs)} subsystem(s) over {n_mod} library module(s), ranked by external fan-in "
-      f"and internal interactions. One mechanism page per row. Curate in `config/<slug>.md`: "
-      f"drop with `agenda_exclude:` globs; add or rename with "
+      f"and internal interactions. Tier `deep` = its own mechanism page; `area` = a section of "
+      f"its area page (`areas/<area>.md`). Curate in `config/<slug>.md`: "
+      f"drop with `agenda_exclude:` globs; cap deep pages with `agenda_max`; move the "
+      f"thresholds with `agenda_deep_modules` / `agenda_deep_fanin`; add or rename with "
       f"`- **<slug>** — seeds: (subsystem: <prefix>)`.")
     a("")
-    a("| # | slug | subsystem | modules | symbols | ext fan-in | internal | entry points |")
-    a("|---|---|---|---|---|---|---|---|")
+    a(f"**Bill** at the measured rate ({DEEP_PAGE_MINUTES:g} min and {DEEP_PAGE_TOKENS // 1000}k output "
+      f"tokens per deep page; an area page a fifth of that): **{n_deep} deep page(s) + {n_area} area "
+      f"page(s) = about {minutes / 60:.1f} h of agent time and {tokens / 1e6:.1f}M output tokens** for a "
+      f"clean ingest; an incremental run rebuilds only pages whose cited symbols changed.")
+    a("")
+    a("| # | slug | subsystem | modules | symbols | ext fan-in | internal | entry points | tier | why |")
+    a("|---|---|---|---|---|---|---|---|---|---|")
     for i, s in enumerate(subs, 1):
         eps = ", ".join(f"`{n}`" for n in _names(graph, s.entry_points, 4)) or "(none)"
         a(f"| {i} | {s.slug} | `{s.title}` | {len(s.modules)} | {s.symbol_count} | "
-          f"{s.fanin_external} | {s.internal_edges} | {eps} |")
+          f"{s.fanin_external} | {s.internal_edges} | {eps} | {s.tier} | {s.reason} |")
     a("")
     for s in subs:
         shown = ", ".join(f"`{m}`" for m in s.modules[:12])
         more = f" (+{len(s.modules) - 12} more)" if len(s.modules) > 12 else ""
-        a(f"- **{s.slug}** — `{s.title}`: {shown}{more}")
+        a(f"- **{s.slug}** — `{s.title}` ({s.tier}): {shown}{more}")
     a("")
+    areas = areas_of(subs)
+    if areas:
+        a("## Areas (one page each, `areas/<area>.md`)")
+        for area, units in sorted(areas.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            nd = sum(1 for u in units if u.tier == TIER_DEEP)
+            a(f"- `{area or '(root)'}`: {len(units)} unit(s), {nd} deep, {len(units) - nd} as sections")
+        a("")
     # Topic titles are decided at confirmation time (openwiki plans titles first): a
     # paste-ready block whose only job is renaming the bold slug. A config subsystem
     # entry REPLACES the planned unit(s) under its prefix, so renaming never duplicates.
@@ -381,7 +506,7 @@ def render_agenda(subs: list[Subsystem], graph: SymbolGraph, slug: str = "") -> 
       "Delete lines you do not want. An entry replaces the planned unit(s) under its prefix.")
     a("")
     a("## Concepts")
-    for s in subs:
+    for s in deep_units(subs):
         a(f"- **{s.slug}** — seeds: (subsystem: {s.prefix or '.'})")
     a("")
     return "\n".join(lines)
@@ -401,3 +526,121 @@ def render_scope(sub: Subsystem, graph: SymbolGraph) -> str:
         "mechanism that ties its modules together, and how the rest of the repo enters it — not "
         "about a single file. Hub utilities inside it are sections, not the subject.",
     ])
+
+
+# --------------------------------------------------------------------------- #
+# Area pages (prose-budget.md): the middle prose tier, one page per top-level area
+# --------------------------------------------------------------------------- #
+AREA_AUTO_BEGIN = "<!-- area:auto:begin -->"
+AREA_AUTO_END = "<!-- area:auto:end -->"
+AREA_PROSE_PLACEHOLDER = "_(not yet synthesized — prompts/area.md writes this section)_"
+
+
+def _cite(graph: SymbolGraph, m: str, depth: int = 1) -> str:
+    """A catalog citation for a symbol from an area page (``areas/`` is one level down),
+    carrying the source location as the link title."""
+    s = graph.symbols[m]
+    ref = coverage.catalog_ref(s.def_path, m)
+    loc = f"{s.def_path}:L{(s.def_line or 0) + 1}"
+    return f"[`{s.name}`]({ref} \"{loc}\")"
+
+
+def render_area_block(area: str, units: list[Subsystem], graph: SymbolGraph) -> str:
+    """The regenerable part of an area page: the units table and the small units'
+    facts (modules, entry points as citations). Deterministic, no model."""
+    lines: list[str] = []
+    a = lines.append
+    a(AREA_AUTO_BEGIN)
+    a("## Units")
+    a(f"{len(units)} planned unit(s) in `{area or '(root)'}`; deep units have their own mechanism "
+      "page, the rest are sections below.")
+    a("")
+    a("| Unit | Modules | Symbols | Callers outside | Entry points | Page |")
+    a("|---|---|---|---|---|---|")
+    for u in units:
+        eps = ", ".join(_cite(graph, m) for m in u.entry_points[:3]) or "(internal)"
+        page = f"[{u.slug}](../concepts/{u.slug}.md)" if u.tier == TIER_DEEP else "section below"
+        a(f"| `{u.title}` | {len(u.modules)} | {u.symbol_count} | {u.fanin_external} | {eps} | {page} |")
+    a("")
+    small = [u for u in units if u.tier != TIER_DEEP]
+    if small:
+        a("## Small units")
+        for u in small:
+            shown = ", ".join(f"`{m}`" for m in u.modules[:8])
+            more = f" (+{len(u.modules) - 8} more)" if len(u.modules) > 8 else ""
+            a(f"### `{u.title}`")
+            a(f"- modules: {shown}{more}")
+            eps = ", ".join(_cite(graph, m) for m in u.entry_points[:5])
+            a(f"- entry points: {eps or '(none — internal unit)'}")
+            hubs = ", ".join(_cite(graph, m) for m in u.hubs[:3] if m not in u.entry_points[:5])
+            if hubs:
+                a(f"- hubs: {hubs}")
+            a("")
+    a(AREA_AUTO_END)
+    return "\n".join(lines)
+
+
+def render_area_page(area: str, units: list[Subsystem], graph: SymbolGraph, slug: str,
+                     date: str) -> str:
+    """A fresh area page: front matter + prose placeholders + the auto block."""
+    n_deep = sum(1 for u in units if u.tier == TIER_DEEP)
+    n_mod = sum(len(u.modules) for u in units)
+    desc = (f"Area {area or '(root)'} of {slug}: {len(units)} units over {n_mod} modules, "
+            f"{n_deep} with their own mechanism page.")
+    return "\n".join([
+        "---",
+        f"title: 'Area: {area or '(root)'}'",
+        "type: area",
+        f"area: '{area}'",
+        f"description: '{desc}'",
+        f"updated: {date}",
+        "---",
+        f"# Area: `{area or '(root)'}`",
+        "",
+        "## Purpose",
+        AREA_PROSE_PLACEHOLDER,
+        "",
+        "## How the units connect",
+        AREA_PROSE_PLACEHOLDER,
+        "",
+        render_area_block(area, units, graph),
+        "",
+    ])
+
+
+def _replace_block(text: str, block: str) -> str:
+    if AREA_AUTO_BEGIN in text and AREA_AUTO_END in text:
+        head, rest = text.split(AREA_AUTO_BEGIN, 1)
+        _old, tail = rest.split(AREA_AUTO_END, 1)
+        return head + block + tail
+    return text.rstrip("\n") + "\n\n" + block + "\n"
+
+
+def write_area_pages(
+    wiki_slug_dir, subs: list[Subsystem], graph: SymbolGraph, slug: str, date: str, umbrella: str,
+) -> tuple[list, int]:
+    """Write ``areas/<area>.md`` for every area (created with placeholders when absent; the
+    auto block regenerated in place otherwise, prose outside it untouched). Returns
+    (paths, created count). Idempotent."""
+    from pathlib import Path
+    adir = Path(wiki_slug_dir) / "areas"
+    paths: list = []
+    created = 0
+    for area, units in sorted(areas_of(subs).items()):
+        out = adir / f"{area_slug(area, umbrella)}.md"
+        block = render_area_block(area, units, graph)
+        if out.exists():
+            text = out.read_text(encoding="utf-8")
+            new = _replace_block(text, block)
+            if new != text:
+                out.write_text(new, encoding="utf-8")
+        else:
+            adir.mkdir(parents=True, exist_ok=True)
+            out.write_text(render_area_page(area, units, graph, slug, date), encoding="utf-8")
+            created += 1
+        paths.append(out)
+    return paths, created
+
+
+def umbrella_of(graph: SymbolGraph, excludes: tuple[str, ...] = PLANNER_EXCLUDES) -> str:
+    return _umbrella(sorted(_modules(graph, excludes)))

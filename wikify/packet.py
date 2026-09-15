@@ -294,14 +294,17 @@ def build_packet(
         a(f"### `{sym.name}`  ({_kind(sym)}){outside}")
         a(f"- moniker: `{m}`")
         if sym.def_path and sym.suffix in coverage.DOCUMENTABLE_SUFFIXES:
-            a(f"- cite: [`{sym.name}`]({coverage.catalog_ref(sym.def_path, m)})")
+            # The link title is the source location (catalog-index.md): an agent reading
+            # the page gets path and line without a hop; lint strips it, never resolves it.
+            loc = f"{sym.def_path}:L{(sym.def_line or 0) + 1}"
+            a(f"- cite: [`{sym.name}`]({coverage.catalog_ref(sym.def_path, m)} \"{loc}\")")
         else:
             # Namespaces, macros, and other non-DOCUMENTABLE_SUFFIXES kinds never get a
             # catalog heading (coverage.documentable_symbols filters to Type/Method/Term),
             # so a citable-looking link here would always be a dead citation at finalize time.
             a("- cite: (external symbol — no catalog home; do not cite)")
-        if sym.signature:
-            a(f"- signature: `{sym.signature}`")
+        if sym.display_signature:
+            a(f"- signature: `{sym.display_signature}`")
         if sym.doc_summary:
             # Author's docstring — citable L2 evidence; prefer quoting over guessing.
             a(f"- doc (author intent, L2): {sym.doc_summary}")
@@ -367,10 +370,10 @@ def read_subgraph(cache_dir: str | Path, slug: str, concept_slug: str) -> set[st
 
 _TEMPLATE_RULES = """\
 Write ONE file: `wiki/<slug>/concepts/{concept}.md`. You do NOT create any symbol
-stubs — every symbol already has a home in its module catalog. To cite a symbol,
-copy its `cite:` link from the Subgraph above VERBATIM (it points into the
-generated catalog, e.g. `[`Sym`](../catalog/<module>.md#Sym)`). The linter
-resolves each citation against the catalog's symbol table, so the link must match.
+stubs — every symbol already has a row in the symbol index. To cite a symbol,
+copy its `cite:` link from the Subgraph above VERBATIM (an anchor of the form
+`[`Sym`](../catalog/<module>.md#Sym "path:Lnn")`; the title is the source location).
+The linter resolves each citation against the symbol index, so the link must match.
 
 HARD RULES:
 - Use ONLY symbols from the Subgraph above. Never name a symbol not listed there.

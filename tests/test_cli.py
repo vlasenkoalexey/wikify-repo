@@ -432,6 +432,8 @@ def test_prepare_relinks_moved_module_and_finalize_prunes_stale_catalog(project)
     old/mathlib.py; a stale catalog page and a page citing it exist. prepare must relink
     the citation (no rebuild), and finalize must delete the stale catalog page."""
     from wikify import state as state_mod
+    cfg = project / "config" / f"{SLUG}.md"
+    cfg.write_text(cfg.read_text().replace("agenda: modules\n", "agenda: modules\ncatalog: full\n"))
     res = _prepare(project)
     assert res.exit_code == 0, res.output
     graph = scip_index.build_graph(
@@ -466,7 +468,7 @@ def test_prepare_relinks_moved_module_and_finalize_prunes_stale_catalog(project)
 
     res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
     assert res.exit_code == 0, res.output
-    assert "removed 1 stale page(s)" in res.output and not old_cat.exists()
+    assert "removed 1 page(s) for modules that no longer exist" in res.output and not old_cat.exists()
 
 
 def test_ref_bump_records_history_and_writes_change_page(project, tmp_path):
@@ -540,3 +542,82 @@ def test_finalize_reports_diagrams(project):
     page.write_text(page.read_text().replace(f"[`compute`]({ref})\n\n## Overview", "[`compute`](../catalog/mathlib.md#nope)\n\n## Overview"))
     res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
     assert res.exit_code == 1 and "LINT FAILED" in res.output
+
+
+def test_prepare_writes_area_pages_and_finalize_gates_them(project_planned):
+    """Prose budget: prepare writes one area page per top-level area (placeholders + auto
+    block); finalize refreshes the block, lints area citations on rule 1, and lists areas."""
+    res = _prepare(project_planned)
+    assert res.exit_code == 0, res.output
+    assert "| tier | why |" in res.output and "**Bill**" in res.output
+    silo = project_planned / "wiki" / "code" / SLUG
+    areas = sorted((silo / "areas").glob("*.md"))
+    assert areas, res.output
+    text = areas[0].read_text()
+    assert "<!-- area:auto:begin -->" in text and "_(not yet synthesized" in text
+    assert "wiki/code/mathlib/areas/" in res.output
+    # a hand-written dead citation in an area page fails finalize on rule 1
+    areas[0].write_text(text.replace("_(not yet synthesized", "See [`x`](../catalog/nowhere.md#x).\n_(", 1))
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project_planned)])
+    assert res.exit_code == 1 and "[rule 1]" in res.output and "nowhere" in res.output
+    areas[0].write_text(text)
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project_planned)])
+    assert res.exit_code == 0, res.output
+    assert "areas:" in res.output and "## Areas" in (silo / "index.md").read_text()
+
+
+def test_finalize_index_tier_writes_index_and_map_and_no_pages(project):
+    """Fresh silo → `catalog: index`: TSV shards + edges + module map, no catalog/<module>.md;
+    the coverage report still counts every symbol as represented."""
+    res = _prepare(project)
+    assert res.exit_code == 0, res.output
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    silo = project / "wiki" / "code" / SLUG
+    assert "catalog: symbol index" in res.output and "tier `index`" in res.output
+    assert (silo / "catalog" / "symbols" / "root.tsv").exists()
+    assert (silo / "catalog" / "edges" / "root.tsv").exists()
+    assert (silo / "catalog" / "index.md").exists()
+    assert not (silo / "catalog" / "mathlib.md").exists()
+    assert "represented total    : 6  (100.0%)" in res.output
+    idx = (silo / "index.md").read_text()
+    assert "symbol index" in idx and "catalog/symbols/*.tsv" in idx
+    # hash column is populated from the current body hashes
+    rows = [l.split("\t") for l in (silo / "catalog" / "symbols" / "root.tsv").read_text().splitlines()
+            if not l.startswith("#")]
+    assert all(len(r[5]) == 16 for r in rows), rows
+    # an existing silo (state has pages) keeps full pages unless told otherwise
+    concepts = silo / "concepts"
+    concepts.mkdir(exist_ok=True)
+    graph = scip_index.build_graph(scip_index.parse_index(project / ".cache" / "scip" / f"{SLUG}.scip"))
+    compute = graph.find("compute")[0]
+    ref = coverage_mod.catalog_ref(graph.symbols[compute].def_path, compute)
+    (concepts / "compute-pipeline.md").write_text(
+        f"---\ntitle: t\n---\n# t\n## Mechanism (step-by-step)\n1. [`compute`]({ref} \"mathlib.py:L1\") runs.\n")
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0, res.output
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0 and "tier `full`" in res.output and "existing silo keeps pages" in res.output
+    assert (silo / "catalog" / "mathlib.md").exists()
+    cfg = project / "config" / f"{SLUG}.md"
+    cfg.write_text(cfg.read_text().replace("agenda: modules\n", "agenda: modules\ncatalog: anchors\n"))
+    res = runner.invoke(app, ["finalize", SLUG, "--root", str(project)])
+    assert res.exit_code == 0 and "tier `anchors`" in res.output
+    assert "Collapsed catalog" in (silo / "catalog" / "mathlib.md").read_text()
+
+
+def test_pinned_config_units_stay_in_the_plan_as_deep(project_planned):
+    """A `(subsystem: <prefix>)` config concept replaces the planned unit under it but the
+    unit stays in the agenda (tier deep, reason config, the config slug) so area pages
+    link the page that will exist."""
+    from wikify import cli as cli_mod, config as config_mod, state as state_mod
+    cfg_path = project_planned / "config" / f"{SLUG}.md"
+    cfg_path.write_text(cfg_path.read_text() + "- **the-core** — seeds: (subsystem: .)\n")
+    res = _prepare(project_planned)
+    assert res.exit_code == 0, res.output
+    graph = scip_index.build_graph(scip_index.parse_index(project_planned / ".cache" / "scip" / f"{SLUG}.scip"))
+    ag = cli_mod._derive_agenda(graph, config_mod.load_config(cfg_path), state_mod.load_state(state_mod.state_path(project_planned / ".cache", SLUG)))
+    assert ag.subsystems and all(u.tier == "deep" and u.reason == "config" and u.slug == "the-core" for u in ag.subsystems)
+    assert [c.slug for c in ag.concepts].count("the-core") == 1           # built once, never twice
+    area = next((project_planned / "wiki" / "code" / SLUG / "areas").glob("*.md")).read_text()
+    assert "[the-core](../concepts/the-core.md)" in area

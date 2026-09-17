@@ -809,20 +809,25 @@ def render_map(
     in when present. ``pages=True`` links each module to its catalog page."""
     wiki_slug_dir = Path(wiki_slug_dir)
     docs, rows_by_shard, edges_by_shard = index_groups(graph, depth)
+    # Sections are always by directory (SHARD_DEPTH levels), whatever the file layout: with
+    # the joined layout the whole repo would otherwise be one table.
+    _, rows_by_dir, edges_by_dir = index_groups(graph, SHARD_DEPTH)
     covered = covered_monikers(graph, wiki_slug_dir)
     modules = by_module(docs)
     purposes = purposes or {}
     by_top: dict[str, list[str]] = defaultdict(list)
     for mp in modules:
-        by_top[_shard_of(mp, depth)].append(mp)
+        by_top[_shard_of(mp, SHARD_DEPTH)].append(mp)
     n_rows = sum(len(v) for v in rows_by_shard.values())
     n_edges = sum(len(v) for v in edges_by_shard.values())
 
-    def _links(shard: str) -> str:
+    def _links(section: str) -> str:
+        """The file(s) holding this section's rows, with the section's own counts."""
+        shard = section if depth > 0 else SINGLE_SHARD
         sp, ep = shard_paths(shard)
         sp, ep = sp[len("catalog/"):], ep[len("catalog/"):]          # relative to catalog/
-        return (f"[`{sp}`]({sp}) ({len(rows_by_shard.get(shard, []))} rows), "
-                f"[`{ep}`]({ep}) ({len(edges_by_shard.get(shard, []))} edges)")
+        return (f"[`{sp}`]({sp}) ({len(rows_by_dir.get(section, []))} rows), "
+                f"[`{ep}`]({ep}) ({len(edges_by_dir.get(section, []))} edges)")
 
     lines: list[str] = []
     a = lines.append

@@ -312,6 +312,10 @@ def test_single_shard_layout_and_map_links(tmp_path):
     text = coverage.render_map(g, wiki, depth=0)
     assert "## Index files" in text and "[`symbols.tsv`](symbols.tsv) — 6 rows" in text
     assert "[`edges.tsv`](edges.tsv) — 2 edges" in text
+    # sections stay by directory even when the files are joined; each links the joined file
+    # with the section's own counts
+    assert "## `demo/train`" in text and "Index: [`symbols.tsv`](symbols.tsv) (1 rows)" in text
+    assert "## `all`" not in text
     # switching back to sharded removes the two-file layout and links per section
     coverage.emit_symbol_index(g, wiki, depth=2)
     assert not (wiki / "catalog" / "symbols.tsv").exists()

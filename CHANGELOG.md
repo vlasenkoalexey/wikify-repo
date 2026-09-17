@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3 - 2026-09-17
+
+### Fixed
+- With `index_shard_depth: 0` the module map collapsed into one section; sections are now
+  always by directory, each linking the joined files with the section's own row and edge
+  counts.
+
 ## 0.3.2 - 2026-09-17
 
 ### Changed

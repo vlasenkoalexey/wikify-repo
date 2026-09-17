@@ -750,16 +750,20 @@ def emit_symbol_index(
     for shard, groups in sorted(rows_by_shard.items()):
         rows = sorted((_row(*g) for g in groups), key=lambda r: (r[1], int(r[2]), r[0]))
         n_syms = sum(len(g[2]) for g in groups)
-        example = max(rows, key=lambda r: (int(r[4]), r[0]))[0]
-        name = example.split("#", 1)[1]
+        ex_row = max(rows, key=lambda r: (int(r[4]), r[0]))
+        example, ex_path = ex_row[0], ex_row[1]
+        name = example.split("#", 1)[1].rsplit(".", 1)[-1]      # bare name: a method's last segment
         where = "" if shard == SINGLE_SHARD else f", shard {shard}"
         folded = f" ({n_syms} symbols; overloads share a row)" if n_syms != len(rows) else ""
         head = [
-            f"# wikify symbol index: {at}{where}, {len(rows)} rows{folded}",
+            f"# wikify symbol index: {at}{where}, {len(rows)} rows{folded}. Grep it by anchor; never read it whole.",
             "# columns: " + "\t".join(cols),
             f"# one symbol:  grep -P '^{example}\\t' {sym_glob}",
             f"# its callers: grep -P '^{example}\\t' {edge_glob}",
-            f"# by name:     grep -P '#{name}\\t' {sym_glob} | sort -t$'\\t' -k5 -nr | head",
+            f"# by name:     grep -P '[#.]{name}\\t' {sym_glob} | sort -t$'\\t' -k5 -nr | head   (matches Class.{name} too)",
+            f"# what calls:  grep -P '\\t{example}$' {edge_glob}   (callees: the caller column)",
+            f"# one module:  awk -F'\\t' '$2==\"{ex_path}\"' {sym_glob} | cut -f1,3,4",
+            f"# to prose:    cut -f1,8 {sym_glob} | grep -P '^{example}\\t'   (column 8: concept pages citing it)",
         ]
         out = wiki_slug_dir / shard_paths(shard)[0]
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -768,10 +772,12 @@ def emit_symbol_index(
     for shard, edge_set in sorted(edges_by_shard.items()):
         edges = sorted(edge_set)
         where = "" if shard == SINGLE_SHARD else f", shard {shard}"
+        ex_callee, ex_caller = edges[0]
         head = [
-            f"# wikify edge list: {at}{where}, {len(edges)} caller edges",
-            "# columns: callee\tcaller   (one edge per line; grep the callee column for who calls it,"
-            " the caller column for what it calls)",
+            f"# wikify edge list: {at}{where}, {len(edges)} caller edges. Grep it by anchor; never read it whole.",
+            "# columns: callee\tcaller   (one edge per line)",
+            f"# who calls X:  grep -P '^{ex_callee}\\t' {edge_glob} | cut -f2",
+            f"# what X calls: grep -P '\\t{ex_caller}$' {edge_glob} | cut -f1",
         ]
         out = wiki_slug_dir / shard_paths(shard)[1]
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -830,11 +836,17 @@ def render_map(
     sym_glob = "symbols.tsv" if depth <= 0 else "symbols/*.tsv"
     edge_glob = "edges.tsv" if depth <= 0 else "edges/*.tsv"
     a(f"{len(modules)} modules, {len(docs)} documentable symbols, {n_rows} index rows "
-      f"(overloads share a row), {n_edges} caller edges. The index is tab-separated: look up any "
-      f"symbol by anchor with `grep -P '^<path>#<Name>\\t' catalog/{sym_glob}` (columns: anchor, "
-      f"path, line, kind, rank, hash, callers, citing pages, then signature and doc line in the "
-      f"full profile); who-calls-what is `callee<TAB>caller` in `catalog/{edge_glob}`. Grep it, "
-      "never read a file whole.")
+      f"(overloads share a row), {n_edges} caller edges. The index is tab-separated; grep it by "
+      f"anchor, never read a file whole. Columns: anchor, path, line, kind, rank, hash, callers, "
+      f"citing pages, then signature and doc line in the full profile.")
+    a("")
+    a("```")
+    a(f"grep -P '^<path>#<Name>\\t' catalog/{sym_glob}                       # one symbol's row")
+    a(f"grep -P '[#.]<Name>\\t' catalog/{sym_glob} | sort -t$'\\t' -k5 -nr | head   # by bare name, best first")
+    a(f"awk -F'\\t' '$2==\"<path>\"' catalog/{sym_glob} | cut -f1,3,4                # everything a module defines")
+    a(f"grep -P '^<path>#<Name>\\t' catalog/{edge_glob} | cut -f2                 # who calls it")
+    a(f"grep -P '\\t<path>#<Name>$' catalog/{edge_glob} | cut -f1                 # what it calls")
+    a("```")
     a("")
     a("## Index files")
     a("")

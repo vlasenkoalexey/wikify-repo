@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.2 - 2026-09-17
+
+### Changed
+- **Index recipes are complete and correct.** The bare-name recipe matched only free functions
+  (`#forward`); it is now `[#.]<Name>` so `Class.forward` matches too. Symbol headers add "what
+  calls" (the callee column of the edge list), "one module" (rows by path) and "to prose"
+  (column 8, the concept pages citing the symbol); edge headers give both directions with a
+  real anchor; every header and the map say "grep it by anchor; never read it whole". The map
+  carries the five recipes as a code block.
+- **Retrieval blocks are a third shorter** (`wikify setup` / `wikify init`): five bullets,
+  the same recipes, no mention of catalog pages (a `catalog: full` silo still has them; the
+  index is the documented path). The README copy is regenerated.
+
 ## 0.3.1 - 2026-09-17
 
 ### Added

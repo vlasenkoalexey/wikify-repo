@@ -265,7 +265,8 @@ def append_log(silo_dir: str | Path, rec: Reconcile, slug: str, date: str) -> Pa
              f"{len(rec.commits)} commit(s); symbols {rec.changed} changed, {rec.removed} removed, "
              f"{rec.moved} moved; pages {len(rec.build)} built, {len(rec.rebuild)} rebuilt, "
              f"{len(rec.relink)} relinked, {len(rec.leave)} unchanged"
-             + (f" — [changes/{rec.new_ref[:10]}.md](changes/{rec.new_ref[:10]}.md)" if rec.old_ref else "") + "\n")
+             + (f" — [changes/{rec.new_ref[:10]}.md](changes/{rec.new_ref[:10]}.md)"
+                if rec.old_ref and rec.old_ref != rec.new_ref else "") + "\n")
     marker = f"| {slug} @ {rec.new_ref[:10]} (from {old})"
     text = log.read_text(encoding="utf-8")
     if marker in text:

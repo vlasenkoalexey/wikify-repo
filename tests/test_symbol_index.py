@@ -64,7 +64,7 @@ def test_index_rows_shards_header_and_columns(tmp_path):
     assert (wiki / "catalog" / "edges" / "demo.tsv") in paths
     text = (wiki / "catalog" / "symbols" / "demo.tsv").read_text()
     head = [l for l in text.splitlines() if l.startswith("#")]
-    assert head[0].startswith("# wikify symbol index: demo @ deadbeefca, shard demo, 5 symbols")
+    assert head[0].startswith("# wikify symbol index: demo @ deadbeefca, shard demo, 5 rows")
     assert head[1] == "# columns: " + "\t".join(coverage.INDEX_COLUMNS)
     assert "grep -P '^" in head[2] and "catalog/symbols/*.tsv" in head[2]
     assert "catalog/edges/*.tsv" in head[3] and "sort -t$'\\t' -k5 -nr | head" in head[4]
@@ -296,3 +296,25 @@ def test_read_signature_member_is_its_own_line(tmp_path):
     (tmp_path / "e.h").write_text("enum class OpName {\n  kAbsOut,  // first\n  kAcosOut,\n};\n")
     t = Symbol(moniker="cxx . . $ OpName#kAbsOut.", kind="EnumMember", suffix="Term", name="kAbsOut", def_path="e.h", def_line=1)
     assert source.read_signature(tmp_path, t) == "kAbsOut"
+
+
+def test_single_shard_layout_and_map_links(tmp_path):
+    """``index_shard_depth: 0`` writes catalog/symbols.tsv + catalog/edges.tsv; the map links
+    the index files at the top and under each section, in both layouts."""
+    g = _graph()
+    wiki = tmp_path / "demo"
+    indexed, paths = coverage.emit_symbol_index(g, wiki, depth=0, slug="demo")
+    assert sorted(p.name for p in paths) == ["edges.tsv", "symbols.tsv"]
+    assert (wiki / "catalog" / "symbols.tsv").exists() and not (wiki / "catalog" / "symbols").exists()
+    head = (wiki / "catalog" / "symbols.tsv").read_text().splitlines()[0]
+    assert head.startswith("# wikify symbol index: demo, 6 rows") and "shard" not in head
+    assert "catalog/symbols.tsv" in (wiki / "catalog" / "symbols.tsv").read_text().splitlines()[2]
+    text = coverage.render_map(g, wiki, depth=0)
+    assert "## Index files" in text and "[`symbols.tsv`](symbols.tsv) — 6 rows" in text
+    assert "[`edges.tsv`](edges.tsv) — 2 edges" in text
+    # switching back to sharded removes the two-file layout and links per section
+    coverage.emit_symbol_index(g, wiki, depth=2)
+    assert not (wiki / "catalog" / "symbols.tsv").exists()
+    text = coverage.render_map(g, wiki, depth=2)
+    assert "Index: [`symbols/demo-train.tsv`](symbols/demo-train.tsv) (1 rows)" in text
+    assert coverage.index_summary(g, 2) == (6, 6, 2)

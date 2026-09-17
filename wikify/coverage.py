@@ -622,21 +622,59 @@ def index_anchor(module_path: str, moniker: str) -> str:
 
 
 SHARD_DEPTH = 2
+SINGLE_SHARD = "all"
 
 
-def _shard_of(def_path: str) -> str:
-    """Shard key of a definition path: its first ``SHARD_DEPTH`` directory components
+def _shard_of(def_path: str, depth: int = SHARD_DEPTH) -> str:
+    """Shard key of a definition path: its first ``depth`` directory components
     (``torch_tpu/eager``), fewer when the file sits higher; ``(root)`` for a bare file. A
-    single umbrella package (``torch/``, ``torch_tpu/``) would otherwise be one shard."""
+    single umbrella package (``torch/``, ``torch_tpu/``) would otherwise be one shard.
+    ``depth=0`` puts everything in one shard (``symbols.tsv`` / ``edges.tsv``)."""
+    if depth <= 0:
+        return SINGLE_SHARD
     parts = def_path.split("/")
     dirs = parts[:-1]
     if not dirs:
         return "(root)"
-    return "/".join(dirs[:SHARD_DEPTH])
+    return "/".join(dirs[:depth])
 
 
 def _shard_file(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "root"
+
+
+def shard_paths(shard: str) -> tuple[str, str]:
+    """Silo-relative paths of a shard's two files. Depth 0 is the two-file layout."""
+    if shard == SINGLE_SHARD:
+        return "catalog/symbols.tsv", "catalog/edges.tsv"
+    f = _shard_file(shard)
+    return f"catalog/symbols/{f}.tsv", f"catalog/edges/{f}.tsv"
+
+
+def index_groups(graph: SymbolGraph, depth: int = SHARD_DEPTH):
+    """The index's row groups and edge sets, shared by the emitter and the map.
+
+    Returns ``(docs, rows_by_shard, edges_by_shard)`` where a row is
+    ``(anchor, winner_moniker, [monikers], {caller monikers})``. One row per ANCHOR: C++
+    overloads (and any same-named symbols in one module) share a qualified name; the row
+    belongs to the highest-importance moniker — the same rule the citation resolver
+    (``symbol_index``) applies — and its callers are the union over the group, so nothing
+    that calls any overload goes missing."""
+    docs = documentable_symbols(graph)
+    groups: dict[str, list[str]] = defaultdict(list)
+    for m, sym in docs.items():
+        groups[index_anchor(sym.def_path, m)].append(m)
+    rows_by_shard: dict[str, list[tuple]] = defaultdict(list)
+    edges_by_shard: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for anchor, ms in groups.items():
+        ms.sort(key=lambda x: (-graph.importance(x), x))
+        winner = ms[0]
+        callers = {c for m in ms for c in graph.callers(m) if c in docs}
+        shard = _shard_of(docs[winner].def_path, depth)
+        rows_by_shard[shard].append((anchor, winner, ms, callers))
+        for c in callers:
+            edges_by_shard[shard].add((anchor, index_anchor(docs[c].def_path, c)))
+    return docs, rows_by_shard, edges_by_shard
 
 
 def _kind_label(sym: Symbol, moniker: str) -> str:
@@ -660,6 +698,7 @@ def emit_symbol_index(
     profile: str = "nav",
     slug: str = "",
     ref: str = "",
+    depth: int = SHARD_DEPTH,
 ) -> tuple[set[str], list[Path]]:
     """Write the symbol index: ``catalog/symbols/<top-level-dir>.tsv`` (one row per
     documentable symbol, sorted by path) and ``catalog/edges/<top-level-dir>.tsv`` (one
@@ -669,12 +708,14 @@ def emit_symbol_index(
     Columns: ``anchor path line kind rank hash callers pages`` and, in the ``full``
     profile, ``sig doc``. ``rank`` is ``graph.importance``; ``hash`` is the body hash from
     ``hashes`` (state or ``diff.current_hashes``); ``pages`` are the concept pages citing the
-    symbol. Sharded so a scoped grep is the normal query and an accidental Read is bounded.
-    Deterministic, no model; linear in symbols."""
+    symbol. One row per anchor (``index_groups``). Sharded by ``depth`` path components so a
+    scoped grep is the normal query and an accidental Read is bounded; ``depth=0`` writes
+    the two-file layout ``catalog/symbols.tsv`` + ``catalog/edges.tsv``. Deterministic, no
+    model; linear in symbols."""
     if profile not in INDEX_PROFILES:
         raise ValueError(f"index profile must be one of {INDEX_PROFILES}, got {profile!r}")
     wiki_slug_dir = Path(wiki_slug_dir)
-    docs = documentable_symbols(graph)
+    docs, rows_by_shard, edges_by_shard = index_groups(graph, depth)
     covered = covered_monikers(graph, wiki_slug_dir)
     pages_of: dict[str, list[str]] = defaultdict(list)
     for m, page in covered.items():
@@ -682,64 +723,67 @@ def emit_symbol_index(
     hashes = hashes or {}
     cols = INDEX_FULL_COLUMNS if profile == "full" else INDEX_COLUMNS
 
-    # One row per ANCHOR. C++ overloads (and any same-named symbols in one module) share a
-    # qualified name; the row belongs to the highest-importance moniker — the same rule the
-    # citation resolver (``symbol_index``) applies — and its callers are the union over the
-    # group, so nothing that calls any overload goes missing.
-    groups: dict[str, list[str]] = defaultdict(list)
-    for m, sym in docs.items():
-        groups[index_anchor(sym.def_path, m)].append(m)
-    rows_by_shard: dict[str, list[tuple]] = defaultdict(list)
-    edges_by_shard: dict[str, set[tuple[str, str]]] = defaultdict(set)
-    for anchor, ms in groups.items():
-        ms.sort(key=lambda x: (-graph.importance(x), x))
-        winner = ms[0]
+    def _row(anchor: str, winner: str, ms: list[str], callers: set[str]) -> list[str]:
         sym = docs[winner]
-        callers = {c for m in ms for c in graph.callers(m) if c in docs}
         pages = {pg for m in ms for pg in pages_of.get(m, [])}
         row = [anchor, sym.def_path, str((sym.def_line or 0) + 1),
                _kind_label(sym, winner), str(max(graph.importance(m) for m in ms)),
                hashes.get(winner, ""), str(len(callers)), ";".join(sorted(pages))]
         if profile == "full":
             row += [_cell(_clean_sig(sym)), _cell(sym.doc_summary)]
-        shard = _shard_of(sym.def_path)
-        rows_by_shard[shard].append((sym.def_path, sym.def_line or 0, row))
-        for c in callers:
-            edges_by_shard[shard].add((anchor, index_anchor(docs[c].def_path, c)))
+        return row
 
-    written: list[Path] = []
-    sym_dir = wiki_slug_dir / "catalog" / "symbols"
-    edge_dir = wiki_slug_dir / "catalog" / "edges"
-    for d in (sym_dir, edge_dir):
-        d.mkdir(parents=True, exist_ok=True)
-        for stale in d.glob("*.tsv"):
-            stale.unlink()
+    # Clear both layouts so a depth change never leaves stale files behind.
+    cat = wiki_slug_dir / "catalog"
+    cat.mkdir(parents=True, exist_ok=True)
+    for d in (cat / "symbols", cat / "edges"):
+        if d.is_dir():
+            for stale in d.glob("*.tsv"):
+                stale.unlink()
+    for f in (cat / "symbols.tsv", cat / "edges.tsv"):
+        if f.exists():
+            f.unlink()
+    sym_glob = "catalog/symbols.tsv" if depth <= 0 else "catalog/symbols/*.tsv"
+    edge_glob = "catalog/edges.tsv" if depth <= 0 else "catalog/edges/*.tsv"
     at = f"{slug or 'repo'}" + (f" @ {ref[:10]}" if ref else "")
-    for shard, rows in sorted(rows_by_shard.items()):
-        rows.sort(key=lambda r: (r[0], r[1]))
-        example = max(rows, key=lambda r: (int(r[2][4]), r[2][0]))[2][0]
+    written: list[Path] = []
+    for shard, groups in sorted(rows_by_shard.items()):
+        rows = sorted((_row(*g) for g in groups), key=lambda r: (r[1], int(r[2]), r[0]))
+        n_syms = sum(len(g[2]) for g in groups)
+        example = max(rows, key=lambda r: (int(r[4]), r[0]))[0]
         name = example.split("#", 1)[1]
+        where = "" if shard == SINGLE_SHARD else f", shard {shard}"
+        folded = f" ({n_syms} symbols; overloads share a row)" if n_syms != len(rows) else ""
         head = [
-            f"# wikify symbol index: {at}, shard {shard}, {len(rows)} symbols",
+            f"# wikify symbol index: {at}{where}, {len(rows)} rows{folded}",
             "# columns: " + "\t".join(cols),
-            f"# one symbol:  grep -P '^{example}\\t' catalog/symbols/*.tsv",
-            f"# its callers: grep -P '^{example}\\t' catalog/edges/*.tsv",
-            f"# by name:     grep -P '#{name}\\t' catalog/symbols/*.tsv | sort -t$'\\t' -k5 -nr | head",
+            f"# one symbol:  grep -P '^{example}\\t' {sym_glob}",
+            f"# its callers: grep -P '^{example}\\t' {edge_glob}",
+            f"# by name:     grep -P '#{name}\\t' {sym_glob} | sort -t$'\\t' -k5 -nr | head",
         ]
-        out = sym_dir / f"{_shard_file(shard)}.tsv"
-        out.write_text("\n".join(head + ["\t".join(r[2]) for r in rows]) + "\n", encoding="utf-8")
+        out = wiki_slug_dir / shard_paths(shard)[0]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(head + ["\t".join(r) for r in rows]) + "\n", encoding="utf-8")
         written.append(out)
     for shard, edge_set in sorted(edges_by_shard.items()):
         edges = sorted(edge_set)
+        where = "" if shard == SINGLE_SHARD else f", shard {shard}"
         head = [
-            f"# wikify edge list: {at}, shard {shard}, {len(edges)} caller edges",
+            f"# wikify edge list: {at}{where}, {len(edges)} caller edges",
             "# columns: callee\tcaller   (one edge per line; grep the callee column for who calls it,"
             " the caller column for what it calls)",
         ]
-        out = edge_dir / f"{_shard_file(shard)}.tsv"
+        out = wiki_slug_dir / shard_paths(shard)[1]
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("\n".join(head + [f"{a}\t{b}" for a, b in edges]) + "\n", encoding="utf-8")
         written.append(out)
     return set(docs), written
+
+
+def index_summary(graph: SymbolGraph, depth: int = SHARD_DEPTH) -> tuple[int, int, int]:
+    """(symbols, rows, edges) the index holds — for messages, without re-reading files."""
+    docs, rows, edges = index_groups(graph, depth)
+    return len(docs), sum(len(v) for v in rows.values()), sum(len(v) for v in edges.values())
 
 
 def render_map(
@@ -750,19 +794,30 @@ def render_map(
     slug: str = "",
     ref: str = "",
     purposes: dict[str, str] | None = None,
+    depth: int = SHARD_DEPTH,
 ) -> str:
-    """The module map, ``catalog/index.md``: every module with its symbol count, its top
-    entry points by rank, and the concept pages that cite into it, grouped by top-level
-    directory. Deterministic; ``purposes`` (module -> one line) is an optional synthesized
-    layer merged in when present. ``pages=True`` links each module to its catalog page."""
+    """The module map, ``catalog/index.md``: the index files with their sizes, then every
+    module with its symbol count, its top entry points by rank, and the concept pages that
+    cite into it, grouped by shard so each section links the TSV files that hold its rows.
+    Deterministic; ``purposes`` (module -> one line) is an optional synthesized layer merged
+    in when present. ``pages=True`` links each module to its catalog page."""
     wiki_slug_dir = Path(wiki_slug_dir)
-    docs = documentable_symbols(graph)
+    docs, rows_by_shard, edges_by_shard = index_groups(graph, depth)
     covered = covered_monikers(graph, wiki_slug_dir)
     modules = by_module(docs)
     purposes = purposes or {}
     by_top: dict[str, list[str]] = defaultdict(list)
     for mp in modules:
-        by_top[_shard_of(mp)].append(mp)
+        by_top[_shard_of(mp, depth)].append(mp)
+    n_rows = sum(len(v) for v in rows_by_shard.values())
+    n_edges = sum(len(v) for v in edges_by_shard.values())
+
+    def _links(shard: str) -> str:
+        sp, ep = shard_paths(shard)
+        sp, ep = sp[len("catalog/"):], ep[len("catalog/"):]          # relative to catalog/
+        return (f"[`{sp}`]({sp}) ({len(rows_by_shard.get(shard, []))} rows), "
+                f"[`{ep}`]({ep}) ({len(edges_by_shard.get(shard, []))} edges)")
+
     lines: list[str] = []
     a = lines.append
     a("---")
@@ -772,13 +827,32 @@ def render_map(
     a("---")
     a(f"# Module map: {slug or 'repo'}" + (f" @ {ref[:10]}" if ref else ""))
     a("")
-    a(f"{len(modules)} modules, {len(docs)} documentable symbols. One row per module: entry "
-      "points are the symbols with the most callers; *cited by* lists the concept pages that "
-      "cite into the module. Look up any symbol by anchor in `symbols/*.tsv` "
-      "(`grep -P '^<path>#<Name>\\t' catalog/symbols/*.tsv`); callers are in `edges/*.tsv`.")
+    sym_glob = "symbols.tsv" if depth <= 0 else "symbols/*.tsv"
+    edge_glob = "edges.tsv" if depth <= 0 else "edges/*.tsv"
+    a(f"{len(modules)} modules, {len(docs)} documentable symbols, {n_rows} index rows "
+      f"(overloads share a row), {n_edges} caller edges. The index is tab-separated: look up any "
+      f"symbol by anchor with `grep -P '^<path>#<Name>\\t' catalog/{sym_glob}` (columns: anchor, "
+      f"path, line, kind, rank, hash, callers, citing pages, then signature and doc line in the "
+      f"full profile); who-calls-what is `callee<TAB>caller` in `catalog/{edge_glob}`. Grep it, "
+      "never read a file whole.")
+    a("")
+    a("## Index files")
+    a("")
+    a("| Shard | Symbols | Edges |")
+    a("|---|---|---|")
+    for shard in sorted(rows_by_shard):
+        sp, ep = shard_paths(shard)
+        sp, ep = sp[len("catalog/"):], ep[len("catalog/"):]
+        a(f"| `{shard}` | [`{sp}`]({sp}) — {len(rows_by_shard[shard])} rows | "
+          f"[`{ep}`]({ep}) — {len(edges_by_shard.get(shard, []))} edges |")
+    a("")
+    a("Below, one row per module: entry points are the symbols with the most callers; *cited by* "
+      "lists the concept pages that cite into the module.")
     a("")
     for top in sorted(by_top):
         a(f"## `{top}`")
+        a("")
+        a(f"Index: {_links(top)}")
         a("")
         a("| Module | Symbols | Entry points | Cited by |")
         a("|---|---|---|---|")

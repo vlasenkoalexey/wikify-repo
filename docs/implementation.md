@@ -945,7 +945,10 @@ thing that makes a diagram usable by a reader, a legend. All warnings, never a g
 
 ### 10.18 Catalog index: `catalog/symbols/*.tsv`, `catalog/edges/*.tsv` (realized 0.3.0, 2026-09-15)
 Design and evidence: `catalog-index.md`. Contracts as realized (deviations from the proposal:
-shards are keyed by TWO directory levels, since a single umbrella package would be one shard;
+shards are keyed by TWO directory levels, since a single umbrella package would be one shard,
+with `index_shard_depth: 0` (0.3.1) giving the two-file layout `catalog/symbols.tsv` +
+`catalog/edges.tsv`; the map `catalog/index.md` links every index file with its row and edge
+counts; one row per anchor;
 one row per anchor with overload callers unioned; `catalog` unset keeps `full` on a silo whose
 state already has pages; a pinned config concept keeps its unit in the plan as deep/`config`;
 `build_graph(repair_root=)` repairs empty document paths in indexes built before the fix).

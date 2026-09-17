@@ -140,7 +140,9 @@ A reviewer of the torch_tpu silo found, all confirmed against the raw SCIP index
 
 Files under `wiki/<slug>/catalog/`:
 
-- `symbols/<top-level-dir>.tsv`: one row per documentable symbol, sorted by path. Columns:
+- `symbols/<dir>.tsv`: one row per documentable symbol, sorted by path (as realized: one row
+  per anchor, overloads folded; shards keyed by `index_shard_depth` path components, default 2,
+  `0` for a single `symbols.tsv`). Columns:
   `anchor` (the citation target without `catalog/` and `.md`, e.g.
   `torch_tpu/eager/op_dispatcher.h#DispatchOp`), `path`, `line`, `kind`, `rank` (the
   existing importance score), `hash` (the body hash from state), `callers` (count), `pages`

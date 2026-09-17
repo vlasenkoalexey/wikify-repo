@@ -26,7 +26,8 @@ _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "acquire", "wiki_subdir", "source_type", "doc_globs",
                  "coverage_collapse", "coverage_exclude", "synthesis_focus",
                  "agenda", "agenda_max", "agenda_exclude", "in_repo", "wiki_dir",
-                 "catalog", "index_profile", "agenda_deep_modules", "agenda_deep_fanin"}
+                 "catalog", "index_profile", "index_shard_depth",
+                 "agenda_deep_modules", "agenda_deep_fanin"}
 
 # ``catalog:`` — what the catalog ships as (catalog-index.md): the symbol index alone
 # (``index``), anchor-only pages on top of it (``anchors``), or full per-module pages
@@ -137,6 +138,10 @@ class RepoConfig:
     # that already has pages in state keeps ``full`` until its config says otherwise.
     catalog: str | None = None
     index_profile: str = "nav"
+    # How the symbol index is split: the number of leading path components per shard file
+    # (2 → ``catalog/symbols/torch_tpu-eager.tsv``); ``0`` → one ``catalog/symbols.tsv`` and
+    # one ``catalog/edges.tsv``. Sharding bounds an accidental whole-file Read on big repos.
+    index_shard_depth: int = 2
     # In-repo layout (§10.15): the config is ``<repo>/wikify.md``, the source is the repo
     # itself (no raw/), the wiki lives at ``<repo>/<wiki_dir>/`` (flat, no slug level) and
     # the cache at ``<repo>/.wikify/``. Set by ``wikify init``; host-wiki projects never set it.
@@ -274,6 +279,8 @@ def validate_config(cfg: RepoConfig) -> None:
     if cfg.catalog is not None and cfg.catalog not in _CATALOG_MODES:
         raise ValueError(
             f"catalog: must be one of {', '.join(_CATALOG_MODES)} (got {cfg.catalog!r})")
+    if cfg.index_shard_depth < 0:
+        raise ValueError("index_shard_depth: must be 0 or a positive integer")
     if cfg.index_profile not in _INDEX_PROFILES:
         raise ValueError(
             f"index_profile: must be one of {', '.join(_INDEX_PROFILES)} (got {cfg.index_profile!r})")
@@ -334,6 +341,7 @@ def load_config(path: str | Path) -> RepoConfig:
         agenda_deep_fanin=None if adf is None else int(adf),
         catalog=None if cat is None else str(cat).strip().lower(),
         index_profile=str(fm.get("index_profile") or "nav").strip().lower(),
+        index_shard_depth=2 if fm.get("index_shard_depth") is None else int(fm.get("index_shard_depth")),
         in_repo=bool(fm.get("in_repo", False)),
         wiki_dir=str(fm.get("wiki_dir") or "wiki").strip("/") or "wiki",
         index_shards=_as_list(fm.get("index_shards")),

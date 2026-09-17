@@ -75,3 +75,19 @@ def test_reconcile_roundtrip_and_log_line(tmp_path):
     assert "## [2026-09-05] ingest | demo @ fedcba9876 (from 0123456789)" in text
     assert "2 commit(s); symbols 3 changed, 1 removed, 2 moved; pages 1 built, 1 rebuilt, 1 relinked, 1 unchanged" in text
     assert changes.append_log(tmp_path, rec, "demo", "2026-09-05").read_text() == text   # idempotent
+
+
+def test_log_links_change_page_only_on_a_real_bump(tmp_path):
+    """A same-ref rebuild writes a log line but no change page, so the line must not link one."""
+    from wikify import changes
+    same = changes.Reconcile(old_ref="abc1234567890", new_ref="abc1234567890", build=[], rebuild=["p"],
+                             relink=[], leave=[], changed=1, removed=0, moved=0, removed_files=[],
+                             commits=[], truncated=0)
+    changes.append_log(tmp_path, same, "demo", "2026-09-17")
+    text = (tmp_path / "log.md").read_text()
+    assert "(from abc1234567)" in text and "changes/abc1234567.md" not in text
+    bump = changes.Reconcile(old_ref="abc1234567890", new_ref="def1234567890", build=[], rebuild=["p"],
+                             relink=[], leave=[], changed=1, removed=0, moved=0, removed_files=[],
+                             commits=[], truncated=0)
+    changes.append_log(tmp_path, bump, "demo", "2026-09-17")
+    assert "[changes/def1234567.md](changes/def1234567.md)" in (tmp_path / "log.md").read_text()

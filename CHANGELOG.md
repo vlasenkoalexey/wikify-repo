@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.1 - 2026-09-17
+
+### Added
+- **`index_shard_depth`** (config): how many leading path components make one index file.
+  `2` (default) keeps `catalog/symbols/<dir>.tsv`; `0` writes the two-file layout
+  `catalog/symbols.tsv` + `catalog/edges.tsv`. Switching layouts removes the other one's
+  files. Headers and recipes follow the layout.
+- **The module map links the index files**: an `## Index files` table (shard, symbols file
+  with row count, edges file with edge count) and an `Index:` line under every section.
+
+### Fixed
+- `finalize` reported the number of symbols as the number of index rows; rows are one per
+  anchor (overloads share one), so the message now says "N symbols in M rows (K overloads
+  folded), E caller edges", and shard headers say "rows".
+- The silo `log.md` linked `changes/<ref>.md` on a same-ref rebuild, where no change page is
+  written; the link is now added only when the pin actually moved.
+
+### Note
+- Rebuilding a silo at the same pin with 0.3.x flags pages that cite overloaded functions
+  as stale once: merging the duplicate symbol records changed those symbols' stored
+  signature, which is part of the body hash. Keep the verified content and re-finalize.
+
 ## 0.3.0 - 2026-09-15
 
 ### Changed

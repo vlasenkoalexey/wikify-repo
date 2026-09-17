@@ -674,10 +674,14 @@ def finalize(
     # resolve through the graph, so lint no longer depends on pages existing.
     mode, mode_defaulted = _catalog_mode(cfg, state)
     indexed, index_paths = coverage_mod.emit_symbol_index(
-        graph, p.wiki_slug, hashes=hashes, profile=cfg.index_profile, slug=slug, ref=acq.commit)
-    n_sym = sum(1 for f in index_paths if f.parent.name == "symbols")
-    typer.echo(f"catalog: symbol index — {len(indexed)} rows in {n_sym} shard(s) "
-               f"({cfg.index_profile} profile){f', {n_sig} C++ signatures read from source' if n_sig else ''}")
+        graph, p.wiki_slug, hashes=hashes, profile=cfg.index_profile, slug=slug, ref=acq.commit,
+        depth=cfg.index_shard_depth)
+    n_syms, n_rows, n_edges = coverage_mod.index_summary(graph, cfg.index_shard_depth)
+    n_shards = sum(1 for f in index_paths if "symbols" in f.name or f.parent.name == "symbols")
+    typer.echo(f"catalog: symbol index — {n_syms} symbols in {n_rows} rows"
+               + (f" ({n_syms - n_rows} overloads folded)" if n_syms != n_rows else "")
+               + f", {n_edges} caller edges, {n_shards} file(s) per kind ({cfg.index_profile} profile)"
+               + (f", {n_sig} C++ signatures read from source" if n_sig else ""))
     catalogued, catalog_paths = coverage_mod.emit_catalogs(
         graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url,
         collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude, mode=mode)
@@ -697,7 +701,7 @@ def finalize(
     (p.wiki_slug / "catalog").mkdir(parents=True, exist_ok=True)
     (p.wiki_slug / "catalog" / "index.md").write_text(
         coverage_mod.render_map(graph, p.wiki_slug, source_base=map_base, pages=(mode != "index"),
-                                slug=slug, ref=acq.commit), encoding="utf-8")
+                                slug=slug, ref=acq.commit, depth=cfg.index_shard_depth), encoding="utf-8")
     pruned = relink_mod.prune_catalogs(p.wiki_slug / "catalog", catalog_paths)
     if pruned:
         typer.echo(f"catalog: removed {pruned} page(s)"
@@ -867,7 +871,8 @@ def coverage(
     catalogued: set[str] = set()
     if emit:
         mode, _ = _catalog_mode(cfg, state_mod.load_state(p.state))
-        catalogued, ipaths = coverage_mod.emit_symbol_index(graph, p.wiki_slug, profile=cfg.index_profile, slug=slug)
+        catalogued, ipaths = coverage_mod.emit_symbol_index(graph, p.wiki_slug, profile=cfg.index_profile,
+                                                            slug=slug, depth=cfg.index_shard_depth)
         typer.echo(f"catalog: symbol index — {len(catalogued)} rows, {len(ipaths)} file(s)")
         pages_set, paths = coverage_mod.emit_catalogs(graph, p.wiki_slug, mode=mode,
                                                       collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude)

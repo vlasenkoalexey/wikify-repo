@@ -750,20 +750,21 @@ def emit_symbol_index(
     for shard, groups in sorted(rows_by_shard.items()):
         rows = sorted((_row(*g) for g in groups), key=lambda r: (r[1], int(r[2]), r[0]))
         n_syms = sum(len(g[2]) for g in groups)
-        ex_row = max(rows, key=lambda r: (int(r[4]), r[0]))
-        example, ex_path = ex_row[0], ex_row[1]
+        example, ex_path = _example_anchor(rows)
         name = example.split("#", 1)[1].rsplit(".", 1)[-1]      # bare name: a method's last segment
+        area = ex_path.rsplit("/", 1)[0] if "/" in ex_path else ""
         where = "" if shard == SINGLE_SHARD else f", shard {shard}"
         folded = f" ({n_syms} symbols; overloads share a row)" if n_syms != len(rows) else ""
         head = [
             f"# wikify symbol index: {at}{where}, {len(rows)} rows{folded}. Grep it by anchor; never read it whole.",
             "# columns: " + "\t".join(cols),
             f"# one symbol:  grep -P '^{example}\\t' {sym_glob}",
-            f"# its callers: grep -P '^{example}\\t' {edge_glob}",
-            f"# by name:     grep -P '[#.]{name}\\t' {sym_glob} | sort -t$'\\t' -k5 -nr | head   (matches Class.{name} too)",
-            f"# what calls:  grep -P '\\t{example}$' {edge_glob}   (callees: the caller column)",
-            f"# one module:  awk -F'\\t' '$2==\"{ex_path}\"' {sym_glob} | cut -f1,3,4",
-            f"# to prose:    cut -f1,8 {sym_glob} | grep -P '^{example}\\t'   (column 8: concept pages citing it)",
+            f"# by name:     grep -P '[#.]{name}\\t' {sym_glob} | sort -t$'\\t' -k5 -nr | head -20   (matches Class.{name} too)",
+            f"# by area:     grep -P '^{area}/.*#{name}\\t' {sym_glob} | head -20" if area else
+            f"# by area:     grep -P '^<dir>/.*#{name}\\t' {sym_glob} | head -20",
+            f"# one module:  awk -F'\\t' '$2==\"{ex_path}\"' {sym_glob} | cut -f1,3,4 | head -40",
+            f"# to prose:    grep -P '^{example}\\t' {sym_glob} | cut -f1,8   (column 8: concept pages citing it)",
+            f"# callers:     column 7 is the count; the list lives in {edge_glob}, see its header (count, narrow, head)",
         ]
         out = wiki_slug_dir / shard_paths(shard)[0]
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -772,18 +773,46 @@ def emit_symbol_index(
     for shard, edge_set in sorted(edges_by_shard.items()):
         edges = sorted(edge_set)
         where = "" if shard == SINGLE_SHARD else f", shard {shard}"
-        ex_callee, ex_caller = edges[0]
+        ex_callee, ex_dir = _example_edge(edges)
         head = [
             f"# wikify edge list: {at}{where}, {len(edges)} caller edges. Grep it by anchor; never read it whole.",
-            "# columns: callee\tcaller   (one edge per line)",
-            f"# who calls X:  grep -P '^{ex_callee}\\t' {edge_glob} | cut -f2",
-            f"# what X calls: grep -P '\\t{ex_caller}$' {edge_glob} | cut -f1",
+            "# columns: callee\tcaller   (one edge per line). Hubs have hundreds of callers and a search tool",
+            "#          shows about 50 lines, so: count, then narrow, then head.",
+            f"# count first:   grep -c -P '^{ex_callee}\\t' {edge_glob}",
+            f"# by caller dir: grep -P '^{ex_callee}\\t' {edge_glob} | cut -f2 | cut -d/ -f1-2 | sort | uniq -c",
+            f"# who calls X:   grep -P '^{ex_callee}\\t{ex_dir}' {edge_glob} | cut -f2 | head -20   (narrowed to one directory)",
+            f"# what X calls:  grep -P '\\t{ex_callee}$' {edge_glob} | cut -f1 | head -20",
         ]
         out = wiki_slug_dir / shard_paths(shard)[1]
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("\n".join(head + [f"{a}\t{b}" for a, b in edges]) + "\n", encoding="utf-8")
         written.append(out)
     return set(docs), written
+
+
+def _example_anchor(rows: list[list[str]]) -> tuple[str, str]:
+    """The anchor the header recipes demonstrate: the highest-ranked row with a moderate
+    caller count (10 to 300) so the examples show a real, bounded result; else the top row."""
+    def _callers(r: list[str]) -> int:
+        try:
+            return int(r[6])
+        except (ValueError, IndexError):
+            return 0
+    mid = [r for r in rows if 10 <= _callers(r) <= 300]
+    pick = max(mid or rows, key=lambda r: (int(r[4]), r[0]))
+    return pick[0], pick[1]
+
+
+def _example_edge(edges: list[tuple[str, str]]) -> tuple[str, str]:
+    """(callee, caller directory prefix) for the edge-file recipes: the callee with the most
+    edges in a moderate band (10 to 300), and the directory most of its callers live in."""
+    from collections import Counter
+    per = Counter(a for a, _ in edges)
+    mid = [a for a, n in per.items() if 10 <= n <= 300]
+    callee = max(mid or per, key=lambda a: (per[a], a))
+    dirs = Counter("/".join(b.split("/")[:2]) + "/" for a, b in edges if a == callee and "/" in b)
+    top = dirs.most_common(1)[0][0] if dirs else ""
+    return callee, top
 
 
 def index_summary(graph: SymbolGraph, depth: int = SHARD_DEPTH) -> tuple[int, int, int]:
@@ -843,14 +872,23 @@ def render_map(
     a(f"{len(modules)} modules, {len(docs)} documentable symbols, {n_rows} index rows "
       f"(overloads share a row), {n_edges} caller edges. The index is tab-separated; grep it by "
       f"anchor, never read a file whole. Columns: anchor, path, line, kind, rank, hash, callers, "
-      f"citing pages, then signature and doc line in the full profile.")
+      f"citing pages, then signature and doc line in the full profile. Hubs have hundreds of "
+      f"callers and a search tool shows about 50 lines: count first, narrow by directory, end "
+      f"every listing with `head`.")
+    if source_base and source_base.startswith(("http://", "https://")):
+        a("Source links below are permalinks into the repository at the pin, for readers with "
+          "access to it; do not fetch them. The index rows carry the path, line, signature and "
+          "doc line, and the citation's link title carries the source location.")
     a("")
     a("```")
-    a(f"grep -P '^<path>#<Name>\\t' catalog/{sym_glob}                       # one symbol's row")
-    a(f"grep -P '[#.]<Name>\\t' catalog/{sym_glob} | sort -t$'\\t' -k5 -nr | head   # by bare name, best first")
-    a(f"awk -F'\\t' '$2==\"<path>\"' catalog/{sym_glob} | cut -f1,3,4                # everything a module defines")
-    a(f"grep -P '^<path>#<Name>\\t' catalog/{edge_glob} | cut -f2                 # who calls it")
-    a(f"grep -P '\\t<path>#<Name>$' catalog/{edge_glob} | cut -f1                 # what it calls")
+    a(f"grep -P '^<path>#<Name>\\t' catalog/{sym_glob}                            # one symbol's row")
+    a(f"grep -P '[#.]<Name>\\t' catalog/{sym_glob} | sort -t$'\\t' -k5 -nr | head -20   # by bare name, best first")
+    a(f"grep -P '^<dir>/.*#<Name>\\t' catalog/{sym_glob} | head -20                    # a name within an area")
+    a(f"awk -F'\\t' '$2==\"<path>\"' catalog/{sym_glob} | cut -f1,3,4 | head -40         # everything a module defines")
+    a(f"grep -c -P '^<path>#<Name>\\t' catalog/{edge_glob}                         # how many callers (count first)")
+    a(f"grep -P '^<path>#<Name>\\t' catalog/{edge_glob} | cut -f2 | cut -d/ -f1-2 | sort | uniq -c   # callers by directory")
+    a(f"grep -P '^<path>#<Name>\\t<dir>/' catalog/{edge_glob} | cut -f2 | head -20      # callers in one directory")
+    a(f"grep -P '\\t<path>#<Name>$' catalog/{edge_glob} | cut -f1 | head -20           # what it calls")
     a("```")
     a("")
     a("## Index files")

@@ -297,10 +297,14 @@ them); every claim on a concept page cites a real symbol, gated by a linter at b
   source there at the pinned commit for bodies and exact signatures.
 - **Symbols:** the index `catalog/symbols.tsv` (`symbols/*.tsv` when sharded; columns anchor, path,
   line, kind, rank, hash, callers, citing pages) and `catalog/edges.tsv` (`callee<TAB>caller`), both
-  headed by their recipes; `catalog/index.md` maps modules. Grep by anchor, never read a file whole:
-  `grep -P '^<path>#<Symbol>\t'` for one row or, on edges, its callers;
-  `grep -P '\t<path>#<Symbol>$'` on edges for what it calls;
-  `grep -P '[#.]<Name>\t' | sort -t$'\t' -k5 -nr | head` for a bare name.
+  headed by their recipes; `catalog/index.md` maps modules. Grep by anchor, never read a file whole,
+  and mind the search tool's line cap: `grep -c` first, narrow a hub's callers by directory
+  (`cut -f2 | cut -d/ -f1-2 | sort | uniq -c`), end every listing with `| head -20`.
+  `grep -P '^<path>#<Symbol>\t'` gives one row or, on edges, its callers;
+  `grep -P '\t<path>#<Symbol>$'` on edges gives what it calls;
+  `grep -P '[#.]<Name>\t' | sort -t$'\t' -k5 -nr | head -20` finds a bare name,
+  `grep -P '^<dir>/.*#<Name>\t'` a name within an area. Source links are permalinks at the pin for
+  readers with repository access; do not fetch them, the row has path, line, signature and doc.
 - **Trust:** `verified:` in the front matter says who checked a page; without it the page is
   agent-generated, say so when you rely on it. Changes between pins: `changes/<ref>.md` and `log.md`;
   the pin is `commit:` in the silo's `index.md`.

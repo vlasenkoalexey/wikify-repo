@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.4 - 2026-09-17
+
+### Changed
+- **Recipes respect the search tool's line cap.** Hubs have hundreds of callers (107 of
+  7,144 callees on torch_tpu exceed 50) and an agent's search tool shows about 50 lines,
+  truncating silently. The edge-file header, the map and the retrieval blocks now say: count
+  first (`grep -c`), narrow a hub's callers by directory (`cut -f2 | cut -d/ -f1-2 | sort |
+  uniq -c`), then list with `| head -20`; a "by area" lookup (`'^<dir>/.*#<Name>\t'`) is
+  added. Header examples are picked from symbols with 10 to 300 callers so they demonstrate a
+  bounded result.
+- **Private source links.** When `source_url` is a web URL, the map says the links are
+  permalinks for readers with repository access and must not be fetched; the row carries the
+  path, line, signature and doc line. The retrieval blocks carry the same sentence.
+
 ## 0.3.3 - 2026-09-17
 
 ### Fixed

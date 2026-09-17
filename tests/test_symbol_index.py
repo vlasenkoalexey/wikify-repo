@@ -67,7 +67,12 @@ def test_index_rows_shards_header_and_columns(tmp_path):
     assert head[0].startswith("# wikify symbol index: demo @ deadbeefca, shard demo, 5 rows")
     assert head[1] == "# columns: " + "\t".join(coverage.INDEX_COLUMNS)
     assert "grep -P '^" in head[2] and "catalog/symbols/*.tsv" in head[2]
-    assert "catalog/edges/*.tsv" in head[3] and "sort -t$'\\t' -k5 -nr | head" in head[4]
+    assert "sort -t$'\\t' -k5 -nr | head -20" in head[3] and head[4].startswith("# by area:")
+    assert "catalog/edges/*.tsv" in head[-1] and "count, narrow, head" in head[-1]
+    ehead = [l for l in (wiki / "catalog" / "edges" / "demo.tsv").read_text().splitlines() if l.startswith("#")]
+    assert any(l.startswith("# count first:   grep -c -P") for l in ehead)
+    assert any("cut -d/ -f1-2 | sort | uniq -c" in l for l in ehead)
+    assert any(l.startswith("# who calls X:") and "| head -20" in l for l in ehead)
     rows = {r[0]: r for f in (wiki / "catalog" / "symbols").glob("*.tsv") for r in _rows(f)}
     fwd = rows["demo/models#Transformer.forward"]
     assert fwd[1:5] == ["demo/models.py", "21", "method", str(g.importance(FWD))]
@@ -322,3 +327,21 @@ def test_single_shard_layout_and_map_links(tmp_path):
     text = coverage.render_map(g, wiki, depth=2)
     assert "Index: [`symbols/demo-train.tsv`](symbols/demo-train.tsv) (1 rows)" in text
     assert coverage.index_summary(g, 2) == (6, 6, 2)
+
+
+def test_map_warns_about_web_permalinks_only_when_source_is_a_url(tmp_path):
+    g = _graph()
+    web = coverage.render_map(g, tmp_path / "w", source_base="https://github.com/o/r/blob/abc")
+    assert "do not fetch them" in web and "grep -c -P" in web and "| head -20" in web
+    local = coverage.render_map(g, tmp_path / "l", source_base="../../raw/code/demo")
+    assert "do not fetch them" not in local
+
+
+def test_header_examples_prefer_bounded_caller_counts():
+    rows = [["a#hub", "a.py", "1", "function", "999", "", "1500", ""],
+            ["a#mid", "a.py", "2", "function", "500", "", "40", ""],
+            ["a#leaf", "a.py", "3", "function", "10", "", "0", ""]]
+    assert coverage._example_anchor(rows) == ("a#mid", "a.py")
+    assert coverage._example_anchor(rows[2:]) == ("a#leaf", "a.py")
+    edges = [("x#hub", f"p/q/c{i}") for i in range(400)] + [("x#mid", f"p/q/c{i}") for i in range(30)] + [("x#mid", "r/s/c")]
+    assert coverage._example_edge(edges) == ("x#mid", "p/q/")

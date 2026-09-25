@@ -59,9 +59,10 @@ ambiguous, ask — do not guess and invent.
    in — never a citation-per-clause trace. A per-repo **overview page**
    (`.agents/skills/wikify-ingest-repo/prompts/overview.md`) is synthesized last: main concepts + core
    system diagrams + a map of the wiki.
-7. **Symbols live in the symbol index, not in per-symbol stubs.** A citation is a
-   catalog anchor `../catalog/<module>.md#<QualifiedName>` (optionally titled with the
-   source location); the linter resolves it through the graph (`coverage.symbol_index`:
+7. **Symbols live in the symbol index, not in per-symbol stubs.** A citation names an
+   index key `<module>#<QualifiedName>`: since 0.4, with a `source_url`, it is the title of
+   a link to the source line at the pin (docs/citations.md); otherwise it is the catalog
+   anchor `../catalog/<module>.md#<QualifiedName>`. The linter resolves it through the graph (`coverage.symbol_index`:
    module from the link path + qualified name), the same table the shipped
    `catalog/symbols/*.tsv` rows are keyed by. Per-module `catalog/<module>.md` pages are a
    rendering (`catalog: anchors | full`), never the resolution table; their front-matter

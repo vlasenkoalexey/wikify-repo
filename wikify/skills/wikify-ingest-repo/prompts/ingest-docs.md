@@ -63,7 +63,8 @@ updated: <date>
 
 ## In <slug> (grounded)
 How it maps to the code — link the symbols the doc names to their catalog entries:
-[`Symbol`](../catalog/<module>.md#Qualified.Name). Name the owning module(s).
+[`Symbol`](../catalog/<module>.md#Qualified.Name) (`finalize` re-points it at the source line
+when the silo has a `source_url`). Name the owning module(s).
 
 ## Why it matters / when it applies
 The doc's rationale and the conditions it calls out.

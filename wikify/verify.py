@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import cite
 from .lint import _LINK, _LIST_ITEM, _is_symbol_link, _resolve_citation
 
 # Sections whose content makes falsifiable claims about how the code works.
@@ -44,9 +45,62 @@ class Claim:
     @property
     def key(self) -> str:
         """Content key (§10.4 verify cache): the claim's normalized prose, independent of
-        its line number — lines shift on every edit, prose changes only when the claim does."""
-        norm = " ".join(self.text.split())
-        return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
+        its line number — lines shift on every edit, prose changes only when the claim does.
+        Since 0.4 each symbol citation counts as its index key alone, so rewriting a link's
+        form or refreshing its source line does not change the claim."""
+        return _hash(_keyed(self.text))
+
+    @property
+    def legacy_keys(self) -> list[str]:
+        """Keys a pre-0.4 cache may hold for this claim: the prose as written, and with its
+        citations spelled in the catalog form, untitled and titled ``"path:Lnn"``."""
+        out = []
+        for text in (self.text, _as_catalog(self.text, titled=False), _as_catalog(self.text, titled=True)):
+            k = _hash(text)
+            if k != self.key and k not in out:
+                out.append(k)
+        return out
+
+    def cached(self, entries: dict) -> dict | None:
+        """This claim's cache entry under its key, else under a legacy key."""
+        for k in (self.key, *self.legacy_keys):
+            if k in entries:
+                return entries[k]
+        return None
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(" ".join(text.split()).encode("utf-8")).hexdigest()[:16]
+
+
+def _keyed(text: str) -> str:
+    """Citations reduced to ``[label](<index key>)``."""
+    def sub(m):
+        key = cite.key_of(m.group(2))
+        return f"[{m.group(1)}]({cite.key_text(key)})" if key else m.group(0)
+    return _LINK.sub(sub, text)
+
+
+def _as_catalog(text: str, titled: bool) -> str:
+    """Source-form citations respelled in the 0.3 catalog form (``../catalog/<rel>#<anchor>``,
+    optionally titled with the location parsed from the href)."""
+    def sub(m):
+        label, target = m.group(1), m.group(2)
+        href, _title = cite.split(target)
+        key = cite.key_of(target)
+        if key is None or not href.startswith(("http://", "https://")):
+            return m.group(0)
+        rel, anchor = key
+        out = f"../catalog/{rel}#{anchor}"
+        if titled:
+            url, _, line = href.rpartition("#L")
+            module = rel[:-3]
+            i = url.rfind("/" + module)
+            if i < 0 or not line.isdigit():
+                return m.group(0)
+            out += f' "{url[i + 1:]}:L{line}"'
+        return f"[{label}]({out})"
+    return _LINK.sub(sub, text)
 
 
 def _citations(text: str) -> list[str]:
@@ -219,7 +273,7 @@ def plan_worklist(
     entries = cache.get("claims", {})
     for c in claims:
         ev = claim_evidence(page_path, c, hashes, graph)
-        entry = entries.get(c.key)
+        entry = c.cached(entries)
         cacheable = not c.citations or bool(ev)   # cited but unresolvable → never cache
         if force or entry is None or not cacheable:
             wl.to_verify.append(c)

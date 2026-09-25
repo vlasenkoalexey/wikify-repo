@@ -1,7 +1,7 @@
 """Relocation on file moves — rewrite citations instead of rebuilding pages (§10.13).
 
 When ``diff.detect_moves`` finds symbols that moved (same body, new file or new moniker),
-the pages citing them are still true; only their catalog links point at the old place.
+the pages citing them are still true; only their citations point at the old place.
 This module rewrites those links mechanically — in the pages, in each page's packet
 ``.subgraph.txt`` (so lint rule 3 still holds), and in the verify cache (so recorded
 holds carry over) — and ``state.apply_moves`` folds the move into state so the next
@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import cite
 from . import verify as verify_mod
 from .coverage import catalog_rel_path, qualified_name
 from .lint import _LINK, _is_symbol_link, strip_title
@@ -54,6 +55,21 @@ def relink_text(text: str, lmap: LinkMap) -> tuple[str, int]:
     def sub(m):
         nonlocal n
         label, target = m.group(1), m.group(2)
+        href, title = cite.split(target)
+        if href.startswith(("http://", "https://")):
+            key = cite.key_of(target)
+            if key in lmap:
+                rel, anchor = lmap[key]
+                # Same pin prefix, new file (module + the file's own suffix, e.g. `.py`);
+                # the line is refreshed from the index at finalize.
+                old_mod, new_mod = key[0][:-3], rel[:-3]
+                i, j = href.rfind("/" + old_mod), href.rfind("#L")
+                if 0 <= i < j:
+                    old_file = href[i + 1:j]
+                    href = href[:i + 1] + new_mod + old_file[len(old_mod):] + href[j:]
+                n += 1
+                return f'[{label}]({href} "{cite.key_text((rel, anchor))}")'
+            return m.group(0)
         if _is_symbol_link(target):
             parts = _split_target(target)
             if parts:

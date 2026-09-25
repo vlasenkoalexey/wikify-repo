@@ -293,8 +293,8 @@ them); every claim on a concept page cites a real symbol, gated by a linter at b
 - **Mechanism:** start at `wiki/code/<slug>/overview.md` (questions and tasks to pages), then
   `areas/<area>.md` (what an area is for, its units) and `concepts/<unit>.md` (how a subsystem works,
   cited). Grep `index.md` descriptions and pages' `aliases:` to pick a page; read only that page.
-- **Source:** a citation `catalog/<module>.md#<Symbol> "path:Lnn"` names the file and line; read the
-  source there at the pinned commit for bodies and exact signatures.
+- **Source:** a citation links the symbol's source line at the pinned commit, and its title is the
+  symbol's index key `<path>#<Symbol>`; older pages cite `catalog/<module>.md#<Symbol>` instead.
 - **Symbols:** the index `catalog/symbols.tsv` (`symbols/*.tsv` when sharded; columns anchor, path,
   line, kind, rank, hash, callers, citing pages) and `catalog/edges.tsv` (`callee<TAB>caller`), both
   headed by their recipes; `catalog/index.md` maps modules. Grep by anchor, never read a file whole,
@@ -303,8 +303,10 @@ them); every claim on a concept page cites a real symbol, gated by a linter at b
   `grep -P '^<path>#<Symbol>\t'` gives one row or, on edges, its callers;
   `grep -P '\t<path>#<Symbol>$'` on edges gives what it calls;
   `grep -P '[#.]<Name>\t' | sort -t$'\t' -k5 -nr | head -20` finds a bare name,
-  `grep -P '^<dir>/.*#<Name>\t'` a name within an area. Source links are permalinks at the pin for
-  readers with repository access; do not fetch them, the row has path, line, signature and doc.
+  `grep -P '^<dir>/.*#<Name>\t'` a name within an area. Source links need repository access (a private
+  repo returns 404): never WebFetch them; `grep -P '^<title>\t'` gives the row (path, line, signature,
+  doc). For a body, read a local checkout; else try once `gh api -H "Accept: application/vnd.github.raw"
+  "repos/<owner>/<repo>/contents/<path>?ref=<pin>"` and on failure answer from the row.
 - **Trust:** `verified:` in the front matter says who checked a page; without it the page is
   agent-generated, say so when you rely on it. Changes between pins: `changes/<ref>.md` and `log.md`;
   the pin is `commit:` in the silo's `index.md`.

@@ -15,9 +15,9 @@ never touch:
   regenerates it; anything you write inside it is lost.
 
 Rules:
-- Cite with the citations already in the block (copy a `[\`Name\`](../catalog/...#Name "path:Lnn")`
-  link verbatim). The linter checks every citation resolves (rule 1); you may write prose
-  freely otherwise. Read the source at the cited `path:Lnn` before you describe a unit.
+- Cite with the citations already in the block (copy a citation link verbatim, title
+  included). The linter checks every citation resolves (rule 1); you may write prose
+  freely otherwise. Read the source at the cited path and line before you describe a unit.
 - Do not restate a mechanism a concept page explains; link it.
 - Replace the placeholder line `_(not yet synthesized ...)_` entirely; leave the front matter
   alone except `description:` (one sentence, the index reuses it).

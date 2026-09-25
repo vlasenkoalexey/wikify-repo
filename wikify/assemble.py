@@ -13,9 +13,11 @@ from pathlib import Path
 
 import yaml
 
-# A concept page cites catalog anchors: ``../catalog/<module path>.md#Symbol``. The
-# directory of the most-cited module is the page's *area* (§10.11 "Front door").
-_CATALOG_LINK_RE = re.compile(r"\]\((?:\.\./)+catalog/([^)#]+)\.md(?:#[^)]*)?\)")
+from . import cite
+
+# A concept page cites symbols by index key (``cite.key_of``: the title of a source-form
+# link or the path of a catalog-form link). The directory of the most-cited module is the
+# page's *area* (§10.11 "Front door").
 GROUP_MIN_CONCEPTS = 6      # group the concept table by area only past this many pages
 CROSS_CUTTING = "(cross-cutting)"
 
@@ -52,8 +54,11 @@ def page_area(page: Path) -> str:
     except OSError:
         return ""
     dirs: Counter = Counter()
-    for m in _CATALOG_LINK_RE.finditer(text):
-        path = m.group(1)
+    for _label, target in cite.LINK.findall(text):
+        key = cite.key_of(target)
+        if key is None:
+            continue
+        path = key[0][:-3]
         dirs[path.rsplit("/", 1)[0] if "/" in path else ""] += 1
     if not dirs:
         return ""

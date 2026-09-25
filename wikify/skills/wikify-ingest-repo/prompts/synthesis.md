@@ -118,7 +118,7 @@ where possible, marked `> [!inferred]` where it's your reading. This section is
 what separates a wiki from a code dump. Do not skip it.
 
 ## Entry points
-- [`Sym`](../catalog/<module>.md#Sym) — what it is and *when control reaches it*.
+- <the symbol's `cite:` link> — what it is and *when control reaches it*.
 
 ## Mechanism (step-by-step)
 Readable prose in execution order. Each numbered step is a substantive paragraph
@@ -157,6 +157,7 @@ Do not write `generated`, `verified`, `sources` or `status`: `wikify finalize` s
 You write ONE file: the concept page. Every symbol already has a row in the symbol
 index (`catalog/symbols/*.tsv`; per-module `catalog/<module>.md` pages exist only when the
 config renders them). Paste the packet's `cite:` link for a symbol verbatim, including its
-title — `[\`Sym\`](../catalog/<module>.md#Sym "path:Lnn")`, the source location a reader
-can open without a hop; the linter resolves the anchor against the index and checks it is
-in the SCIP index and this packet's subgraph.
+title. With a `source_url` it is `[\`Sym\`](<source_url>/<path>#Lnn "<module>#Sym")`: the
+href opens the source line at the pin, the title is the symbol's index key; without one it
+is `[\`Sym\`](../catalog/<module>.md#Sym "path:Lnn")`. The linter resolves the key against
+the index and checks it is in the SCIP index and this packet's subgraph.

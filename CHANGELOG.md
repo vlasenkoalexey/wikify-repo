@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0 - 2026-09-25
+
+### Changed
+- **Citations link the source line, titled with the index key** (docs/citations.md). When a
+  silo has a `source_url`, a citation is ``[`Sym`](<source_url>/<path>#L<line> "<module>#<Sym>")``
+  instead of `../catalog/<module>.md#<Sym>`: a reader with repository access lands on the code
+  at the pin, and a reader without it (a private repo) greps the title in `catalog/symbols.tsv`
+  for path, line, signature and doc. The `index` tier no longer needs catalog pages for links
+  to work; the 0.3.5 `anchors` tier stays available but nothing points at it.
+- `finalize` rewrites every citation in the silo from the index it just wrote, so hrefs track
+  the pin; packets emit the new form in their `cite:` lines.
+- Lint, fix, verify, OKF, relink, coverage and the index's area grouping resolve both forms
+  through one parser (`cite.key_of`). Dead-citation messages name the key.
+- Verify cache keys reduce each citation to its key, so a link rewrite does not re-open
+  verified claims; caches from 0.3 still match.
+- Retrieval block: citations described in the new form; never WebFetch source links; for a
+  body read a local checkout, else one `gh api` call at the pin, else answer from the row.
+
+### Added
+- `wikify source-links [slug]`: re-point a shipped silo's citations at source from its
+  shipped `symbols.tsv`, without a SCIP index or checkout. The migration for silos built
+  before 0.4; idempotent.
+
 ## 0.3.5 - 2026-09-25
 
 ### Fixed

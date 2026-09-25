@@ -26,6 +26,7 @@ from . import (
     assemble,
     bazel_cc,
     changes as changes_mod,
+    cite as cite_mod,
     connect as connect_mod,
     coverage as coverage_mod,
     diagrams as diagrams_mod,
@@ -621,6 +622,7 @@ def prepare(
             scope=ag.scopes.get(concept.slug, ""),
             scope_symbols=ag.scope_sets.get(concept.slug),
             since=since,
+            source_url=cfg.source_url or "",
         )
         pkt = packet.write_packet(p.cache, slug, concept.slug, text, subgraph)
         typer.echo(f"  packet → {pkt.name}  ({len(subgraph)} symbols)")
@@ -643,6 +645,25 @@ def prepare(
         manifest.write_text("\n".join(docs) + "\n", encoding="utf-8")
         typer.echo(f"docs: {len(docs)} project doc(s) to ingest → {manifest} "
                    f"(run the doc-concept step, then finalize)")
+
+
+@app.command("source-links")
+def source_links(
+    slug: str = typer.Argument(None, help="Repo slug (host-wiki mode); omit inside a wikified repo."),
+    root: Path = typer.Option(Path("."), help="Project root."),
+) -> None:
+    """Point a silo's citations at the source line at the pin, from its shipped symbol index.
+
+    No SCIP index, no checkout: path and line come from `catalog/symbols.tsv` as last
+    written by `finalize`, the pin from `source_url`. Each citation becomes
+    `[label](<source_url>/<path>#L<line> "<index key>")`. `finalize` does the same on every
+    run; this migrates an already-shipped silo without re-indexing. Idempotent."""
+    p, cfg = _load(root, slug)
+    if not cfg.source_url:
+        typer.echo(f"error: {p.slug} has no source_url; citations stay in the catalog form", err=True)
+        raise typer.Exit(2)
+    c = cite_mod.to_source_silo(p.wiki_slug, cfg.source_url)
+    typer.echo(f"citations: {c['links']} link(s) re-pointed at source in {c['pages']} page(s)")
 
 
 @app.command()
@@ -682,6 +703,12 @@ def finalize(
                + (f" ({n_syms - n_rows} overloads folded)" if n_syms != n_rows else "")
                + f", {n_edges} caller edges, {n_shards} file(s) per kind ({cfg.index_profile} profile)"
                + (f", {n_sig} C++ signatures read from source" if n_sig else ""))
+    if cfg.source_url:
+        # Citations link the source line at the pin, titled with the index key (cite.py):
+        # re-point every citation from the rows just written, so lines track the pin.
+        c = cite_mod.to_source_silo(p.wiki_slug, cfg.source_url)
+        if c["links"]:
+            typer.echo(f"citations: {c['links']} link(s) re-pointed at source in {c['pages']} page(s)")
     catalogued, catalog_paths = coverage_mod.emit_catalogs(
         graph, p.wiki_slug, repo_dir=acq.repo_dir, source_url=cfg.source_url,
         collapse=cfg.coverage_collapse, exclude=cfg.coverage_exclude, mode=mode)
@@ -998,8 +1025,8 @@ them); every claim on a concept page cites a real symbol, gated by a linter at b
 - **Mechanism:** start at `{w}/<slug>/overview.md` (questions and tasks to pages), then
   `areas/<area>.md` (what an area is for, its units) and `concepts/<unit>.md` (how a subsystem works,
   cited). Grep `index.md` descriptions and pages' `aliases:` to pick a page; read only that page.
-- **Source:** a citation `catalog/<module>.md#<Symbol> "path:Lnn"` names the file and line; read the
-  source there at the pinned commit for bodies and exact signatures.
+- **Source:** a citation links the symbol's source line at the pinned commit, and its title is the
+  symbol's index key `<path>#<Symbol>`; older pages cite `catalog/<module>.md#<Symbol>` instead.
 - **Symbols:** the index `catalog/symbols.tsv` (`symbols/*.tsv` when sharded; columns anchor, path,
   line, kind, rank, hash, callers, citing pages) and `catalog/edges.tsv` (`callee<TAB>caller`), both
   headed by their recipes; `catalog/index.md` maps modules. Grep by anchor, never read a file whole,
@@ -1008,8 +1035,10 @@ them); every claim on a concept page cites a real symbol, gated by a linter at b
   `grep -P '^<path>#<Symbol>\\t'` gives one row or, on edges, its callers;
   `grep -P '\\t<path>#<Symbol>$'` on edges gives what it calls;
   `grep -P '[#.]<Name>\\t' | sort -t$'\\t' -k5 -nr | head -20` finds a bare name,
-  `grep -P '^<dir>/.*#<Name>\\t'` a name within an area. Source links are permalinks at the pin for
-  readers with repository access; do not fetch them, the row has path, line, signature and doc.
+  `grep -P '^<dir>/.*#<Name>\\t'` a name within an area. Source links need repository access (a private
+  repo returns 404): never WebFetch them; `grep -P '^<title>\\t'` gives the row (path, line, signature,
+  doc). For a body, read a local checkout; else try once `gh api -H "Accept: application/vnd.github.raw"
+  "repos/<owner>/<repo>/contents/<path>?ref=<pin>"` and on failure answer from the row.
 - **Trust:** `verified:` in the front matter says who checked a page; without it the page is
   agent-generated, say so when you rely on it. Changes between pins: `changes/<ref>.md` and `log.md`;
   the pin is `commit:` in the silo's `index.md`.
@@ -1041,8 +1070,8 @@ real symbol, gated by a linter at build time.
 - **Mechanism:** start at `{w}/overview.md` (questions and tasks to pages), then `{w}/areas/<area>.md`
   (what an area is for, its units) and `{w}/concepts/<unit>.md` (how a subsystem works, cited). Grep
   `{w}/index.md` descriptions and pages' `aliases:` to pick a page; read only that page.
-- **Source:** a citation `catalog/<module>.md#<Symbol> "path:Lnn"` names the file and line; read the
-  source there for bodies and exact signatures.
+- **Source:** a citation links the symbol's source line at the pinned commit, and its title is the
+  symbol's index key `<path>#<Symbol>`; older pages cite `catalog/<module>.md#<Symbol>` instead.
 - **Symbols:** the index `{w}/catalog/symbols.tsv` (`symbols/*.tsv` when sharded; columns anchor, path,
   line, kind, rank, hash, callers, citing pages) and `{w}/catalog/edges.tsv` (`callee<TAB>caller`),
   both headed by their recipes; `{w}/catalog/index.md` maps modules. Grep by anchor, never read a file
@@ -1051,8 +1080,10 @@ real symbol, gated by a linter at build time.
   `grep -P '^<path>#<Symbol>\\t'` gives one row or, on edges, its callers;
   `grep -P '\\t<path>#<Symbol>$'` on edges gives what it calls;
   `grep -P '[#.]<Name>\\t' | sort -t$'\\t' -k5 -nr | head -20` finds a bare name,
-  `grep -P '^<dir>/.*#<Name>\\t'` a name within an area. Source links are permalinks at the pin for
-  readers with repository access; do not fetch them, the row has path, line, signature and doc.
+  `grep -P '^<dir>/.*#<Name>\\t'` a name within an area. Source links need repository access (a private
+  repo returns 404): never WebFetch them; `grep -P '^<title>\\t'` gives the row (path, line, signature,
+  doc). For a body, read a local checkout; else try once `gh api -H "Accept: application/vnd.github.raw"
+  "repos/<owner>/<repo>/contents/<path>?ref=<pin>"` and on failure answer from the row.
 - **Trust:** `verified:` in the front matter says who checked a page; without it the page is
   agent-generated, say so when you rely on it. Changes between pins: `{w}/changes/<ref>.md` and
   `{w}/log.md`; the pin is `commit:` in `{w}/index.md`.

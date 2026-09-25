@@ -676,7 +676,9 @@ wiki/                          the product (shipped)
                                ALSO the home of every symbol: its frontmatter
                                `symbols:` map (anchor→moniker) is the citation
                                target + the linter's resolution table. Citations
-                               are `../catalog/<module>.md#<QualifiedName>`.
+                               are `../catalog/<module>.md#<QualifiedName>`
+                               (since 0.4: a source link titled with the
+                               index key, docs/citations.md).
     doc-concepts/<concept>.md  grounded pages extracted from the repo's own docs
     (maps/dispatch.md — planned op→kernel table, descoped with Stage 3;
      tests/<area>.md, sources/<name>.md — planned L2 pages, not yet emitted)

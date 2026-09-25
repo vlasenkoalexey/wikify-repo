@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections import deque
 from pathlib import Path
 
-from . import coverage, evidence, source
+from . import cite, coverage, evidence, source
 from .config import Concept
 from .graph import SymbolGraph
 
@@ -217,6 +217,7 @@ def build_packet(
     scope: str = "",
     scope_symbols: set[str] | None = None,
     since: str = "",
+    source_url: str = "",
 ) -> tuple[str, list[str]]:
     """Render the packet markdown and return (text, subgraph_monikers).
 
@@ -294,10 +295,16 @@ def build_packet(
         a(f"### `{sym.name}`  ({_kind(sym)}){outside}")
         a(f"- moniker: `{m}`")
         if sym.def_path and sym.suffix in coverage.DOCUMENTABLE_SUFFIXES:
-            # The link title is the source location (catalog-index.md): an agent reading
-            # the page gets path and line without a hop; lint strips it, never resolves it.
-            loc = f"{sym.def_path}:L{(sym.def_line or 0) + 1}"
-            a(f"- cite: [`{sym.name}`]({coverage.catalog_ref(sym.def_path, m)} \"{loc}\")")
+            # With a source_url (0.4, cite.py): href = the source line at the pin, title =
+            # the index key, so a reader with access lands on the code and one without
+            # greps the row. Without one: the catalog form, titled with the location.
+            line = (sym.def_line or 0) + 1
+            ref = coverage.catalog_ref(sym.def_path, m)
+            if source_url:
+                key = cite.key_text(cite.key_of(ref))
+                a(f"- cite: [`{sym.name}`]({cite.source_target(source_url, sym.def_path, line, key)})")
+            else:
+                a(f"- cite: [`{sym.name}`]({ref} \"{sym.def_path}:L{line}\")")
         else:
             # Namespaces, macros, and other non-DOCUMENTABLE_SUFFIXES kinds never get a
             # catalog heading (coverage.documentable_symbols filters to Type/Method/Term),
@@ -371,16 +378,16 @@ def read_subgraph(cache_dir: str | Path, slug: str, concept_slug: str) -> set[st
 _TEMPLATE_RULES = """\
 Write ONE file: `wiki/<slug>/concepts/{concept}.md`. You do NOT create any symbol
 stubs — every symbol already has a row in the symbol index. To cite a symbol,
-copy its `cite:` link from the Subgraph above VERBATIM (an anchor of the form
-`[`Sym`](../catalog/<module>.md#Sym "path:Lnn")`; the title is the source location).
-The linter resolves each citation against the symbol index, so the link must match.
+copy its `cite:` link from the Subgraph above VERBATIM, title included (the title
+or the `catalog/...#Sym` fragment is the symbol's index key). The linter resolves
+each citation against the symbol index by that key, so the link must match.
 
 HARD RULES:
 - Use ONLY symbols from the Subgraph above. Never name a symbol not listed there.
   If you need a missing one, say so in Open questions — do not invent it.
 - In "## Entry points" and "## Mechanism (step-by-step)", EVERY bullet/step must
-  carry a symbol citation: paste the symbol's `cite:` link, optionally tagged
-  `[extracted → `Sym`](../catalog/...#Sym)`. Uncited claims there fail the lint.
+  carry a symbol citation: paste the symbol's `cite:` link. Uncited claims there
+  fail the lint.
 - Any claim you cannot ground in a cited symbol or an Evidence item goes inside a
   `> [!inferred]` blockquote — never stated as fact.
 - Prefer the author's `doc (author intent, L2)` lines over guessing; you may quote
@@ -401,7 +408,7 @@ status: fresh
 ## Entry points
 - <cite link> — what it is, when it's hit.
 ## Mechanism (step-by-step)
-1. <step> [extracted → `Sym`](../catalog/<module>.md#Sym)
+1. <step> <cite link>
 ## Key data structures
 ## Dynamics (design intent)
 ## Edge cases

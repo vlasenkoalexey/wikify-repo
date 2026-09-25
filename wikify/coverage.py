@@ -48,6 +48,7 @@ from pathlib import Path
 
 import yaml
 
+from . import cite
 from .graph import Symbol, SymbolGraph
 from .monikers import parse_symbol
 
@@ -78,10 +79,6 @@ def class_symbols(graph: SymbolGraph) -> dict[str, Symbol]:
     }
 
 
-# ``../catalog/<module>.md#<anchor>`` with an optional link title (``"path:Lnn"``, the
-# source location packets add since 0.3) — the title is display metadata, never resolved.
-_CATALOG_LINK = re.compile(r"\]\(\.\./catalog/([^)#\s]+\.md)#([^)\s]+)(?:\s+\"[^\"]*\")?\)")
-
 
 def symbol_index(graph: SymbolGraph) -> dict[tuple[str, str], str]:
     """``(catalog page path, anchor) -> moniker`` for every documentable symbol: the
@@ -110,8 +107,9 @@ def covered_monikers(graph: SymbolGraph, wiki_slug_dir: str | Path) -> dict[str,
     if not concepts.is_dir():
         return covered
     for page in sorted(concepts.glob("*.md")):
-        for catalog_rel, anchor in _CATALOG_LINK.findall(page.read_text(encoding="utf-8")):
-            moniker = index.get((catalog_rel, anchor))
+        for _label, target in cite.LINK.findall(page.read_text(encoding="utf-8")):
+            key = cite.key_of(target)
+            moniker = index.get(key) if key else None
             if moniker:
                 covered.setdefault(moniker, page.stem)
     return covered

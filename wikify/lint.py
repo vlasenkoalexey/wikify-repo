@@ -1,9 +1,9 @@
 """Stage 6 — the citation linter (implementation.md §5.3). The hallucination floor.
 
 Hard, deterministic gate. For each concept page it enforces:
-  1. Every symbol citation is a link into a module **catalog** with an anchor
-     (``../catalog/<module>.md#<anchor>``) that resolves, via the catalog's
-     frontmatter ``symbols`` map, to a moniker present in the silo's SCIP graph.
+  1. Every symbol citation names a symbol-index key (``<module>#<anchor>``: the title of
+     a source-form link, or the path + fragment of a catalog-form link; see ``cite``)
+     that resolves to a moniker present in the silo's SCIP graph.
      Dead/unresolvable citation = FAIL.
   2. In "## Entry points" and "## Mechanism (step-by-step)", every list item
      carries ≥1 symbol citation or an L2 evidence link — unless it is inside a
@@ -15,8 +15,9 @@ Symbols live in their module catalog, not in per-symbol stubs — citations are 
 anchors. Since 0.3 (catalog-index.md) the resolution table is the GRAPH
 (``coverage.symbol_index``: module from the link path + qualified name), so lint works in
 every catalog tier — full pages, anchor-only pages, or no pages at all. The catalog page's
-front-matter map is only a fallback for callers that have no graph in hand. A citation may
-carry a link title (``"path:Lnn"``, the source location); it is stripped, never resolved.
+front-matter map is only a fallback for callers that have no graph in hand. Since 0.4 a
+citation is usually in the source form (href = the source line, title = the key); the
+catalog form's optional ``"path:Lnn"`` title is display only, never resolved.
 Checkable without NLP because rules 2–3 are scoped to named sections and list items.
 """
 
@@ -28,7 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from . import packet
+from . import cite, packet
 from .graph import SymbolGraph
 
 # Per-graph resolution tables (``coverage.symbol_index``), built once per graph object.
@@ -80,11 +81,16 @@ def strip_title(target: str) -> str:
     return target.split(None, 1)[0] if " " in target else target
 
 
+def _shown(target: str) -> str:
+    """How a citation is named in lint messages: its index key, else the bare target."""
+    key = cite.key_of(target)
+    return cite.key_text(key) if key else strip_title(target)
+
+
 def _is_symbol_link(target: str) -> bool:
-    """A symbol citation is a catalog link carrying an anchor."""
-    target = strip_title(target)
-    path = target.split("#", 1)[0]
-    return "catalog/" in path and path.endswith(".md") and "#" in target
+    """A symbol citation: a source-form link titled with an index key, or a catalog link
+    carrying an anchor (``cite.key_of``)."""
+    return cite.key_of(target) is not None
 
 
 def _graph_index(graph: SymbolGraph) -> dict[tuple[str, str], str]:
@@ -98,18 +104,20 @@ def _graph_index(graph: SymbolGraph) -> dict[tuple[str, str], str]:
 
 
 def _resolve_citation(page_path: Path, target: str, graph: SymbolGraph | None = None) -> str | None:
-    """Resolve a ``../catalog/<module>.md#anchor`` citation → moniker (or None).
+    """Resolve a symbol citation (either form, ``cite.key_of``) → moniker (or None).
 
-    With ``graph``: the module is the link path after ``catalog/`` and the anchor is the
-    qualified name — resolved in the graph's symbol index, no file read, any catalog tier.
-    Without a graph (a caller that only has the page): fall back to the catalog page's
-    front-matter ``symbols`` map, reconstructing ``symbol_base + suffix``."""
-    target = strip_title(target)
-    path, _, anchor = target.partition("#")
+    With ``graph``: the key's module and qualified name are looked up in the graph's symbol
+    index, no file read, any catalog tier. Without a graph (a caller that only has the
+    page): fall back to a catalog-form link's page front-matter ``symbols`` map,
+    reconstructing ``symbol_base + suffix``."""
+    key = cite.key_of(target)
+    if key is None:
+        return None
     if graph is not None:
-        i = path.find("catalog/")
-        rel = path[i + len("catalog/"):] if i >= 0 else path
-        return _graph_index(graph).get((rel, anchor))
+        return _graph_index(graph).get(key)
+    path, _, anchor = strip_title(target).partition("#")
+    if path.startswith(("http://", "https://")):
+        return None
     catalog_page = (page_path.parent / path).resolve()
     fm = _frontmatter_dict(catalog_page)
     syms = fm.get("symbols") or {}
@@ -178,7 +186,7 @@ def lint_page(
             moniker = _resolve_citation(page_path, target, graph)
             if moniker is None:
                 errors.append(
-                    LintError(rel, i, 1, f"dead citation → {strip_title(target)} (no such symbol in the index)")
+                    LintError(rel, i, 1, f"dead citation → {_shown(target)} (no such symbol in the index)")
                 )
                 continue
             if moniker not in graph:
@@ -242,7 +250,7 @@ def lint_rule1_dir(wiki_slug_dir: str | Path, graph: SymbolGraph, subdir: str) -
                 moniker = _resolve_citation(page, target, graph)
                 if moniker is None:
                     errors.append(LintError(page.name, i, 1,
-                                  f"dead citation → {strip_title(target)} (no such symbol in the index)"))
+                                  f"dead citation → {_shown(target)} (no such symbol in the index)"))
                 elif moniker not in graph:
                     errors.append(LintError(page.name, i, 1,
                                   f"citation {target} resolves to a moniker not in the SCIP index"))

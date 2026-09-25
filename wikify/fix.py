@@ -56,7 +56,7 @@ def _packet_cite_map(cache_dir: Path, slug: str, concept_slug: str) -> dict[str,
             continue
         name = m.group(1).strip().strip("`").strip()
         target = m.group(2).strip()
-        if name and "catalog/" in target:
+        if name and _is_symbol_link(target):
             out[name] = target
     return out
 

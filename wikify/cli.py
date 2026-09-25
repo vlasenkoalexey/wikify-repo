@@ -1026,7 +1026,7 @@ them); every claim on a concept page cites a real symbol, gated by a linter at b
   `areas/<area>.md` (what an area is for, its units) and `concepts/<unit>.md` (how a subsystem works,
   cited). Grep `index.md` descriptions and pages' `aliases:` to pick a page; read only that page.
 - **Source:** a citation links the symbol's source line at the pinned commit, and its title is the
-  symbol's index key `<path>#<Symbol>`; older pages cite `catalog/<module>.md#<Symbol>` instead.
+  symbol's index key `<path>#<Symbol>`.
 - **Symbols:** the index `catalog/symbols.tsv` (`symbols/*.tsv` when sharded; columns anchor, path,
   line, kind, rank, hash, callers, citing pages) and `catalog/edges.tsv` (`callee<TAB>caller`), both
   headed by their recipes; `catalog/index.md` maps modules. Grep by anchor, never read a file whole,
@@ -1071,7 +1071,7 @@ real symbol, gated by a linter at build time.
   (what an area is for, its units) and `{w}/concepts/<unit>.md` (how a subsystem works, cited). Grep
   `{w}/index.md` descriptions and pages' `aliases:` to pick a page; read only that page.
 - **Source:** a citation links the symbol's source line at the pinned commit, and its title is the
-  symbol's index key `<path>#<Symbol>`; older pages cite `catalog/<module>.md#<Symbol>` instead.
+  symbol's index key `<path>#<Symbol>`.
 - **Symbols:** the index `{w}/catalog/symbols.tsv` (`symbols/*.tsv` when sharded; columns anchor, path,
   line, kind, rank, hash, callers, citing pages) and `{w}/catalog/edges.tsv` (`callee<TAB>caller`),
   both headed by their recipes; `{w}/catalog/index.md` maps modules. Grep by anchor, never read a file

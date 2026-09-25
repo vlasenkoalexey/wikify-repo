@@ -953,7 +953,9 @@ one row per anchor with overload callers unioned; `catalog` unset keeps `full` o
 state already has pages; a pinned config concept keeps its unit in the plan as deep/`config`;
 `build_graph(repair_root=)` repairs empty document paths in indexes built before the fix).
 - **Config** (`config.py`): `catalog: index | anchors | full`. Default `index` for new wikis;
-  `anchors` is today's collapsed page; `full` is today's page. `coverage_collapse` /
+  `anchors` is the collapsed page (one row per symbol: `<a id>` + source line); `full` is
+  the detailed page. Both put an `<a id="<QualifiedName>">` on every symbol, so a citation
+  followed in a browser lands on it. `coverage_collapse` /
   `coverage_exclude` keep their meaning inside `full`.
 - **Emitter** (`coverage.py`): `emit_symbol_index(graph, wiki_slug_dir, state, profile)` writes
   one `symbols/<top-level-dir>.tsv` per top-level directory of definition paths, rows sorted by

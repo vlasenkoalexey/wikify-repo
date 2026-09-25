@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.5 - 2026-09-25
+
+### Fixed
+- **Citations land in a browser.** A citation `catalog/<module>.md#<QualifiedName>` resolved
+  for the linter and for agents through the front-matter symbol map, but the rendered page had
+  no element with that id, so every fragment was dead (in the `index` tier the page does not
+  exist at all). The `anchors` and `full` tiers now put an `<a id="<QualifiedName>">` on every
+  symbol, taken from the same anchor table as the front matter, so the two cannot drift. The
+  collapsed `anchors` page, previously a single note, is now a jump table: one row per symbol
+  with its anchor and a link to its source line. A citation followed on GitHub lands on the
+  symbol's row, and one more click opens the exact line. GitHub folds ids to lowercase and its
+  fragment resolver lowercases too, so mixed-case anchors resolve. Anchors that differ only by
+  case (a nested class `Config` and an attribute `config`; 24 of 10,462 in torchtitan) share one
+  id there and land on whichever comes first; case-sensitive renderers land exactly.
+- **Full catalogs no longer drop nested classes that share a short name.** Classes were keyed
+  by their bare name, so `SelectiveAC.Config` and `FullAC.Config` in one module overwrote each
+  other: all but one vanished from the page and their members were merged under the survivor.
+  Classes are now keyed, and headed, by their qualified name. Members of a class that is not
+  itself rendered (for example one defined inside a function) get an "Other members" section
+  instead of appearing nowhere. `full` is the tier an existing silo keeps when its config sets
+  no `catalog:`, so such silos render the missing classes on their next `finalize`.
+
 ## 0.3.4 - 2026-09-17
 
 ### Changed

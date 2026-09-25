@@ -174,8 +174,10 @@ signature and doc line are redundant (the agent reads the source), and the navig
 profile is a third of the size; the full profile is for source-absent repos.
 
 Config: `catalog: index | anchors | full`. `index` is the default for new wikis. `anchors`
-is today's collapsed page (front-matter map plus source link) for consumers that need the
-`.md` targets to exist. `full` renders per-module pages from the same data. The existing
+is the collapsed page for consumers that need the `.md` targets to exist, such as readers
+following citations in a browser: the front-matter map plus one row per symbol carrying an
+`<a id="<QualifiedName>">` and a link to its source line, so a citation lands on the symbol.
+`full` renders per-module pages from the same data, with the same ids on every symbol. The existing
 `coverage_collapse` and `coverage_exclude` globs keep working inside `full`.
 
 ### Citations resolve through the graph

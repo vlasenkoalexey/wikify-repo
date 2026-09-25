@@ -38,6 +38,7 @@ sidesteps dynamic dispatch precisely because it never asks about connectivity.
 from __future__ import annotations
 
 import fnmatch
+import html
 import os
 import posixpath
 import re
@@ -241,6 +242,21 @@ def symbol_anchor_map(graph: SymbolGraph, monikers: list[str]) -> dict[str, str]
     return out
 
 
+def _owner_qualified(moniker: str) -> str | None:
+    """Qualified name of the innermost class enclosing ``moniker``, or None for a
+    module-level symbol or a class itself. Named exactly as ``qualified_name`` names the
+    class, so a member finds its own class even when nested classes share a short name
+    (``SelectiveAC.Config`` and ``FullAC.Config`` in one module)."""
+    ps = parse_symbol(moniker)
+    if ps.is_local or not ps.descriptors or ps.descriptors[-1][1] == "Type":
+        return None
+    types = [i for i, (_n, suf) in enumerate(ps.descriptors) if suf == "Type"]
+    if not types:
+        return None
+    names = [n for n, suf in ps.descriptors[: types[-1] + 1] if suf != "Namespace" and n]
+    return _ANCHOR_UNSAFE.sub("-", ".".join(names)).strip("-") or None
+
+
 def _owner_class(moniker: str) -> str | None:
     """Name of the enclosing class for a method/term, or None if module-level."""
     ps = parse_symbol(moniker)
@@ -376,20 +392,33 @@ def render_catalog(
     ``source_base`` (e.g. ``https://github.com/org/repo/blob/<commit>``) makes the
     module header and every ``def:`` line a permalink into the pinned source."""
     symbols = {m: graph.symbols[m] for m in monikers}
+    # The citation fragment of each symbol (`#<QualifiedName>`). The frontmatter map and
+    # the linter read the same table, so the body's anchors cannot drift from them.
+    anchor_map = symbol_anchor_map(graph, monikers)
+    anchor_of = {m: anchor for anchor, m in anchor_map.items()}
     # Partition into classes, their members, and module-level defs.
-    classes: dict[str, str] = {}          # class_name -> moniker
-    members: dict[str, list[str]] = defaultdict(list)  # class_name -> [member monikers]
+    # Keyed by qualified name, not the bare name: nested classes that share a short name
+    # (`SelectiveAC.Config`, `FullAC.Config`) overwrote each other, dropping all but one
+    # from the page and merging their members under the survivor.
+    classes: dict[str, str] = {}          # qualified class name -> moniker
+    members: dict[str, list[str]] = defaultdict(list)  # qualified class name -> [members]
     module_level: list[str] = []
     for m in monikers:
         sym = symbols[m]
         if sym.suffix == "Type":
-            classes[sym.name] = m
+            classes[qualified_name(m)] = m
             continue
-        owner = _owner_class(m)
+        owner = _owner_qualified(m)
         if owner is not None:
             members[owner].append(m)
         else:
             module_level.append(m)
+    # Members whose enclosing class is not rendered here (a class defined inside a
+    # function, or an owner SCIP records without a documentable class symbol) would
+    # otherwise appear nowhere on the page. They get their own section, so every
+    # documentable symbol is rendered -- the catalog's whole-repo guarantee.
+    orphans = sorted((m for owner, ms in members.items() if owner not in classes for m in ms),
+                     key=lambda m: anchor_of.get(m, ""))
 
     def _cov_tag(moniker: str) -> str:
         concept = covered.get(moniker)
@@ -415,13 +444,21 @@ def render_catalog(
         doc = f" — {sym.doc_summary}" if sym.doc_summary else ""
         return f"{sig} — {_loc_line(sym)}{doc}{_cov_tag(moniker)}"
 
+    def _id(moniker: str) -> str:
+        """An HTML anchor at the symbol's citation fragment, so a citation followed in a
+        browser (`catalog/<module>.md#<QualifiedName>`) lands on the symbol. The
+        frontmatter map only lets an agent resolve the anchor; a rendered page shows no
+        target for it. Empty for the loser of an anchor collision."""
+        anchor = anchor_of.get(moniker)
+        return f'<a id="{html.escape(anchor, quote=True)}"></a>' if anchor else ""
+
     lines: list[str] = []
     a = lines.append
     # Frontmatter carries the anchor→moniker map so the linter resolves citations.
     # Every Python moniker in one catalog shares the same prefix (scheme + project +
     # version + module namespace); factor it into `symbol_base` once so the map is
     # anchor→terminal, not 100 copies of the same 55-char prefix.
-    base, suffixes = _compress_anchor_map(symbol_anchor_map(graph, monikers))
+    base, suffixes = _compress_anchor_map(anchor_map)
     fm = {
         "title": f"Module: {module_path}",
         "type": "catalog",
@@ -439,13 +476,16 @@ def render_catalog(
     a(f"# Module: {header}")
     a("")
     if collapse:
-        # Pointer-only page: the frontmatter symbol map above still resolves every
-        # citation (linter rule 1), but the detailed member body is omitted. Used by
-        # `coverage_collapse` to keep model-zoo / boilerplate modules citeable without
-        # the per-member bulk. Follow the source link for full detail.
-        a(f"> **Collapsed catalog** ({len(monikers)} symbols) — anchors above resolve for "
-          "citations; detailed member listing omitted (`coverage_collapse`). See the source "
-          "link above, or the curated codebase page, for depth.")
+        # Pointer-only page: no member detail, but one row per symbol carrying its
+        # citation anchor and a link to its source line, so a citation followed in a
+        # browser lands on the symbol and one more click opens the exact line. Used by
+        # `catalog: anchors` and by `coverage_collapse` (model zoos / boilerplate).
+        a(f"> **Collapsed catalog** ({len(monikers)} symbols) — one row per symbol with its "
+          "source line; member detail omitted. See the source link above, or the curated "
+          "codebase page, for depth.")
+        a("")
+        for anchor, m in sorted(anchor_map.items()):
+            a(f"- {_id(m)}`{anchor}` — {_loc_line(symbols[m])}{_cov_tag(m)}")
         return "\n".join(lines) + "\n"
 
     def _link_targets(targets: list[str], cap: int = 40) -> str:
@@ -490,7 +530,7 @@ def render_catalog(
             csym = symbols[cm]
             rels = _rel_names(csym)
             base = f"  ·  implements/extends {', '.join(sorted(set(rels)))}" if rels else ""
-            a(f"### `{cname}`{base}")
+            a(f"### {_id(cm)}`{cname}`{base}")
             a(f"- def: {_loc(csym)}{_cov_tag(cm)}")
             if csym.doc_summary:
                 a(f"- doc: {csym.doc_summary}")
@@ -508,9 +548,9 @@ def render_catalog(
             if detailed:
                 a("- members:")
                 for s, m in detailed:
-                    a(f"  - {_detail(s, m)}")
+                    a(f"  - {_id(m)}{_detail(s, m)}")
             if folded:
-                fold = ", ".join(f"`{s.name}`{_loc_line(s)}" for s, _m in folded)
+                fold = ", ".join(f"{_id(m)}`{s.name}`{_loc_line(s)}" for s, m in folded)
                 a(f"- protocol/private: {fold}")
             uses, used_by = class_connections(graph, cm, members.get(cname, []))
             if uses:
@@ -524,12 +564,18 @@ def render_catalog(
     if funcs:
         a("## Functions")
         for m in sorted(funcs, key=lambda x: symbols[x].name):
-            a(f"- {_detail(symbols[m], m)}")
+            a(f"- {_id(m)}{_detail(symbols[m], m)}")
         a("")
     if terms:
         a("## Module values")
         for m in sorted(terms, key=lambda x: symbols[x].name):
-            a(f"- {_detail(symbols[m], m)}")
+            a(f"- {_id(m)}{_detail(symbols[m], m)}")
+        a("")
+    if orphans:
+        a("## Other members")
+        for m in orphans:
+            a(f"- {_id(m)}`{anchor_of.get(m, symbols[m].name)}` — "
+              f"{_loc_line(symbols[m])}{_cov_tag(m)}")
         a("")
 
     return "\n".join(lines) + "\n"

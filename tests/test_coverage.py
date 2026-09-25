@@ -265,3 +265,61 @@ def test_catalog_cross_links_skip_namespace_targets():
                                    [M_CLASS, M_METHOD, M_ATTN], covered={})
     assert "helpers" not in page                 # no link, no plain mention either
     assert "[`Attention`](models.md#Attention)" in page
+
+
+def test_every_citation_anchor_lands_on_an_element():
+    """A citation `catalog/<module>.md#<QualifiedName>` followed in a browser must land on
+    its symbol: every anchor in the frontmatter map (what the linter resolves) has an HTML
+    id in the rendered body, in both the full page and the collapsed `catalog: anchors`
+    page. Before this, anchors lived only in the frontmatter, so every fragment was dead."""
+    g = _graph()
+    mons = [M_CLASS, M_METHOD, M_ATTN]
+    base = "https://example.test/blob/abc"
+    for collapse in (False, True):
+        page = coverage.render_catalog(g, "demo/models.py", mons, covered={},
+                                       source_base=base, collapse=collapse)
+        body = page.split("---", 2)[2]
+        for anchor in coverage.symbol_anchor_map(g, mons):
+            assert f'<a id="{anchor}"></a>' in body, (collapse, anchor)
+
+
+def test_collapsed_catalog_rows_link_each_symbol_to_its_source_line():
+    """The collapsed page is a jump table: one row per symbol, anchor then source line."""
+    g = _graph()
+    page = coverage.render_catalog(g, "demo/models.py", [M_CLASS, M_METHOD], covered={},
+                                   source_base="https://example.test/blob/abc", collapse=True)
+    row = next(line for line in page.splitlines() if 'id="Transformer.forward"' in line)
+    # def_line is 0-based in the graph; the rendered source line is 1-based.
+    assert "(https://example.test/blob/abc/demo/models.py#L21)" in row
+    assert "`Transformer.forward`" in row
+
+
+def test_full_catalog_keeps_nested_classes_that_share_a_short_name():
+    """`SelectiveAC.Config` and `FullAC.Config` in one module are two classes. Keyed by the
+    bare name `Config`, one overwrote the other: it vanished from the page and its members
+    were merged under the survivor."""
+    g = SymbolGraph()
+    ms = {}
+    for outer in ("SelectiveAC", "FullAC"):
+        ms[outer] = f"{PKG} `demo.ac`/{outer}#Config#"
+        g.add_symbol(Symbol(moniker=ms[outer], kind="Class", suffix="Type", name="Config",
+                            def_path="demo/ac.py", def_line=10))
+        g.add_symbol(Symbol(moniker=f"{PKG} `demo.ac`/{outer}#Config#mode.", kind="Field",
+                            suffix="Term", name="mode", def_path="demo/ac.py", def_line=11))
+    mons = list(g.symbols)
+    page = coverage.render_catalog(g, "demo/ac.py", mons, covered={})
+    for outer in ("SelectiveAC", "FullAC"):
+        assert f'<a id="{outer}.Config"></a>`{outer}.Config`' in page, outer
+        assert f'<a id="{outer}.Config.mode"></a>' in page, outer
+
+
+def test_full_catalog_renders_members_of_unrendered_classes():
+    """A member whose class is not on the page (a class defined inside a function) is
+    still rendered with its anchor, so every documentable symbol appears somewhere."""
+    g = SymbolGraph()
+    m = f"{PKG} `demo.m`/_get_cls().Inner#scale."
+    g.add_symbol(Symbol(moniker=m, kind="Field", suffix="Term", name="scale",
+                        def_path="demo/m.py", def_line=3))
+    page = coverage.render_catalog(g, "demo/m.py", [m], covered={})
+    assert "## Other members" in page
+    assert '<a id="_get_cls.Inner.scale"></a>`_get_cls.Inner.scale`' in page

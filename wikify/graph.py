@@ -133,6 +133,20 @@ class SymbolGraph:
         if virtual:
             self.virtual_edges.add((caller, callee))
 
+    def drop(self, monikers: set[str]) -> None:
+        """Remove symbols and every edge, reference and virtual edge touching them."""
+        for m in monikers:
+            if self.symbols.pop(m, None) is None:
+                continue
+            for c in self._callees.pop(m, set()):
+                self._callers.get(c, set()).discard(m)
+            for c in self._callers.pop(m, set()):
+                self._callees.get(c, set()).discard(m)
+            self.ref_count.pop(m, None)
+            self.refs.pop(m, None)
+        self.virtual_edges = {e for e in self.virtual_edges
+                              if e[0] not in monikers and e[1] not in monikers}
+
     # -- queries ------------------------------------------------------------
 
     def callees(self, moniker: str) -> set[str]:

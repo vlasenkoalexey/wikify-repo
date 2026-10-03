@@ -139,7 +139,7 @@ def _load(root: Path, slug: str | None) -> tuple[Paths, RepoConfig]:
         if slug and slug != cfg.slug:
             typer.echo(f"error: {INREPO_CONFIG} here is for '{cfg.slug}', not '{slug}'", err=True)
             raise typer.Exit(2)
-        cfg = replace(cfg, in_repo=True)
+        cfg = _with_private_excludes(replace(cfg, in_repo=True), root)
         return Paths(root, cfg.slug, in_repo=True, wiki_dir=cfg.wiki_dir), cfg
     if not slug:
         typer.echo(f"error: no {INREPO_CONFIG} in {root} and no <slug> given — run `wikify init` "
@@ -150,9 +150,28 @@ def _load(root: Path, slug: str | None) -> tuple[Paths, RepoConfig]:
     if not p.config.exists():
         typer.echo(f"error: no config at {p.config}", err=True)
         raise typer.Exit(2)
-    cfg = load_config(p.config)
+    cfg = _with_private_excludes(load_config(p.config), root)
     p.set_wiki_subdir(cfg.wiki_subdir)
     return p, cfg
+
+
+def private_excludes_path(root: Path, slug: str) -> Path:
+    return root / INREPO_CACHE / f"{slug}.exclude.yaml"
+
+
+def _with_private_excludes(cfg: RepoConfig, root: Path) -> RepoConfig:
+    """Merge ``.wikify/<slug>.exclude.yaml`` (``source_exclude`` / ``symbol_exclude`` lists)
+    into the config. The file lives under the never-committed ``.wikify/`` so an exclusion
+    list that would itself name withheld code stays out of the published wiki."""
+    f = private_excludes_path(root, cfg.slug)
+    if not f.exists():
+        return cfg
+    import yaml
+    data = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+    as_list = lambda v: [str(x) for x in (v or [])]
+    return replace(cfg,
+                   source_exclude=list(cfg.source_exclude) + as_list(data.get("source_exclude")),
+                   symbol_exclude=list(cfg.symbol_exclude) + as_list(data.get("symbol_exclude")))
 
 
 def _acquire(p: Paths, cfg: RepoConfig, repo: str | None, ref: str | None):
@@ -213,14 +232,28 @@ def _scip_indexes(p: Paths) -> list[Path]:
     return sorted(set(d.glob(f"{p.slug}.scip")) | set(d.glob(f"{p.slug}.*.scip")))
 
 
-def _graph(p: Paths, repo_dir: str | Path | None = None):
+def _graph(p: Paths, repo_dir: str | Path | None = None, cfg: RepoConfig | None = None):
     """Build the graph, merging every language's SCIP index present in the cache.
 
     With ``repo_dir`` (a git checkout), only git-tracked files enter the graph: untracked
-    junk on a working copy (``.ipynb_checkpoints/``, scratch files) is never catalogued."""
+    junk on a working copy (``.ipynb_checkpoints/``, scratch files) is never catalogued.
+    With ``cfg``, ``source_exclude`` files and ``symbol_exclude`` symbols are withheld."""
     indexes = [scip_index.parse_index(f) for f in _scip_indexes(p)]
     only = acquire.tracked_files(repo_dir) if repo_dir is not None else None
-    return scip_index.build_graph(*indexes, only_paths=only, repair_root=repo_dir)
+    src_ex = list(cfg.source_exclude) if cfg else []
+    if src_ex:
+        if only is None:
+            only = {d.relative_path for ix in indexes for d in ix.documents}
+        only = {f for f in only if not coverage_mod._glob_any(f, src_ex)}
+    graph = scip_index.build_graph(*indexes, only_paths=only, repair_root=repo_dir)
+    if cfg and cfg.symbol_exclude:
+        pats = [re.compile(x) for x in cfg.symbol_exclude]
+        hit = {m for m, s in graph.symbols.items()
+               if any(r.search(t) for r in pats
+                      for t in (coverage_mod.qualified_name(m), s.display_signature or "",
+                                s.doc_summary or ""))}
+        graph.drop(hit)
+    return graph
 
 
 class Agenda:
@@ -547,7 +580,7 @@ def prepare(
             lang.run(acq.repo_dir, out)
         except Exception as e:  # one language failing shouldn't abort the others
             typer.echo(f"  {lang.label} indexing failed: {e}", err=True)
-    graph = _graph(p, acq.repo_dir)
+    graph = _graph(p, acq.repo_dir, cfg)
     typer.echo(f"graph: {len(graph)} symbols")
 
     state = state_mod.load_state(p.state)
@@ -635,7 +668,8 @@ def prepare(
     # Doc worklist: glob the project's own docs (cfg.docs) for the last synthesis
     # step (doc-concept extraction, skills/prompts/ingest-docs.md). The docs stay in
     # place; we only record which to process, relative to the repo root.
-    docs = _find_docs(acq.repo_dir, cfg.docs)
+    docs = [d for d in _find_docs(acq.repo_dir, cfg.docs)
+            if not coverage_mod._glob_any(d, cfg.source_exclude)]
     if p.in_repo:
         own = (cfg.wiki_dir.rstrip("/") + "/", INREPO_CACHE + "/")
         docs = [d for d in docs if not d.startswith(own)]
@@ -683,7 +717,7 @@ def finalize(
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
     acq = _acquire(p, cfg, repo, cfg.ref)
-    graph = _graph(p, acq.repo_dir)
+    graph = _graph(p, acq.repo_dir, cfg)
     from . import source as source_mod
     n_sig = source_mod.fill_signatures(graph, acq.repo_dir)
     state = state_mod.load_state(p.state)
@@ -855,9 +889,9 @@ def lint_cmd(
     fix: bool = typer.Option(False, help="Auto-repair deterministically-fixable errors in place."),
 ) -> None:
     """Re-run the citation linter alone (Stage 6 gate); ``--fix`` auto-repairs first."""
-    p, _cfg = _load(root, slug)
+    p, cfg = _load(root, slug)
     slug = p.slug
-    graph = _graph(p)
+    graph = _graph(p, cfg=cfg)
     if fix:
         edits, report = fix_mod.fix_silo(p.wiki_slug, graph, p.cache, slug)
         typer.echo(f"fix: applied {edits} repair(s)")
@@ -894,7 +928,7 @@ def coverage(
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
-    graph = _graph(p)
+    graph = _graph(p, cfg=cfg)
     catalogued: set[str] = set()
     if emit:
         mode, _ = _catalog_mode(cfg, state_mod.load_state(p.state))
@@ -945,7 +979,7 @@ def verify(
     if _scip_indexes(p):
         acq = _acquire(p, cfg, repo, cfg.ref)
         ref = acq.commit
-        graph = _graph(p, acq.repo_dir)
+        graph = _graph(p, acq.repo_dir, cfg)
         hashes = diff.current_hashes(graph, acq.repo_dir)
     else:
         typer.echo("note: no SCIP index cached; verdict cache bypassed (run `wikify prepare` "
@@ -1303,7 +1337,7 @@ def plan(
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
-    graph = _graph(p, acq.repo_dir)
+    graph = _graph(p, acq.repo_dir, cfg)
     state = state_mod.load_state(p.state)
     ag = _derive_agenda(graph, cfg, state)
     typer.echo(ag.summary())
@@ -1328,7 +1362,7 @@ def agenda(
     if not _scip_indexes(p):
         typer.echo(f"error: no SCIP index for {slug}; run `wikify prepare {slug}` first", err=True)
         raise typer.Exit(2)
-    graph = _graph(p)
+    graph = _graph(p, cfg=cfg)
     subs = subsystems_mod.discover_subsystems(
         graph,
         max_subsystems=max_subsystems or cfg.agenda_max or None,

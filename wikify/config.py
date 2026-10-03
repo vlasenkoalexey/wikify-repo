@@ -24,7 +24,7 @@ import yaml
 _ALLOWED_KEYS = {"slug", "languages", "build", "ref", "tests", "docs", "repo",
                  "compile_commands", "index_shards", "bazel_targets", "source_url",
                  "acquire", "wiki_subdir", "source_type", "doc_globs",
-                 "coverage_collapse", "coverage_exclude", "synthesis_focus",
+                 "coverage_collapse", "coverage_exclude", "source_exclude", "symbol_exclude", "synthesis_focus",
                  "agenda", "agenda_max", "agenda_exclude", "in_repo", "wiki_dir",
                  "catalog", "index_profile", "index_shard_depth",
                  "agenda_deep_modules", "agenda_deep_fanin"}
@@ -114,6 +114,15 @@ class RepoConfig:
     # tests/vendored — a dropped symbol cannot be cited). ``*`` spans ``/``.
     coverage_collapse: list[str] = field(default_factory=list)
     coverage_exclude: list[str] = field(default_factory=list)
+    # Withheld from the wiki entirely (0.4.1): ``source_exclude`` globs (repo-relative, ``*``
+    # spans ``/``) keep files out of the graph, so out of the index, edges, coverage, packets
+    # and the doc worklist; ``symbol_exclude`` regexes drop a symbol whose qualified name,
+    # signature or doc line matches. A citation into withheld code fails lint (rule 1).
+    # For code that must not be published, not for noise (that is ``coverage_exclude``).
+    # Lists that would themselves reveal what is withheld go in ``.wikify/<slug>.exclude.yaml``
+    # (same two keys; never committed), which ``cli._load`` merges in.
+    source_exclude: list[str] = field(default_factory=list)
+    symbol_exclude: list[str] = field(default_factory=list)
     # A domain **lens** foregrounded during synthesis: the overview + concept pages organize around
     # it and lead with the symbols that matter for it (e.g. "TPU performance — kernels, sharding,
     # attention, autotune knobs, precision, memory"). Surfaced in every packet + the doc worklist;
@@ -333,6 +342,8 @@ def load_config(path: str | Path) -> RepoConfig:
         doc_globs=_as_list(fm.get("doc_globs")),
         coverage_collapse=_as_list(fm.get("coverage_collapse")),
         coverage_exclude=_as_list(fm.get("coverage_exclude")),
+        source_exclude=_as_list(fm.get("source_exclude")),
+        symbol_exclude=_as_list(fm.get("symbol_exclude")),
         synthesis_focus="" if fm.get("synthesis_focus") is None else str(fm.get("synthesis_focus")),
         agenda=None if agenda is None else str(agenda).strip().lower(),
         agenda_max=None if amax is None else int(amax),

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 - 2026-10-03
+
+### Added
+- **Withhold code from the wiki.** `source_exclude` (repo-relative globs, `*` spans `/`) keeps
+  files out of the graph, and `symbol_exclude` (regexes on a symbol's qualified name, signature or
+  doc line) drops symbols. Withheld code is absent from the index, edges, coverage, packets and the
+  doc worklist, and a citation into it fails lint (rule 1), which locates prose to rewrite. Meant
+  for code that must not be published; `coverage_exclude` remains the knob for noise.
+- `.wikify/<slug>.exclude.yaml` (same two keys) is merged into the config, for exclusion lists
+  that would themselves reveal what is withheld; `.wikify/` is never committed.
+- `SymbolGraph.drop(monikers)`: remove symbols with their edges, references and virtual edges.
+
 ## 0.4.0 - 2026-09-25
 
 ### Changed

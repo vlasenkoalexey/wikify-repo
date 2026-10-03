@@ -103,3 +103,26 @@ def test_verify_holds_survive_the_rewrite(tmp_path):
     assert c_new.key == c_old.key == verify.Claim("p.md", 3, "Mechanism", moved_line).key
     pre_04 = {verify._hash(old): {"refuted": False}}      # a cache written before 0.4
     assert c_new.cached(pre_04) == {"refuted": False}
+
+
+def test_source_and_symbol_exclude_withhold_code_from_the_graph(tmp_path):
+    from wikify import cli
+    from wikify.config import RepoConfig
+    from wikify.scip_index import build_graph
+    g = _graph()
+    g.drop({FWD})
+    assert FWD not in g.symbols and FWD not in g.callees(STEP)
+    cfg = RepoConfig(slug="demo", source_exclude=["demo/models.py"], symbol_exclude=[r"(^|[^a-z])train_"])
+    assert cfg.source_exclude == ["demo/models.py"]
+    assert cli.coverage_mod._glob_any("demo/models.py", cfg.source_exclude)
+
+
+def test_private_exclude_file_is_merged_into_the_config(tmp_path):
+    from wikify import cli
+    from wikify.config import RepoConfig
+    f = cli.private_excludes_path(tmp_path, "demo")
+    f.parent.mkdir(parents=True)
+    f.write_text('source_exclude: ["secret/*"]\nsymbol_exclude: ["(?i)codename"]\n')
+    cfg = cli._with_private_excludes(RepoConfig(slug="demo", source_exclude=["a/*"]), tmp_path)
+    assert cfg.source_exclude == ["a/*", "secret/*"] and cfg.symbol_exclude == ["(?i)codename"]
+    assert cli._with_private_excludes(RepoConfig(slug="other"), tmp_path).source_exclude == []
